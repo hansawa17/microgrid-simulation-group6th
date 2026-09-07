@@ -22,6 +22,7 @@ B_dispatch/
 ├── models.py
 ├── dispatch.py
 ├── operator_core.py
+├── runtime.py
 ├── repository.py
 ├── db_schema.sql
 └── README.md
@@ -33,7 +34,8 @@ tests/
 ├── test_scaffold.py
 ├── test_b_dispatch.py
 ├── test_repository.py
-└── test_operator_core.py
+├── test_operator_core.py
+└── test_runtime.py
 
 data/runtime/ems.db   # 本地运行生成，*.db / data/runtime/ 不入 Git
 ```
@@ -66,18 +68,23 @@ data/runtime/ems.db   # 本地运行生成，*.db / data/runtime/ 不入 Git
 - 数据分为参数、运行配置、当前状态、状态历史、调度命令、调度评价和事件日志。
 - 每次数据库操作使用独立连接和短事务，降低多进程 SQLite 冲突。
 - `scripts/init_ems_db.py` 可生成本地 `data/runtime/ems.db`。
-- 增加当前状态读取、调度评价写入和运行配置读取接口。
+- 修复带 `pitch_actual_deg` 的状态写入字段错位问题。
+- 修复 Windows 临时数据库清理问题：测试连接统一显式关闭。
 
-### 下一阶段：尚未完成
+### 2026-09-07 · 第二阶段：本地 EMS 周期运行框架
 
-- B ↔ A TCP 客户端接入当前协议草案。
-- 周期性状态采集与 5 s 调度周期。
-- 命令 ACK、超时和重连策略。
-- Qt6 EMS 操作界面。
-- A/B/C 实机联调。
-- STM32G431RBT6 与真实 C 子站联调。
+- 新增 `runtime.py`，实现无网络的 B 周期运行编排。
+- 默认状态采集周期为 **1 s**，EMS 调度周期为 **5 s**。
+- 首次获得状态后立即产生一次调度结果，之后每 5 s 使用最近一次采集状态决策。
+- 通过 `state_provider` / `decision_sink` 注入外部数据源和结果接收端，当前不绑定 TCP、SQLite、Qt 或 STM32。
+- 新增 `tests/test_runtime.py`，覆盖首次调度、轮询周期、调度周期和最新状态使用。
+- 扩充 repository/operator_core 测试，覆盖参数校验、运行配置、命令/评价/日志、缺口和 C 优先等场景。
 
-以上未完成项不应被描述为已经验证的系统功能。
+## 当前状态与下一步
+
+B 已完成调度基础、闭环核心、本地数据层以及**无网络周期运行框架**。本阶段只完成 B 单模块的代码骨架与测试覆盖，不能据此宣称 TCP 或 A/B/C 联调已经完成。
+
+下一阶段继续完善 B 的安全状态处理、调度评价指标和必要的基础接口；待 B/A/C 各自基本完成后，再实现 B↔A TCP 客户端、ACK/超时/重连，并最终进行 A/B/C 组合调试和 STM32G431RBT6 实机验证。
 
 ## 本地运行与检查
 
@@ -99,7 +106,9 @@ python -m unittest discover -s tests -v
 
 ## 协作规则
 
-提交前同步最新 `main`；不要强制推送、不要覆盖他人修改。详细规则见 `CONTRIBUTING.md`，Agent 开始工作前阅读 `AGENTS.md`。
+本项目三人直接在 `main` 中共同维护；本次 B 工作使用 GitHub 文件级同步，不依赖本地 `.git` 元数据，也不创建 feature branch/PR。提交前保留其他成员已有改动，不强制推送、不重置远端内容。
+
+详细规则见 `CONTRIBUTING.md`，Agent 开始工作前阅读 `AGENTS.md`。
 
 重要设计依据：
 
