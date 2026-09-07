@@ -21,7 +21,16 @@
 
 ## 快速运行
 
-要求 Python 3.10+，无第三方依赖。在仓库根目录执行：
+项目统一使用 Python 3.11.x，后续 Qt 界面使用 PyQt6。在仓库根目录先创建环境：
+
+```powershell
+uv python install 3.11
+uv venv --python 3.11 .venv
+uv pip install --python .venv\\Scripts\\python.exe -r requirements.txt
+.\\.venv\\Scripts\\activate
+```
+
+然后执行：
 
 ```powershell
 python -m A_simulator init
@@ -48,6 +57,14 @@ python -m A_simulator control resume
 python -m A_simulator control stop
 ```
 
+## 更新日志
+
+### 2026-09-07 · Python 3.11 / PyQt6 环境
+
+- A 的 PC 端开发环境统一为 Python 3.11.x。
+- Qt 界面依赖固定为 `PyQt6==6.11.0`。
+- 当前仅完成环境配置，A 的 Qt 界面仍待实现。
+
 ## 测试
 
 ```powershell
@@ -55,4 +72,6 @@ python -m unittest discover -s tests -v
 ```
 
 测试覆盖无风、适宜风速、切出风速、负荷与出力不平衡、柴油机上下限/爬坡、场景插值、数据库历史、命令去重/越序、TCP 半帧与粘包。测试不等同于真实硬件联调。
+
+
 
