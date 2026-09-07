@@ -17,7 +17,7 @@ from .server import serve
 MODULE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = MODULE_DIR.parent
 DEFAULT_CONFIG = MODULE_DIR / "config.example.json"
-DEFAULT_SCENARIO = MODULE_DIR / "scenarios" / "demo.csv"
+DEFAULT_SCENARIO = MODULE_DIR / "scenarios" / "antarctic_10min.csv"
 DEFAULT_DB = ROOT_DIR / "data" / "runtime" / "grid.db"
 
 
@@ -89,10 +89,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.steps is not None and args.steps <= 0:
             raise ValueError("--steps must be greater than zero")
         completed_steps = 0
+        next_poll = time.monotonic()
         while True:
+            wait_s = next_poll - time.monotonic()
+            if wait_s > 0:
+                time.sleep(wait_s)
             runtime = repository.runtime()
             if runtime["status"] == "completed":
                 break
+            poll_interval_s = float(runtime["poll_interval_s"])
+            next_poll = max(next_poll + poll_interval_s, time.monotonic())
             if runtime["status"] == "running":
                 state = repository.step_once()
                 if state is not None:
@@ -100,10 +106,10 @@ def main(argv: list[str] | None = None) -> int:
                     completed_steps += 1
                     if args.steps is not None and completed_steps >= args.steps:
                         break
-            time.sleep(float(runtime["poll_interval_s"]))
         return 0
     raise AssertionError("unreachable")
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -15,7 +15,7 @@
 - A 的 `state.payload` 增加必填 `sampled_at_utc`；B/C 原样保存，并分别记录本机 `received_at_utc`。
 - 日志的实际发生时间使用 `created_at_utc`；控制顺序使用 `session_id + step + seq`，不依赖电脑墙钟排序。
 - 当前线协议仍为草案 `version=1`，三方分别开发时按 `docs/time-interface.md` 实现，组合联调前完成字段一致性检查。
-- 本次仅确定接口文档，A/B/C 对应代码与数据库迁移仍由各模块分别完成。
+- A 已完成状态模型、`grid.db` schema v2、TCP `state` 和默认 10 分钟场景适配；B/C 对应模型与数据库字段仍由各模块分别完成。
 
 ## 2026-09-07：Python 与 Qt 运行环境
 
@@ -44,6 +44,5 @@
 4. 逐条执行 acceptance.md，记录硬件结果、异常和复现步骤。
 
 每次决策追加日期、参与成员、结论与受影响文件，不仅口头通知某一个 Agent。
-
 
 

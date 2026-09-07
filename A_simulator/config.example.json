@@ -3,7 +3,7 @@
   "parameter_status": "example_unconfirmed",
   "simulation": {
     "start_s": 0.0,
-    "end_s": 10.0,
+    "end_s": 600.0,
     "step_s": 1.0,
     "poll_interval_s": 1.0
   },

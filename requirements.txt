@@ -1,2 +1,6 @@
+# Runtime requirement: CPython 3.11.x (declared in .python-version).
+# Initialize from the repository root with: powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
+# Manual equivalent: uv python install 3.11; uv venv --python 3.11 .venv;
+# uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 PyQt6==6.11.0
 

@@ -8,6 +8,7 @@ import socket
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from A_simulator.config import load_config
 from A_simulator.models import (
@@ -26,6 +27,7 @@ from A_simulator.server import ProtocolError, SimulatorTCPServer, decode_frame
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "A_simulator" / "config.example.json"
 SCENARIO_PATH = ROOT / "A_simulator" / "scenarios" / "demo.csv"
+DEFAULT_SCENARIO_PATH = ROOT / "A_simulator" / "scenarios" / "antarctic_10min.csv"
 
 
 def base_state() -> SimulationState:
@@ -33,6 +35,7 @@ def base_state() -> SimulationState:
         session_id="test-session",
         step=0,
         sim_time_s=0.0,
+        sampled_at_utc="2026-09-07T00:00:00.000Z",
         wind_speed_mps=0.0,
         load_power_kw=0.0,
         wind_available_kw=0.0,
@@ -64,6 +67,7 @@ class ModelTests(unittest.TestCase):
     def test_targets_are_not_copied_to_actual_outputs(self):
         state = simulate_step(
             previous=base_state(), next_step=1, next_sim_time_s=1, step_s=1,
+            sampled_at_utc="2026-09-07T00:00:01.000Z",
             wind_speed_mps=8, load_power_kw=150, controls=self.controls,
             wind=self.wind, diesel=self.diesel,
         )
@@ -79,12 +83,14 @@ class ModelTests(unittest.TestCase):
         low_target = replace(self.controls, diesel_target_kw=0)
         low = simulate_step(
             previous=previous, next_step=1, next_sim_time_s=1, step_s=1,
+            sampled_at_utc="2026-09-07T00:00:01.000Z",
             wind_speed_mps=0, load_power_kw=10, controls=low_target,
             wind=self.wind, diesel=self.diesel,
         )
         self.assertEqual(low.diesel_actual_kw, 40)
         off = simulate_step(
             previous=low, next_step=2, next_sim_time_s=2, step_s=1,
+            sampled_at_utc="2026-09-07T00:00:02.000Z",
             wind_speed_mps=0, load_power_kw=10,
             controls=replace(low_target, diesel_enable=False), wind=self.wind, diesel=self.diesel,
         )
@@ -94,11 +100,16 @@ class ModelTests(unittest.TestCase):
         controls = replace(self.controls, controller_wind_enable=False, pitch_target_deg=45)
         state = simulate_step(
             previous=base_state(), next_step=1, next_sim_time_s=1, step_s=1,
+            sampled_at_utc="2026-09-07T00:00:01.000Z",
             wind_speed_mps=12, load_power_kw=77, controls=controls,
             wind=self.wind, diesel=self.diesel,
         )
         self.assertEqual(state.wind_actual_kw, 0)
         self.assertEqual(state.load_power_kw, 77)
+
+    def test_sample_timestamp_requires_fixed_utc_format(self):
+        with self.assertRaisesRegex(ValueError, "sampled_at_utc"):
+            replace(base_state(), sampled_at_utc="2026-09-07 08:03:25")
 
 
 class ScenarioTests(unittest.TestCase):
@@ -112,26 +123,65 @@ class ScenarioTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ScenarioCurve((ScenarioPoint(0, 1, 2), ScenarioPoint(0, 2, 3)))
 
+    def test_csv_requires_an_explicit_sequential_step_column(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.csv"
+            path.write_text(
+                "step,sim_time_s,wind_speed_mps,load_power_kw\n0,0,1,2\n2,1,2,3\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError):
+                load_scenario_csv(path)
+
+    def test_default_scenario_has_a_complete_ten_minute_axis(self):
+        curve = load_scenario_csv(DEFAULT_SCENARIO_PATH)
+        self.assertEqual(len(curve.points), 601)
+        self.assertEqual(curve.points[0].sim_time_s, 0.0)
+        self.assertEqual(curve.points[-1].sim_time_s, 600.0)
+
 
 class RepositoryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.db = Path(self.temp.name) / "grid.db"
         self.repo = Repository(self.db)
-        self.session = self.repo.initialize(load_config(CONFIG_PATH), load_scenario_csv(SCENARIO_PATH))
+        config = replace(load_config(CONFIG_PATH), end_s=10.0)
+        self.session = self.repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
 
     def tearDown(self):
         self.temp.cleanup()
 
     def test_step_persists_current_history_and_scada_atomically(self):
         self.repo.set_status("start")
-        state = self.repo.step_once()
+        sampled_at = "2099-01-01T00:00:01.000Z"
+        with patch("A_simulator.repository._utc_now", return_value=sampled_at) as clock:
+            state = self.repo.step_once()
         self.assertIsNotNone(state)
+        assert state is not None
+        self.assertEqual(state.sampled_at_utc, sampled_at)
+        clock.assert_called_once_with()
         self.assertEqual(self.repo.get_state().step, 1)
         import sqlite3
         with closing(sqlite3.connect(self.db)) as connection:
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM state_history").fetchone()[0], 2)
             self.assertGreater(connection.execute("SELECT COUNT(*) FROM scada_history").fetchone()[0], 11)
+            current_time = connection.execute(
+                "SELECT sampled_at_utc FROM current_state WHERE singleton_id=1"
+            ).fetchone()[0]
+            history_times = {
+                row[0] for row in connection.execute(
+                    "SELECT sampled_at_utc FROM state_history WHERE step=1"
+                )
+            }
+            scada_times = {
+                row[0] for row in connection.execute(
+                    "SELECT sampled_at_utc FROM scada_history WHERE step=1"
+                )
+            }
+            self.assertEqual(current_time, sampled_at)
+            self.assertEqual(history_times, {sampled_at})
+            self.assertEqual(scada_times, {sampled_at})
 
     def test_command_is_validated_deduplicated_and_ordered(self):
         message = {
@@ -162,7 +212,8 @@ class ProtocolTests(unittest.TestCase):
     def test_tcp_handles_split_and_coalesced_frames(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "grid.db")
-            repo.initialize(load_config(CONFIG_PATH), load_scenario_csv(SCENARIO_PATH))
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
             server = SimulatorTCPServer(("127.0.0.1", 0), repo, 4096)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -182,6 +233,11 @@ class ProtocolTests(unittest.TestCase):
                         responses = [json.loads(stream.readline()), json.loads(stream.readline())]
                 self.assertEqual([item["type"] for item in responses], ["state", "state"])
                 self.assertEqual([item["target"] for item in responses], ["B", "B"])
+                for item in responses:
+                    self.assertRegex(
+                        item["payload"]["sampled_at_utc"],
+                        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$",
+                    )
             finally:
                 server.shutdown()
                 server.server_close()
@@ -190,3 +246,4 @@ class ProtocolTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

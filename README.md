@@ -77,6 +77,21 @@ B 侧 TCP/服务文件统一使用 `*B` 后缀，避免与其他合作成员的�
 - runtime/network 异常进入 `event_log`；不会把断线后的旧状态静默当作新状态。
 - `test_serviceB.py` 覆盖状态落库、命令/评价落库和首次闭环调用。
 
+### 2026-09-07 · 统一 PC 运行环境与时间接口
+
+- PC 端 Python 统一为 **3.11.x**，Qt 绑定统一为 **PyQt6 6.11.0**。
+- 根目录使用 `.python-version` 和 `requirements.txt` 声明环境；每台电脑创建自己的 `.venv`。
+- `docs/time-interface.md` 约定 A 产生 `sampled_at_utc`，B/C 原样保存并另记接收时间。
+
+### 2026-09-07 · A 授时状态与 10 分钟默认场景
+
+- A 每个仿真步只读取一次系统 UTC；同一步状态、状态历史和 SCADA 历史共用 `sampled_at_utc`。
+- TCP `state.payload` 已加入 `sampled_at_utc`；控制顺序仍使用 `session_id + step + seq`。
+- `grid.db` schema 升级为 v2，时间字段使用明确的 `_utc` 后缀。
+- 默认场景改为 600 s、601 点的 `antarctic_10min.csv`；`demo.csv` 保留用于测试。
+- A 运行循环使用单调时钟安排 1 s 周期，系统 UTC 仅用于状态授时。
+- 新增 `scripts/bootstrap.ps1` 和 `scripts/run_a.ps1`，用于初始化环境和固定从项目 `.venv` 启动 A。
+
 ## 当前状态与下一步
 
 B 已具备调度基础、闭环核心、本地数据库、周期 runtime、**B-owned TCPB** 和服务层桥接。代码层已完成 TCP/SQLite/runtime 的组合，但尚未声称 A/B 实机 TCP 联调通过。
@@ -89,6 +104,33 @@ B 已具备调度基础、闭环核心、本地数据库、周期 runtime、**B-
 4. **STM32G431RBT6 实机验证**：由 C 完成硬件/Wi-Fi/串口部分，B 配合验证 A state 与调度目标闭环。
 5. **PyQt6 UI**：在通信和数据库追溯稳定后再接界面，避免 UI 掩盖底层联调问题。
 
+## 系统运行环境初始化
+
+PC 端统一要求：
+
+- 64 位 CPython 3.11.x，不使用 3.12/3.13 运行本项目。
+- 安装 `uv`，首次初始化时允许下载 Python 3.11 和 `requirements.txt` 中的依赖。
+- 每台电脑在自己的仓库根目录创建 `.venv`；不得复制或提交虚拟环境。
+- STM32 固件仍使用其独立交叉编译工具链，不受 Python 环境约束。
+
+推荐自动初始化：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
+```
+
+手动等价步骤：
+
+```powershell
+uv python install 3.11
+uv venv --python 3.11 .venv
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+.\.venv\Scripts\activate
+python --version
+```
+
+输出必须为 Python 3.11.x；自动脚本还会导入 PyQt6 并打印版本。依赖发生变化后，重新运行 `bootstrap.ps1` 即可同步本机环境。
+
 ## 本地运行与检查
 
 Python 版本：**3.11.x**；Qt 绑定：**PyQt6 6.11.0**。
@@ -96,8 +138,8 @@ Python 版本：**3.11.x**；Qt 绑定：**PyQt6 6.11.0**。
 ```powershell
 uv python install 3.11
 uv venv --python 3.11 .venv
-uv pip install --python .venv\\Scripts\\python.exe -r requirements.txt
-.\\.venv\\Scripts\\activate
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+.\.venv\Scripts\activate
 ```
 
 初始化 EMS 数据库：
@@ -143,3 +185,5 @@ python -m unittest discover -s tests -v
 
 ---
 原仓库备注（保留）：王鸡的彬巴
+
+

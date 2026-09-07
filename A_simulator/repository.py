@@ -24,7 +24,7 @@ from .scenario import ScenarioCurve, ScenarioPoint
 
 
 SCHEMA = """
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 CREATE TABLE IF NOT EXISTS simulation_control (
     singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS simulation_control (
 );
 
 CREATE TABLE IF NOT EXISTS scenario_points (
+    step INTEGER NOT NULL UNIQUE CHECK (step >= 0),
     sim_time_s REAL PRIMARY KEY,
     wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0),
     load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0)
@@ -62,7 +63,7 @@ CREATE TABLE IF NOT EXISTS control_state (
     controller_wind_enable INTEGER NOT NULL CHECK (controller_wind_enable IN (0, 1)),
     diesel_enable INTEGER NOT NULL CHECK (diesel_enable IN (0, 1)),
     pitch_target_deg REAL NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at_utc TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS current_state (
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS current_state (
     session_id TEXT NOT NULL,
     step INTEGER NOT NULL,
     sim_time_s REAL NOT NULL,
+    sampled_at_utc TEXT NOT NULL,
     wind_speed_mps REAL NOT NULL,
     load_power_kw REAL NOT NULL,
     wind_available_kw REAL NOT NULL,
@@ -82,7 +84,7 @@ CREATE TABLE IF NOT EXISTS current_state (
     diesel_running INTEGER NOT NULL CHECK (diesel_running IN (0, 1)),
     fault INTEGER NOT NULL CHECK (fault IN (0, 1)),
     power_imbalance_kw REAL NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at_utc TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS state_history (
@@ -90,6 +92,7 @@ CREATE TABLE IF NOT EXISTS state_history (
     session_id TEXT NOT NULL,
     step INTEGER NOT NULL,
     sim_time_s REAL NOT NULL,
+    sampled_at_utc TEXT NOT NULL,
     wind_speed_mps REAL NOT NULL,
     load_power_kw REAL NOT NULL,
     wind_available_kw REAL NOT NULL,
@@ -102,7 +105,7 @@ CREATE TABLE IF NOT EXISTS state_history (
     diesel_running INTEGER NOT NULL,
     fault INTEGER NOT NULL,
     power_imbalance_kw REAL NOT NULL,
-    recorded_at TEXT NOT NULL,
+    recorded_at_utc TEXT NOT NULL,
     UNIQUE (session_id, step)
 );
 
@@ -114,7 +117,8 @@ CREATE TABLE IF NOT EXISTS scada_points (
     unit TEXT NOT NULL,
     version INTEGER NOT NULL,
     updated_step INTEGER NOT NULL,
-    updated_at TEXT NOT NULL
+    sampled_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS scada_history (
@@ -123,7 +127,8 @@ CREATE TABLE IF NOT EXISTS scada_history (
     step INTEGER NOT NULL,
     point_id TEXT NOT NULL,
     value_json TEXT NOT NULL,
-    recorded_at TEXT NOT NULL
+    sampled_at_utc TEXT NOT NULL,
+    recorded_at_utc TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS commands (
@@ -135,14 +140,14 @@ CREATE TABLE IF NOT EXISTS commands (
     payload_json TEXT NOT NULL,
     accepted INTEGER NOT NULL CHECK (accepted IN (0, 1)),
     reason TEXT NOT NULL,
-    received_at TEXT NOT NULL,
+    received_at_utc TEXT NOT NULL,
     UNIQUE (session_id, source, seq)
 );
 
 CREATE TABLE IF NOT EXISTS connection_status (
     peer TEXT PRIMARY KEY CHECK (peer IN ('B', 'C')),
     connected INTEGER NOT NULL CHECK (connected IN (0, 1)),
-    last_seen_at TEXT,
+    last_seen_at_utc TEXT,
     detail TEXT NOT NULL
 );
 
@@ -153,13 +158,14 @@ CREATE TABLE IF NOT EXISTS logs (
     message TEXT NOT NULL,
     session_id TEXT,
     step INTEGER,
-    recorded_at TEXT NOT NULL
+    created_at_utc TEXT NOT NULL
 );
 """
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    value = datetime.now(timezone.utc)
+    return value.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 @contextmanager
@@ -188,6 +194,7 @@ def _state_from_row(row: sqlite3.Row) -> SimulationState:
         session_id=row["session_id"],
         step=row["step"],
         sim_time_s=row["sim_time_s"],
+        sampled_at_utc=row["sampled_at_utc"],
         wind_speed_mps=row["wind_speed_mps"],
         load_power_kw=row["load_power_kw"],
         wind_available_kw=row["wind_available_kw"],
@@ -203,11 +210,12 @@ def _state_from_row(row: sqlite3.Row) -> SimulationState:
     )
 
 
-def _state_values(state: SimulationState, timestamp: str) -> tuple[object, ...]:
+def _state_values(state: SimulationState, recorded_at_utc: str) -> tuple[object, ...]:
     return (
         state.session_id,
         state.step,
         state.sim_time_s,
+        state.sampled_at_utc,
         state.wind_speed_mps,
         state.load_power_kw,
         state.wind_available_kw,
@@ -220,11 +228,11 @@ def _state_values(state: SimulationState, timestamp: str) -> tuple[object, ...]:
         int(state.diesel_running),
         int(state.fault),
         state.power_imbalance_kw,
-        timestamp,
+        recorded_at_utc,
     )
 
 
-STATE_COLUMNS = """session_id, step, sim_time_s, wind_speed_mps, load_power_kw,
+STATE_COLUMNS = """session_id, step, sim_time_s, sampled_at_utc, wind_speed_mps, load_power_kw,
 wind_available_kw, wind_target_kw, wind_actual_kw, diesel_target_kw,
 diesel_actual_kw, pitch_actual_deg, wind_running, diesel_running, fault,
 power_imbalance_kw"""
@@ -269,6 +277,7 @@ class Repository:
             session_id=session_id,
             step=0,
             sim_time_s=config.start_s,
+            sampled_at_utc=timestamp,
             wind_speed_mps=first.wind_speed_mps,
             load_power_kw=first.load_power_kw,
             wind_available_kw=wind_available_power(first.wind_speed_mps, config.wind),
@@ -293,8 +302,9 @@ class Repository:
                  config.poll_interval_s, config.start_s, config.parameter_status),
             )
             connection.executemany(
-                "INSERT INTO scenario_points VALUES (?, ?, ?)",
-                [(p.sim_time_s, p.wind_speed_mps, p.load_power_kw) for p in scenario.points],
+                "INSERT INTO scenario_points VALUES (?, ?, ?, ?)",
+                [(step, p.sim_time_s, p.wind_speed_mps, p.load_power_kw)
+                 for step, p in enumerate(scenario.points)],
             )
             parameter_rows: list[tuple[str, str, float, str]] = []
             for device_id, params in (("WT01", config.wind), ("DG01", config.diesel)):
@@ -316,8 +326,8 @@ class Repository:
                 ),
             )
             connection.execute(
-                f"INSERT INTO current_state (singleton_id, {STATE_COLUMNS}, updated_at) "
-                "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO current_state (singleton_id, {STATE_COLUMNS}, updated_at_utc) "
+                "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 _state_values(state, timestamp),
             )
             self._append_history(connection, state, timestamp)
@@ -433,10 +443,19 @@ class Repository:
                 diesel_enable=bool(control_row["diesel_enable"]),
                 pitch_target_deg=control_row["pitch_target_deg"],
             )
+            previous_state = _state_from_row(previous_row)
+            timestamp = _utc_now()
+            if timestamp < previous_state.sampled_at_utc:
+                connection.execute(
+                    "INSERT INTO logs VALUES (NULL, 'WARNING', 'clock_adjusted_backwards', ?, ?, ?, ?)",
+                    (f"previous={previous_state.sampled_at_utc}, current={timestamp}",
+                     runtime["session_id"], runtime["step"], timestamp),
+                )
             state = simulate_step(
-                previous=_state_from_row(previous_row),
+                previous=previous_state,
                 next_step=runtime["step"] + 1,
                 next_sim_time_s=next_time,
+                sampled_at_utc=timestamp,
                 step_s=runtime["step_s"],
                 wind_speed_mps=environment.wind_speed_mps,
                 load_power_kw=environment.load_power_kw,
@@ -444,14 +463,13 @@ class Repository:
                 wind=wind,
                 diesel=diesel,
             )
-            timestamp = _utc_now()
             values = _state_values(state, timestamp)
             connection.execute(
                 f"""UPDATE current_state SET
-                    session_id=?, step=?, sim_time_s=?, wind_speed_mps=?, load_power_kw=?,
+                    session_id=?, step=?, sim_time_s=?, sampled_at_utc=?, wind_speed_mps=?, load_power_kw=?,
                     wind_available_kw=?, wind_target_kw=?, wind_actual_kw=?, diesel_target_kw=?,
                     diesel_actual_kw=?, pitch_actual_deg=?, wind_running=?, diesel_running=?, fault=?,
-                    power_imbalance_kw=?, updated_at=? WHERE singleton_id=1""",
+                    power_imbalance_kw=?, updated_at_utc=? WHERE singleton_id=1""",
                 values,
             )
             self._append_history(connection, state, timestamp)
@@ -466,8 +484,8 @@ class Repository:
     @staticmethod
     def _append_history(connection: sqlite3.Connection, state: SimulationState, timestamp: str) -> None:
         connection.execute(
-            f"INSERT INTO state_history ({STATE_COLUMNS}, recorded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO state_history ({STATE_COLUMNS}, recorded_at_utc) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             _state_values(state, timestamp),
         )
 
@@ -490,16 +508,20 @@ class Repository:
             value_json = _json_value(value)
             connection.execute(
                 """INSERT INTO scada_points
-                   (point_id, device_id, category, value_json, unit, version, updated_step, updated_at)
-                   VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                   (point_id, device_id, category, value_json, unit, version, updated_step,
+                    sampled_at_utc, updated_at_utc)
+                   VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
                    ON CONFLICT(point_id) DO UPDATE SET value_json=excluded.value_json,
                    version=scada_points.version+1, updated_step=excluded.updated_step,
-                   updated_at=excluded.updated_at""",
-                (point_id, device_id, category, value_json, unit, state.step, timestamp),
+                   sampled_at_utc=excluded.sampled_at_utc,
+                   updated_at_utc=excluded.updated_at_utc""",
+                (point_id, device_id, category, value_json, unit, state.step,
+                 state.sampled_at_utc, timestamp),
             )
             connection.execute(
-                "INSERT INTO scada_history VALUES (NULL, ?, ?, ?, ?, ?)",
-                (state.session_id, state.step, point_id, value_json, timestamp),
+                "INSERT INTO scada_history VALUES (NULL, ?, ?, ?, ?, ?, ?)",
+                (state.session_id, state.step, point_id, value_json,
+                 state.sampled_at_utc, timestamp),
             )
 
     def next_server_seq(self) -> int:
@@ -536,7 +558,7 @@ class Repository:
             result = self._validate_and_apply(connection, runtime, message_type, source, session_id, seq, payload)
             connection.execute(
                 """INSERT INTO commands
-                   (session_id, source, seq, message_type, payload_json, accepted, reason, received_at)
+                   (session_id, source, seq, message_type, payload_json, accepted, reason, received_at_utc)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (session_id, source, seq, message_type, _json_value(payload),
                  int(result.accepted), result.reason, timestamp),
@@ -612,7 +634,7 @@ class Repository:
             raise ValueError("diesel_target_out_of_range")
         connection.execute(
             """UPDATE control_state SET wind_target_kw=?, diesel_target_kw=?,
-               dispatch_wind_enable=?, diesel_enable=?, updated_at=? WHERE singleton_id=1""",
+               dispatch_wind_enable=?, diesel_enable=?, updated_at_utc=? WHERE singleton_id=1""",
             (wind_target, diesel_target, int(wind_enable), int(diesel_enable), _utc_now()),
         )
 
@@ -626,7 +648,7 @@ class Repository:
             raise ValueError("pitch_target_out_of_range")
         connection.execute(
             """UPDATE control_state SET controller_wind_enable=?, pitch_target_deg=?,
-               updated_at=? WHERE singleton_id=1""",
+               updated_at_utc=? WHERE singleton_id=1""",
             (int(wind_enable), pitch, _utc_now()),
         )
 
@@ -636,7 +658,7 @@ class Repository:
         self._ensure_exists()
         with _connect(self.path) as connection:
             connection.execute(
-                """UPDATE connection_status SET connected=?, last_seen_at=?, detail=? WHERE peer=?""",
+                """UPDATE connection_status SET connected=?, last_seen_at_utc=?, detail=? WHERE peer=?""",
                 (int(connected), _utc_now(), detail, peer),
             )
 
@@ -647,3 +669,4 @@ class Repository:
                 "INSERT INTO logs VALUES (NULL, ?, ?, ?, ?, ?, ?)",
                 (level, event, message, runtime["session_id"], runtime["step"], _utc_now()),
             )
+

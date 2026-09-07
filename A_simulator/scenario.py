@@ -65,12 +65,15 @@ def load_scenario_csv(path: str | Path) -> ScenarioCurve:
     path = Path(path)
     with path.open("r", encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
-        required = {"sim_time_s", "wind_speed_mps", "load_power_kw"}
+        required = {"step", "sim_time_s", "wind_speed_mps", "load_power_kw"}
         if reader.fieldnames is None or not required.issubset(reader.fieldnames):
             raise ValueError(f"scenario CSV must contain columns: {sorted(required)}")
         points: list[ScenarioPoint] = []
         for line_number, row in enumerate(reader, start=2):
             try:
+                step_text = row["step"]
+                if step_text is None or int(step_text) != len(points) or str(int(step_text)) != step_text.strip():
+                    raise ValueError("step must start at 0 and increase by 1")
                 points.append(
                     ScenarioPoint(
                         sim_time_s=float(row["sim_time_s"]),

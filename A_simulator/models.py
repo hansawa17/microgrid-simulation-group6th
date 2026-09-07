@@ -7,7 +7,9 @@ does not claim that the example parameter values are course requirements.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import math
+import re
 
 
 def _finite_non_negative(name: str, value: float) -> None:
@@ -19,6 +21,17 @@ def _bounded_move(current: float, target: float, up: float, down: float, dt: flo
     if target >= current:
         return min(target, current + up * dt)
     return max(target, current - down * dt)
+
+
+def _validate_utc_timestamp(value: str) -> None:
+    if not isinstance(value, str) or re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", value
+    ) is None:
+        raise ValueError("sampled_at_utc must use YYYY-MM-DDTHH:MM:SS.mmmZ")
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ")
+    except ValueError as exc:
+        raise ValueError("sampled_at_utc must use YYYY-MM-DDTHH:MM:SS.mmmZ") from exc
 
 
 @dataclass(frozen=True)
@@ -88,6 +101,7 @@ class SimulationState:
     session_id: str
     step: int
     sim_time_s: float
+    sampled_at_utc: str
     wind_speed_mps: float
     load_power_kw: float
     wind_available_kw: float
@@ -101,9 +115,13 @@ class SimulationState:
     fault: bool
     power_imbalance_kw: float
 
+    def __post_init__(self) -> None:
+        _validate_utc_timestamp(self.sampled_at_utc)
+
     def protocol_payload(self) -> dict[str, object]:
         """Return fields currently listed in common/protocol.md."""
         return {
+            "sampled_at_utc": self.sampled_at_utc,
             "wind_speed_mps": self.wind_speed_mps,
             "load_power_kw": self.load_power_kw,
             "wind_actual_kw": self.wind_actual_kw,
@@ -144,6 +162,7 @@ def simulate_step(
     previous: SimulationState,
     next_step: int,
     next_sim_time_s: float,
+    sampled_at_utc: str,
     step_s: float,
     wind_speed_mps: float,
     load_power_kw: float,
@@ -153,6 +172,7 @@ def simulate_step(
 ) -> SimulationState:
     """Calculate actual output from environment, targets, actions and constraints."""
     _finite_non_negative("step_s", step_s)
+    _validate_utc_timestamp(sampled_at_utc)
     if step_s == 0:
         raise ValueError("step_s must be greater than zero")
     _finite_non_negative("wind_speed_mps", wind_speed_mps)
@@ -197,6 +217,7 @@ def simulate_step(
         session_id=previous.session_id,
         step=next_step,
         sim_time_s=next_sim_time_s,
+        sampled_at_utc=sampled_at_utc,
         wind_speed_mps=wind_speed_mps,
         load_power_kw=load_power_kw,
         wind_available_kw=available,
