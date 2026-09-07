@@ -12,7 +12,7 @@
 | B 李佳霖 | EMS 主站 | `B_dispatch/` | 状态采集、调度、开闭环模式、ems.db、Qt 界面 |
 | C 陈信甫 | 风电子站 | `C_controller/` | STM32 控制、Wi-Fi TCP 客户端、串口上位机、wind.db |
 
-运行关系：`B ↔ A ↔ STM32`；`STM32 ↔ C 上位机（串口）`。A 是 TCP 服务端，B 和 STM32 主动连接 A。C 对风机保护/控制具有优先权。
+运行关系：`B → A ← STM32`；A 是 TCP 服务端，B 和 STM32 主动连接 A。C 对风机保护/控制具有优先权。
 
 ## B EMS 当前结构
 
@@ -25,86 +25,55 @@ B_dispatch/
 ├── runtime.py
 ├── repository.py
 ├── db_schema.sql
+├── tcp.py              # A-facing TCP JSON-line client
 └── README.md
 
-scripts/
-└── init_ems_db.py
-
 tests/
-├── test_scaffold.py
 ├── test_b_dispatch.py
-├── test_repository.py
 ├── test_operator_core.py
-└── test_runtime.py
-
-data/runtime/ems.db   # 本地运行生成，*.db / data/runtime/ 不入 Git
+├── test_repository.py
+├── test_runtime.py
+└── test_tcp.py
 ```
 
 ## 开发时间节点 / 功能增量
 
-### 2026-09-07 · 第一阶段：B EMS 调度基础
+### 2026-09-07 · 第一阶段：B EMS 调度与闭环基础
 
-- 建立 `B_dispatch/` Python 包。
-- 建立 `GridState`、`DispatchConfig`、`DispatchResult` 数据模型。
-- 实现风电优先、柴油补偿调度。
-- 柴油备用容量固定为 **10 kW**；柴油允许完全 OFF。
-- 正常 B 调度柴油上限为 `diesel_max_kw - 10 kW`。
-- C 故障/保护优先时，B 停止请求风机出力。
-- 对过期状态执行拒绝，避免旧状态驱动闭环。
-- 风机/柴油机额定功率必须显式配置，不在代码中隐藏硬编码。
+- 建立 B 数据模型、风电优先/柴油补偿调度和无状态 `EMSCore`。
+- 柴油备用容量固定 **10 kW**；柴油允许完全 OFF；B 正常调度上限为 `diesel_max_kw - 10 kW`。
+- C 保护/控制优先于 B 正常调度。
+- B 只生成 target/enable，不写 A 的 actual，不发送桨距命令。
+- 未确认的风机/柴油机物理额定值保持显式配置，不硬编码。
 
-### 2026-09-07 · 第一阶段补充：EMS 闭环核心
+### 2026-09-07 · 第二阶段：B 本地数据库与周期运行
 
-- 新增 `operator_core.py`。
-- `EMSCore` 将 A 的 `GridState` 转换为 B 的调度目标。
-- 明确 B 只产生 `target/enable`，不修改 A 的 `actual`。
-- 保持 C 优先的控制边界。
-- 增加闭环核心单元测试。
+- 建立 `repository.py` / `db_schema.sql`，本地 `ems.db` 保存参数、当前状态、历史、调度命令、评价和事件日志。
+- SQLite 每次操作独立连接、短事务，并设置外键与 busy timeout。
+- `runtime.py` 默认 1 s 采集、5 s 调度；状态异常清缓存，调度异常默认产生 B 软件层零风/零柴安全兜底。
+- 补充 repository、operator_core、runtime 单元测试。
 
-### 2026-09-07 · 第一阶段补充：本地 EMS 数据层
+### 2026-09-07 · 第三阶段：TCP 协议基础对齐
 
-- `repository.py` 提供 SQLite 本地持久化。
-- `db_schema.sql` 固化 B 数据层结构。
-- 数据分为参数、运行配置、当前状态、状态历史、调度命令、调度评价和事件日志。
-- 每次数据库操作使用独立连接和短事务，降低多进程 SQLite 冲突。
-- `scripts/init_ems_db.py` 可生成本地 `data/runtime/ems.db`。
-- 修复带 `pitch_actual_deg` 的状态写入字段错位问题。
-- 修复 Windows 临时数据库清理问题：测试连接统一显式关闭。
+根据 `docs/requirements.md`、`common/protocol.md`、`docs/time-interface.md`、`docs/network.md` 和 `docs/acceptance.md` 排查 B 目录及 B 测试文件：
 
-### 2026-09-07 · 第二阶段：本地 EMS 周期运行框架
-
-- 新增 `runtime.py`，实现无网络的 B 周期运行编排。
-- 默认状态采集周期为 **1 s**，EMS 调度周期为 **5 s**。
-- 首次获得状态后立即产生一次调度结果，之后每 5 s 使用最近一次采集状态决策。
-- 通过 `state_provider` / `decision_sink` 注入外部数据源和结果接收端，当前不绑定 TCP、SQLite、Qt 或 STM32。
-- 新增 `tests/test_runtime.py`，覆盖首次调度、轮询周期、调度周期和最新状态使用。
-- 扩充 repository/operator_core 测试，覆盖参数校验、运行配置、命令/评价/日志、缺口和 C 优先等场景。
-
-### 2026-09-07 · 第二阶段补充：运行时安全状态处理
-
-- `runtime.py` 增加 `error_sink`，上层可记录状态源或调度异常，runtime 不绑定具体日志实现。
-- 状态源读取失败时清空缓存状态，避免继续使用旧状态进行闭环调度。
-- 调度层因状态过期等 `DispatchError` 拒绝时，默认生成**零风/零柴、两者均 OFF** 的安全兜底决策，并把当前负荷计入目标未供电量。
-- `safe_fallback_on_dispatch_error=False` 可关闭自动兜底，由上层自行处置。
-- `tests/test_runtime.py` 增加过期状态、关闭兜底、状态源异常和缓存清空测试。
-- 该处理属于 B 软件层异常处理，不新增未确认的设备物理参数，也不改变 C 的保护优先权。
-
-### 2026-09-07 · 统一 PC 运行环境与时间接口
-
-- PC 端 Python 版本统一为 **3.11.x**，Qt 绑定统一为 **PyQt6**。
-- 新增 `.python-version` 与 `requirements.txt`，当前固定 `PyQt6==6.11.0`。
-- 新增 `docs/time-interface.md`，约定 A 从系统 UTC 授时生成 `sampled_at_utc`，B/C 原样保存并另记接收时间。
-- 本次完成环境和接口文档配置，尚未据此宣称 Qt 界面或三方联网已经实现。
+- 新增 `B_dispatch/tcp.py`，实现 B→A `state_request` / `dispatch` 与 A→B `state` / `ack` 的基础解析/发送。
+- 严格使用 UTF-8 JSON + LF 一行一帧，最大 **4096 bytes（含 LF）**；处理 TCP 分包/粘包/多帧并拒绝非法 JSON、NaN/Infinity 和错误 envelope。
+- 校验 `version/type/source/target/session_id/seq/step/sim_time_s/payload`，B 的 dispatch 不含桨距控制字段。
+- 首次连接自动请求全量状态；step 回退或会话变化时停止使用旧状态并请求全量同步。
+- `state.payload.sampled_at_utc` 与 B 的 `received_at_utc` 分开保存；数据库 schema version 更新为 2。
+- 新增 `tests/test_tcp.py`，覆盖帧边界、非法值、方向、首次全量请求、时间字段、重同步和 B 控制权限。
+- B README 已同步记录本次 TCP 对齐范围与剩余联调边界。
 
 ## 当前状态与下一步
 
-B 已完成调度基础、闭环核心、本地数据层以及**带安全兜底的无网络周期运行框架**。本阶段只完成 B 单模块的代码骨架与测试覆盖，不能据此宣称 TCP 或 A/B/C 联调已经完成。
+B 已具备调度基础、闭环核心、本地数据库、周期 runtime 和**独立的 A-facing TCP 协议基础层**。这不等同于 A/B 实机 TCP 联调已经完成。
 
-下一阶段继续完善 B 的调度评价指标、repository/runtime 服务层衔接和必要基础接口；待 B/A/C 各自基本完成后，再实现 B↔A TCP 客户端、ACK/超时/重连，并最终进行 A/B/C 组合调试和 STM32G431RBT6 实机验证。
+下一阶段将把 `tcp.py` 与 `runtime.py`、`repository.py` 组合成正式 B 运行服务，补齐状态落库、调度命令落库、ACK/超时/断线事件记录和重连策略；随后再进行 A/B 联调，最后进行 A/B/C 与 STM32G431RBT6 实机验证。
 
 ## 本地运行与检查
 
-Python 版本：**3.11.x**；Qt 绑定：**PyQt6 6.11.0**。首次配置环境：
+Python 版本：**3.11.x**；Qt 绑定：**PyQt6 6.11.0**。
 
 ```powershell
 uv python install 3.11
@@ -119,17 +88,26 @@ uv pip install --python .venv\\Scripts\\python.exe -r requirements.txt
 python scripts/init_ems_db.py
 ```
 
-运行 B 单元测试：
+运行全部测试：
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-数据库文件默认位于 `data/runtime/ems.db`，已由 `.gitignore` 排除，不上传运行数据。
+数据库文件位于 `data/runtime/ems.db`，已由 `.gitignore` 排除，不上传运行数据。
+
+## TCP 联调边界
+
+- A 监听 `0.0.0.0:5000`；B 必须连接 A 的实际 WLAN IPv4，不能把 `0.0.0.0` 当客户端地址。
+- B/C 与 A 在同一局域网/手机热点中；真实 SSID、密码不进入 Git。
+- TCP 控制顺序使用 `session_id + step + seq`，不能用三台电脑墙钟时间排序。
+- ACK `accepted=true` 只表示 A 接收并通过校验，不代表实际功率已经达到目标；实际效果以后续 state 为准。
+- B 不发送 `pitch_target_deg`；C 的桨距/保护动作仍由 C 负责。
+- 超时、断线、重复/乱序、非法值等验收项已进入 B TCP 基础测试范围；跨设备实际行为仍需联调验证。
 
 ## 协作规则
 
-本项目三人直接在 `main` 中共同维护；本次 B 工作使用 GitHub 文件级同步，不依赖本地 `.git` 元数据，也不创建 feature branch/PR。提交前保留其他成员已有改动，不强制推送、不重置远端内容。
+本项目三人直接在 `main` 中共同维护；B 工作使用 GitHub 文件级同步，不创建 feature branch/PR。提交前保留其他成员已有改动，不强制推送、不重置远端内容。
 
 详细规则见 `CONTRIBUTING.md`，Agent 开始工作前阅读 `AGENTS.md`。
 
@@ -137,13 +115,13 @@ python -m unittest discover -s tests -v
 
 - [需求与边界](docs/requirements.md)
 - [通信字段、方向和帧边界](common/protocol.md)
+- [统一时间接口](docs/time-interface.md)
+- [网络联调](docs/network.md)
 - [数据库职责](docs/database.md)
 - [实施顺序与待确认项](docs/decisions.md)
-- [协作说明](CONTRIBUTING.md)
+- [验收清单](docs/acceptance.md)
 
 不提交密码、令牌、数据库实测内容、构建输出及无授权课程附件。
 
 ---
 原仓库备注（保留）：王鸡的彬巴
-
-
