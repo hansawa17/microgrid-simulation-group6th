@@ -32,6 +32,6 @@ git push origin main
 
 ## 给 Agent 的任务示例
 
-“先阅读 AGENTS.md 和 A_simulator/README.md，在新分支实现 A 的场景加载器；不要修改 B/C；未确认的物理参数保持配置项；补测试，提交前说明验证结果。”
+“先阅读 AGENTS.md 和 A_simulator/README.md，仅在 A_simulator/ 和对应的 tests/test_a_*.py 中实现 A 的场景加载器；不要修改 B/C；未确认的物理参数保持配置项；补测试，提交前说明验证结果。”
 
 真实姓名已用于任务分工，不猜测其他成员的 GitHub 用户名，不自动设置 CODEOWNERS。
