@@ -1,0 +1,33 @@
+# Local secrets/configuration
+config.local.json
+*.local.json
+.env
+.env.*
+!.env.example
+# Python / IDE
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.idea/
+.vs/
+# Runtime data and logs
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+data/runtime/
+# MCU build outputs; keep source, .ioc and project configuration
+Debug/
+Release/
+build/
+*.elf
+*.hex
+*.bin
+*.o
+*.map
+# OS
+.DS_Store
+Thumbs.db
