@@ -1,7 +1,10 @@
 """First-stage tests for B's dispatch constraints."""
 
 import unittest
-from B_dispatch.dispatch import DispatchConfig, DispatchError, GridState, calculate_dispatch
+
+from B_dispatch.dispatch import DispatchError, calculate_dispatch
+from B_dispatch.models import DispatchConfig, GridState
+
 
 class DispatchTests(unittest.TestCase):
     def state(self, **overrides):
@@ -50,6 +53,7 @@ class DispatchTests(unittest.TestCase):
     def test_config_cannot_consume_reserve(self):
         with self.assertRaises(DispatchError):
             calculate_dispatch(self.state(), self.cfg(diesel_max_kw=10.0, reserve_kw=10.1))
+
 
 if __name__ == "__main__":
     unittest.main()
