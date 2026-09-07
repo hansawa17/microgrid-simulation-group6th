@@ -17,9 +17,6 @@ B_dispatch/
 ├── serviceB.py        # B-owned TCP + SQLite + runtime 运行服务桥接
 └── README.md
 
-scripts/
-└── init_ems_db.py
-
 tests/
 ├── test_scaffold.py
 ├── test_b_dispatch.py
@@ -81,14 +78,27 @@ tests/
 - 运行异常写入 `event_log`；网络断线/超时不把旧状态静默当作新状态。
 - `test_serviceB.py` 覆盖状态落库、命令/评价落库和首次 runtime 闭环调用。
 
+### 2026-09-07 · 第五阶段：A/B 联调风险预处理（仅修改 B）
+
+A 已按共同协议完成第一轮 TCP server 对齐；本阶段只修改 B，不修改 A：
+
+- **同一时刻只允许一个未完成的 `state_request`**：B 记录 `_pending_state_request_seq`，重复轮询不会连续发送新的状态请求。
+- `poll_state()` 不再只读取一次 TCP 响应，而是持续消费 A 返回的帧，直到获得对应的新 `state`；期间到达的 ACK 不会被静默丢弃。
+- **dispatch 发送后立即等待并消费对应 ACK**，通过 `_pending_ack_seq` 约束同一时刻只有一个待确认 dispatch。
+- ACK 保存在 B 客户端内存中，`accepted/reason` 可被后续上层联调检查；ACK 只表示 A 接收/校验，不代表 actual 已达到目标。
+- TCP 断线/超时仍向上层抛出，不把旧状态冒充新状态。
+- 新增回归测试覆盖“未决 state request 不重复发送”和“dispatch 必须消费匹配 ACK”。
+
+**风功率启动风险暂不通过虚构字段解决。** 当前共同协议没有 `wind_available_kw`，B 也没有获得已确认的风速—功率曲线，因此不能把 `wind_speed_mps` 擅自换算成可用功率，也不能把 `wind_max_kw` 当成当前可用功率。B 当前仍以 A 实际状态中的 `wind_actual_kw` 作为保守可用出力依据；若后续验收要求“风机停机且 actual=0 时可主动启动”，必须先在共同设计中确认启动语义或可用功率来源，再修改 B。
+
 ## 当前状态
 
-B 已具备**调度 + 本地数据库 + 周期 runtime + B-owned TCPB + 服务层桥接**。当前代码层已经把 TCP、SQLite 和 EMS runtime 接通，但这仍不等于 A/B 实机 TCP 联调已经完成。
+B 已具备**调度 + 本地数据库 + 周期 runtime + B-owned TCPB + 服务层桥接 + 单未决请求/ACK 消费机制**。当前代码层已经把 TCP、SQLite 和 EMS runtime 接通，但这仍不等于 A/B 实机 TCP 联调已经完成。
 
 TCP 关键约束：
 
 - A：TCP server；B：TCP client；默认端口按项目草案为 `5000`。
-- B 每 1 s 请求/检查状态，EMS 默认每 5 s 决策。
+- B 每 1 s 检查/请求状态，但不会在已有 `state_request` 未完成时重复发送请求；EMS 默认每 5 s 决策。
 - 控制关联依赖 `session_id + step + seq`，不依赖三台电脑墙钟时间。
 - `sampled_at_utc` 是 A 的采样时间；`received_at_utc` 是 B 的接收时间；数据库均按字段分别保存。
 - ACK 的 `accepted` 只表示 A 接收并通过校验，不表示实际设备已经达到目标；实际结果仍以后续 `state` 为准。
@@ -119,4 +129,4 @@ python -m unittest discover -s tests -v
 - B 不控制桨距角；桨距动作属于 C。
 - B 不修改 A 的 actual 功率。
 - 未确定的设备额定功率、功率曲线、爬坡、启停和 C 安全策略不得硬编码。
-- 下一步：补齐 A/B 实际 socket 联调 -> 根据 ACK/state 验证数据库追溯 -> 再做 A/B/C 组合调试 -> 最后接 PyQt6 UI。
+- 下一步：A/B 实际 socket 联调 -> 根据 ACK/state 验证数据库追溯 -> 再做 A/B/C 组合调试 -> 最后接 PyQt6 UI。
