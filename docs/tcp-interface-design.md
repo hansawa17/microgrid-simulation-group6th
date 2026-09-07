@@ -111,7 +111,7 @@ STM32 将 `source` 改为 `C`。当前 A 对 `full=true/false` 都返回完整�
 
 ### 5.2 `state`：A -> B/STM32
 
-`state.payload` 与 B 当前解析逻辑保持一致，不加入 A 私有字段：
+`state.payload` 在 B 当前字段基础上增加公共字段 `wind_available_kw`；这不是 A 私有字段，A/B/C 需在组合联调前共同适配：
 
 ```json
 {
@@ -126,6 +126,7 @@ STM32 将 `source` 改为 `C`。当前 A 对 `full=true/false` 都返回完整�
   "payload": {
     "sampled_at_utc": "2026-09-07T08:03:25.417Z",
     "wind_speed_mps": 8.2,
+    "wind_available_kw": 68.0,
     "load_power_kw": 76.0,
     "wind_actual_kw": 42.0,
     "diesel_actual_kw": 34.0,
@@ -138,6 +139,8 @@ STM32 将 `source` 改为 `C`。当前 A 对 `full=true/false` 都返回完整�
 ```
 
 A 根据请求来源把 `target` 设置为 `B` 或 `C`。
+
+`wind_available_kw` 是 A 按当前风速和已配置风机功率曲线计算的资源可用功率，不受 B 目标、B/C 启停、桨距限功率或实际爬坡影响。B 使用该值约束 `wind_target_kw`；`wind_actual_kw` 仍是 A 计算的实际输出，两者不得混用。
 
 ### 5.3 `dispatch`：B -> A
 
@@ -286,7 +289,7 @@ DISCONNECTED -> CONNECTING -> SYNCING -> ONLINE
 - B 已实现单未决状态请求、持续消费到新 `state`、发送 dispatch 后等待匹配 ACK，避免响应积压。
 - B 尚需把 ACK 最终结果完整回写命令记录，并用单调时钟维护状态新鲜度。
 - STM32 Wi-Fi TCP 客户端和 C UART 协议尚未完成，硬件结果必须明确标注实机或 mock。
-- 公共 `state` 尚无 `wind_available_kw`；风机从实际出力 0 启动时的可用功率来源仍需三方确认。
+- 通信草案已增加 `wind_available_kw`，但 A 的 TCP payload、B 的状态模型/调度/数据库以及 STM32 解析仍待同步实现；在此之前不得宣称字段联调完成。
 - A 对命令允许滞后的最大 step/秒数尚未冻结。
 
 ## 12. 联调步骤
@@ -306,7 +309,7 @@ DISCONNECTED -> CONNECTING -> SYNCING -> ONLINE
 - STM32/Wi-Fi 模块型号、AT 固件和最大可用帧缓存。
 - STM32 状态请求、控制运算、动作上送和 UART 周期。
 - C UART 帧头、长度、消息号、校验、编码、字节序和最大帧长。
-- `wind_available_kw` 是否加入公共 `state`。
+- A/B/STM32 对 `wind_available_kw` 的实现与字段一致性测试。
 - 命令允许引用当前状态之前的最大步数/秒数。
 - TCP/UART 失联时 A、B、STM32/C 上位机的安全动作和恢复条件。
 - B 调度启停与 C 保护动作冲突时的最终优先级。
