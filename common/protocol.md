@@ -16,14 +16,18 @@ source/target 为 A、B、C（C 指单片机）；session_id 为 A 仿真会话�
 | type | 方向 | payload 关键字段 |
 |---|---|---|
 | state_request | B/C → A | full: bool；首次会话字段可为 null |
-| state | A → B/C | sampled_at_utc、wind_speed_mps、wind_available_kw、load_power_kw、wind_actual_kw、diesel_actual_kw、wind_target_kw、pitch_actual_deg、wind_running、fault |
+| state | A → B/C | sampled_at_utc、wind_speed_mps、wind_available_kw、wind_operating_limit_kw、load_power_kw、wind_actual_kw、diesel_actual_kw、wind_target_kw、pitch_actual_deg、wind_running、fault |
 | dispatch | B → A | wind_target_kw、diesel_target_kw、wind_enable、diesel_enable |
 | wind_action | C → A | wind_enable、pitch_target_deg |
 | ack | A → B/C | ack_seq、accepted、reason |
 
 功率统一 kW，风速 m/s，桨距 deg；bool 使用 JSON true/false，不用字符串。字段名中的 actual/target 不能省略。模型相关合法区间从设备配置读取，不猜测额定值。
 
-`wind_available_kw` 表示 A 根据当前 `wind_speed_mps` 和已配置风机功率曲线计算的资源可用功率，单位 kW，为有限非负数并受风机额定功率限制。它不考虑 B 的 `wind_target_kw`、B/C 启停请求、桨距限功率或实际爬坡过程；因此不能用 `wind_actual_kw` 替代。B 用它约束可下发的风机目标，A 仍根据目标、启停、桨距和动态约束独立计算 `wind_actual_kw`。
+`wind_available_kw` 表示 A 根据当前 `wind_speed_mps` 和已配置风机功率曲线计算的资源可用功率，单位 kW，为有限非负数并受风机额定功率限制。它不考虑 B 的 `wind_target_kw`、B/C 启停请求、桨距限功率或实际爬坡过程。
+
+`wind_operating_limit_kw` 表示当前运行条件允许的风机稳态功率上限：A 在 `wind_available_kw` 基础上考虑 C/STM32 的启停许可、保护/故障状态、当前桨距和设备运行上限。它是有限非负数并满足 `wind_operating_limit_kw <= wind_available_kw`。它不考虑 B 当前的 `wind_target_kw`、B 当前的 `wind_enable` 或实际爬坡过程，避免 B 在风机尚未下发启动目标时得到循环的零上限。B 应使用该字段约束 `wind_target_kw`；A 再根据 B 目标、双方启停条件和爬坡约束计算 `wind_actual_kw`。
+
+五个功率层次不得混用：`rated` 是静态设备额定值，`available` 是风资源能力，`operating_limit` 是当前运行约束后的稳态上限，`target` 是 B 指令，`actual` 是 A 仿真结果。
 
 `sampled_at_utc` 为 A 读取系统授时并生成状态断面时的 UTC RFC 3339 时间；B/C 应原样保存，并另外记录本机 `received_at_utc`。控制顺序仍以 `session_id + step + seq` 为准，不使用三台电脑的墙钟时间排序。
 
