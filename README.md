@@ -88,7 +88,7 @@ A 已按共同协议完成第一轮 TCP server 对齐；本阶段只修改 B，�
 - TCP 断线/超时仍向上层抛出，不把旧状态冒充新状态。
 - `test_tcpB.py` 新增“未决 state request 不重复发送”和“dispatch 消费匹配 ACK”的回归测试。
 
-**风功率启动风险暂不通过虚构字段解决。** 当前共同协议没有 `wind_available_kw`，B 也没有已确认的风速—功率曲线，因此不能把 `wind_speed_mps` 擅自换算成可用功率，也不能把 `wind_max_kw` 当成当前可用功率。若后续验收要求“风机停机且 actual=0 时主动启动”，需要先确认共同的启动语义或可用功率来源，再修改 B。
+**风功率启动字段已进入协议草案。** `state.payload` 新增 `wind_available_kw`，表示 A 按当前风速和已配置功率曲线计算、且不考虑目标/启停/桨距/爬坡的资源可用功率。B 后续使用它约束风机目标，不能再用 `wind_actual_kw` 替代。本次仅完成协议文档；A TCP payload、B 状态模型/调度/数据库和 STM32 解析仍需同步实现后才能宣称联调完成。
 
 ### 2026-09-07 · 环境与时间接口
 
@@ -176,6 +176,7 @@ python -m unittest discover -s tests -v
 - TCP 控制顺序使用 `session_id + step + seq`，不能用三台电脑墙钟时间排序。
 - ACK `accepted=true` 只表示 A 接收并通过校验，不代表实际功率已经达到目标；实际效果以后续 state 为准。
 - B 不发送 `pitch_target_deg`；C 的桨距/保护动作仍由 C 负责。
+- `state.wind_available_kw` 是资源可用功率，`wind_target_kw` 是 B 目标，`wind_actual_kw` 是 A 实际输出，三者不得混用。
 - B 同一时刻只保持一个未完成 state request，并在发送 dispatch 后消费对应 ACK，避免响应在 socket 缓冲区持续积压。
 - 超时、断线、重复/乱序、非法值等验收项已进入 B TCP 基础测试范围；跨设备实际行为仍需联调验证。
 
