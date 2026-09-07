@@ -32,12 +32,13 @@
 - 当前 v1 协议没有认证和加密。正式公网运行前必须确认穿透访问控制、来源限制、TLS 或应用层认证方案，凭据不得提交仓库。
 - 完整拓扑、报文、ACK、重连与联调顺序见 `docs/tcp-interface-design.md`。
 
-## 2026-09-07：状态增加风机可用功率（协议草案）
+## 2026-09-07：状态增加风机能力字段（协议草案）
 
-- `state.payload` 增加必填有限非负数 `wind_available_kw`，单位 kW。
-- 该值由 A 根据当前风速和已配置风机功率曲线计算，并受额定功率限制；不考虑 B 目标、B/C 启停、桨距限功率或实际爬坡。
-- `wind_available_kw`、`wind_target_kw`、`wind_actual_kw` 分别表示资源可用功率、B 调度目标和 A 实际输出，三者不得互相替代。
-- B 应使用 `wind_available_kw` 约束风机目标，解决初始 `wind_actual_kw=0` 时无法主动给出风机目标的问题。
+- `state.payload` 增加必填有限非负数 `wind_available_kw` 和 `wind_operating_limit_kw`，单位均为 kW。
+- `wind_available_kw` 由 A 根据当前风速和已配置风机功率曲线计算并受额定功率限制；不考虑目标、启停、桨距或实际爬坡。
+- `wind_operating_limit_kw` 由 A 在资源可用功率基础上考虑 C/STM32 启停许可、保护/故障、当前桨距和设备运行上限计算；不考虑 B 当前目标、B 当前启停请求或实际爬坡。
+- B 使用 `wind_operating_limit_kw` 约束风机目标，解决以 `wind_actual_kw` 估算能力造成的冷启动和限功率误判。
+- `rated`、`available`、`operating_limit`、`target`、`actual` 分别表示额定值、风资源能力、运行约束后的稳态上限、B 指令和 A 实际输出，不得互相替代。
 - 线协议仍处于未冻结的 version 1 草案阶段，本次不升级版本；A/B/STM32 必须在组合联调前同步实现并补字段一致性测试。
 
 ## 必须共同确认（不得擅自当成已定要求）
