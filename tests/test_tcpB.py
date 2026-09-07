@@ -6,7 +6,7 @@ import unittest
 
 from B_dispatch.models import DispatchConfig, GridState
 from B_dispatch.operator_core import EMSCore
-from B_dispatch.tcpB import EMSTcpClient, JsonLineFramer, ProtocolError, encode_frame
+from B_dispatch.tcpB import Ack, EMSTcpClient, JsonLineFramer, ProtocolError, encode_frame
 
 
 class FakeSocket:
@@ -14,7 +14,7 @@ class FakeSocket:
         self.sent = []
         self.timeout = None
         self.closed = False
-        self.recv_data = recv_data
+        self.recv_queue = [recv_data] if isinstance(recv_data, bytes) else list(recv_data)
 
     def settimeout(self, value):
         self.timeout = value
@@ -23,7 +23,9 @@ class FakeSocket:
         self.sent.append(data)
 
     def recv(self, size):
-        return self.recv_data
+        if not self.recv_queue:
+            raise socket.timeout()
+        return self.recv_queue.pop(0)
 
     def close(self):
         self.closed = True
@@ -38,6 +40,14 @@ def state_message(step=5, session="s1", seq=10):
             "load_power_kw": 76.0, "wind_actual_kw": 42.0, "diesel_actual_kw": 34.0,
             "wind_target_kw": 45.0, "pitch_actual_deg": 0.0, "wind_running": True, "fault": False,
         },
+    }
+
+
+def ack_message(ack_seq, seq=20, accepted=True, reason="accepted"):
+    return {
+        "version": 1, "type": "ack", "source": "A", "target": "B",
+        "session_id": "s1", "seq": seq, "step": 5, "sim_time_s": 5.0,
+        "payload": {"ack_seq": ack_seq, "accepted": accepted, "reason": reason},
     }
 
 
@@ -67,6 +77,15 @@ class TcpBTests(unittest.TestCase):
         message = json.loads(fake.sent[0])
         self.assertEqual(message["type"], "state_request")
         self.assertTrue(message["payload"]["full"])
+
+    def test_poll_state_does_not_send_second_request_while_first_is_pending(self):
+        fake = FakeSocket([encode_frame(state_message())])
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
+        client.connect()
+        state = client.poll_state()
+        requests = [json.loads(item) for item in fake.sent if json.loads(item)["type"] == "state_request"]
+        self.assertEqual(state.step, 5)
+        self.assertEqual(len(requests), 1)
 
     def test_client_parses_state_and_keeps_both_times(self):
         fake = FakeSocket()
@@ -98,6 +117,21 @@ class TcpBTests(unittest.TestCase):
         self.assertIsNone(client.latest_state)
         self.assertGreaterEqual(len(fake.sent), 2)
 
+    def test_dispatch_waits_for_and_consumes_matching_ack(self):
+        fake = FakeSocket()
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
+        client.connect()
+        state = GridState(session_id="s1", step=5, sim_time_s=5.0, wind_speed_mps=8.0,
+                          load_power_kw=60.0, wind_actual_kw=40.0, diesel_actual_kw=0.0,
+                          wind_running=True, sampled_at_utc="2026-09-07T08:03:25.417Z")
+        decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(state)
+        dispatch_seq = client._next_seq
+        fake.recv_queue.append(encode_frame(ack_message(dispatch_seq)))
+        result = client.send_dispatch(decision)
+        self.assertEqual(result, dispatch_seq)
+        self.assertIsNone(client._pending_ack_seq)
+        self.assertIsInstance(client._received_acks[dispatch_seq], Ack)
+
     def test_dispatch_contains_only_allowed_b_targets(self):
         fake = FakeSocket()
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
@@ -106,6 +140,8 @@ class TcpBTests(unittest.TestCase):
                           load_power_kw=60.0, wind_actual_kw=40.0, diesel_actual_kw=0.0,
                           wind_running=True, sampled_at_utc="2026-09-07T08:03:25.417Z")
         decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(state)
+        dispatch_seq = client._next_seq
+        fake.recv_queue.append(encode_frame(ack_message(dispatch_seq)))
         client.send_dispatch(decision)
         message = json.loads(fake.sent[-1])
         self.assertEqual(set(message["payload"]), {"wind_target_kw", "diesel_target_kw", "wind_enable", "diesel_enable"})
