@@ -6,59 +6,13 @@ controls wind pitch. C has priority for wind protection/control.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+
+from .models import DispatchConfig, DispatchResult, GridState
 
 
 class DispatchError(ValueError):
     """Raised when a dispatch input violates the EMS contract."""
-
-
-@dataclass(frozen=True)
-class GridState:
-    """A state snapshot consumed by B.
-
-    All power values are kW. ``received_age_s`` is wall-clock age at B and is
-    intentionally separate from simulation time.
-    """
-
-    session_id: str
-    step: int
-    sim_time_s: float
-    wind_speed_mps: float
-    load_power_kw: float
-    wind_actual_kw: float
-    diesel_actual_kw: float
-    wind_running: bool
-    fault: bool = False
-    received_age_s: float = 0.0
-
-
-@dataclass(frozen=True)
-class DispatchConfig:
-    """EMS constraints. Physical ratings must be supplied explicitly."""
-
-    wind_max_kw: float
-    diesel_max_kw: float
-    wind_min_kw: float = 0.0
-    reserve_kw: float = 10.0
-    max_state_age_s: float = 2.0
-    c_has_control_priority: bool = True
-
-    @property
-    def diesel_dispatch_max_kw(self) -> float:
-        return self.diesel_max_kw - self.reserve_kw
-
-
-@dataclass(frozen=True)
-class DispatchResult:
-    wind_target_kw: float
-    diesel_target_kw: float
-    wind_enable: bool
-    diesel_enable: bool
-    target_unserved_kw: float
-    target_surplus_kw: float
-    reason: str
 
 
 def _finite_nonnegative(name: str, value: float) -> None:
@@ -72,12 +26,20 @@ def _validate(state: GridState, config: DispatchConfig) -> None:
     if state.step < 0:
         raise DispatchError("step must be non-negative")
     for name in (
-        "sim_time_s", "wind_speed_mps", "load_power_kw", "wind_actual_kw",
-        "diesel_actual_kw", "received_age_s",
+        "sim_time_s",
+        "wind_speed_mps",
+        "load_power_kw",
+        "wind_actual_kw",
+        "diesel_actual_kw",
+        "received_age_s",
     ):
         _finite_nonnegative(name, getattr(state, name))
     for name in (
-        "wind_min_kw", "wind_max_kw", "diesel_max_kw", "reserve_kw", "max_state_age_s",
+        "wind_min_kw",
+        "wind_max_kw",
+        "diesel_max_kw",
+        "reserve_kw",
+        "max_state_age_s",
     ):
         _finite_nonnegative(name, getattr(config, name))
     if config.wind_max_kw < config.wind_min_kw:
