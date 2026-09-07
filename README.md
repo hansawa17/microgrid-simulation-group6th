@@ -25,7 +25,8 @@ B_dispatch/
 ├── runtime.py
 ├── repository.py
 ├── db_schema.sql
-├── tcp.py              # A-facing TCP JSON-line client
+├── tcpB.py              # B-owned A-facing TCP JSON-line client
+├── serviceB.py          # B-owned TCP + SQLite + runtime service bridge
 └── README.md
 
 tests/
@@ -33,8 +34,11 @@ tests/
 ├── test_operator_core.py
 ├── test_repository.py
 ├── test_runtime.py
-└── test_tcp.py
+├── test_tcpB.py
+└── test_serviceB.py
 ```
+
+B 侧 TCP/服务文件统一使用 `*B` 后缀，避免与其他合作成员的同类文件混淆。
 
 ## 开发时间节点 / 功能增量
 
@@ -53,23 +57,37 @@ tests/
 - `runtime.py` 默认 1 s 采集、5 s 调度；状态异常清缓存，调度异常默认产生 B 软件层零风/零柴安全兜底。
 - 补充 repository、operator_core、runtime 单元测试。
 
-### 2026-09-07 · 第三阶段：TCP 协议基础对齐
+### 2026-09-07 · 第三阶段：TCPB 协议基础对齐
 
 根据 `docs/requirements.md`、`common/protocol.md`、`docs/time-interface.md`、`docs/network.md` 和 `docs/acceptance.md` 排查 B 目录及 B 测试文件：
 
-- 新增 `B_dispatch/tcp.py`，实现 B→A `state_request` / `dispatch` 与 A→B `state` / `ack` 的基础解析/发送。
+- 新增 `B_dispatch/tcpB.py`，实现 B→A `state_request` / `dispatch` 与 A→B `state` / `ack` 的基础解析/发送。
 - 严格使用 UTF-8 JSON + LF 一行一帧，最大 **4096 bytes（含 LF）**；处理 TCP 分包/粘包/多帧并拒绝非法 JSON、NaN/Infinity 和错误 envelope。
 - 校验 `version/type/source/target/session_id/seq/step/sim_time_s/payload`，B 的 dispatch 不含桨距控制字段。
 - 首次连接自动请求全量状态；step 回退或会话变化时停止使用旧状态并请求全量同步。
-- `state.payload.sampled_at_utc` 与 B 的 `received_at_utc` 分开保存；数据库 schema version 更新为 2。
-- 新增 `tests/test_tcp.py`，覆盖帧边界、非法值、方向、首次全量请求、时间字段、重同步和 B 控制权限。
-- B README 已同步记录本次 TCP 对齐范围与剩余联调边界。
+- `sampled_at_utc` 与 B 的 `received_at_utc` 分开保存；数据库 schema version 为 2。
+- 增加 A→B `seq` 重复/旧序号抑制，以及 EOF/timeout 行为测试。
+- 原 `tcp.py` / `test_tcp.py` 已替换为 B 专属 `tcpB.py` / `test_tcpB.py`，避免与 A/C 同类 TCP 文件混淆。
+
+### 2026-09-07 · 第四阶段：TCP + SQLite + Runtime 服务层
+
+- 新增 `B_dispatch/serviceB.py`，把 TCP、SQLite、runtime 和 EMSCore 接成一个 B 运行服务。
+- 状态路径：A state → `tcpB` → `serviceB` → `repository.current_state/state_history` → `runtime`。
+- 调度路径：`EMSCore` → `serviceB` → `tcpB.dispatch` → `repository.dispatch_commands/dispatch_evaluation`。
+- runtime/network 异常进入 `event_log`；不会把断线后的旧状态静默当作新状态。
+- `test_serviceB.py` 覆盖状态落库、命令/评价落库和首次闭环调用。
 
 ## 当前状态与下一步
 
-B 已具备调度基础、闭环核心、本地数据库、周期 runtime 和**独立的 A-facing TCP 协议基础层**。这不等同于 A/B 实机 TCP 联调已经完成。
+B 已具备调度基础、闭环核心、本地数据库、周期 runtime、**B-owned TCPB** 和服务层桥接。代码层已完成 TCP/SQLite/runtime 的组合，但尚未声称 A/B 实机 TCP 联调通过。
 
-下一阶段将把 `tcp.py` 与 `runtime.py`、`repository.py` 组合成正式 B 运行服务，补齐状态落库、调度命令落库、ACK/超时/断线事件记录和重连策略；随后再进行 A/B 联调，最后进行 A/B/C 与 STM32G431RBT6 实机验证。
+下一步按验收清单推进：
+
+1. **A/B 实际 socket 联调**：A server ↔ B `tcpB.py`，验证全量状态、分包/粘包、seq/session/step、ACK、timeout、断线重连。
+2. **B 数据追溯验证**：确认 state → dispatch → ACK → 后续 actual state 能在 `ems.db` 复原，且 sim time / sampled time / received time 不混用。
+3. **A/B/C 组合调试**：确认 C 保护优先于 B 正常调度，不让 B 越权发送桨距命令。
+4. **STM32G431RBT6 实机验证**：由 C 完成硬件/Wi-Fi/串口部分，B 配合验证 A state 与调度目标闭环。
+5. **PyQt6 UI**：在通信和数据库追溯稳定后再接界面，避免 UI 掩盖底层联调问题。
 
 ## 本地运行与检查
 
