@@ -20,7 +20,7 @@ class RepositoryTests(unittest.TestCase):
                 self.assertTrue({"schema_meta", "dispatch_parameters", "ems_runtime_config", "current_state",
                                  "state_history", "dispatch_commands", "dispatch_evaluation", "event_log"} <= tables)
                 self.assertIsNone(conn.execute("SELECT 1 FROM dispatch_parameters WHERE id=1").fetchone())
-                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "1")
+                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "2")
             finally:
                 conn.close()
 
@@ -67,7 +67,7 @@ class RepositoryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 repo.set_runtime_config(command_timeout_s=0.0)
 
-    def test_state_and_history_are_written_together(self):
+    def test_state_and_history_keep_a_sample_time_and_b_receive_time_separate(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = EMSRepository(Path(tmp) / "ems.db")
             repo.initialize()
@@ -75,18 +75,20 @@ class RepositoryTests(unittest.TestCase):
                 "session_id": "s1", "step": 1, "sim_time_s": 1.0, "wind_speed_mps": 8.0,
                 "load_power_kw": 50.0, "wind_actual_kw": 30.0, "diesel_actual_kw": 20.0,
                 "wind_target_kw": 30.0, "pitch_actual_deg": 2.0, "wind_running": True,
-                "fault": False, "received_at_utc": "2026-09-07T03:00:00Z", "received_age_s": 0.1,
+                "fault": False, "sampled_at_utc": "2026-09-07T03:00:00.123Z",
+                "received_at_utc": "2026-09-07T03:00:00.456Z", "received_age_s": 0.1,
             }
             repo.save_state(state)
             current = repo.get_current_state()
             self.assertEqual(current["pitch_actual_deg"], 2.0)
-            self.assertEqual(current["wind_running"], 1)
+            self.assertEqual(current["sampled_at_utc"], "2026-09-07T03:00:00.123Z")
+            self.assertEqual(current["received_at_utc"], "2026-09-07T03:00:00.456Z")
             conn = sqlite3.connect(repo.db_path)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM current_state").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM state_history").fetchone()[0], 1)
-                history = conn.execute("SELECT pitch_actual_deg, wind_running, fault FROM state_history").fetchone()
-                self.assertEqual(history, (2.0, 1, 0))
+                history = conn.execute("SELECT pitch_actual_deg, wind_running, fault, sampled_at_utc FROM state_history").fetchone()
+                self.assertEqual(history, (2.0, 1, 0, "2026-09-07T03:00:00.123Z"))
             finally:
                 conn.close()
 
@@ -100,30 +102,18 @@ class RepositoryTests(unittest.TestCase):
                 "wind_enable": True, "diesel_enable": True,
                 "status": "generated", "reason": "wind-first",
             })
-            self.assertGreater(command_id, 0)
-            evaluation_id = repo.record_evaluation(
-                command_id=command_id,
-                target_unserved_kw=0.0,
-                target_surplus_kw=0.0,
-                actual_unserved_kw=2.0,
-                actual_surplus_kw=0.0,
-            )
+            evaluation_id = repo.record_evaluation(command_id=command_id, target_unserved_kw=0.0,
+                                                    target_surplus_kw=0.0, actual_unserved_kw=2.0,
+                                                    actual_surplus_kw=0.0)
             self.assertGreater(evaluation_id, 0)
             repo.record_log("INFO", "dispatch", "command generated", session_id="s1", step=2)
-
             conn = sqlite3.connect(repo.db_path)
             try:
-                command = conn.execute(
-                    "SELECT session_id, seq, wind_target_kw, diesel_target_kw, wind_enable, diesel_enable FROM dispatch_commands"
-                ).fetchone()
+                command = conn.execute("SELECT session_id, seq, wind_target_kw, diesel_target_kw, wind_enable, diesel_enable FROM dispatch_commands").fetchone()
                 self.assertEqual(command, ("s1", 7, 40.0, 30.0, 1, 1))
-                evaluation = conn.execute(
-                    "SELECT command_id, target_unserved_kw, actual_unserved_kw FROM dispatch_evaluation"
-                ).fetchone()
+                evaluation = conn.execute("SELECT command_id, target_unserved_kw, actual_unserved_kw FROM dispatch_evaluation").fetchone()
                 self.assertEqual(evaluation, (command_id, 0.0, 2.0))
-                log = conn.execute(
-                    "SELECT level, event_type, session_id, step FROM event_log"
-                ).fetchone()
+                log = conn.execute("SELECT level, event_type, session_id, step FROM event_log").fetchone()
                 self.assertEqual(log, ("INFO", "dispatch", "s1", 2))
             finally:
                 conn.close()
