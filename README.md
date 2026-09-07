@@ -89,6 +89,13 @@ data/runtime/ems.db   # 本地运行生成，*.db / data/runtime/ 不入 Git
 - `tests/test_runtime.py` 增加过期状态、关闭兜底、状态源异常和缓存清空测试。
 - 该处理属于 B 软件层异常处理，不新增未确认的设备物理参数，也不改变 C 的保护优先权。
 
+### 2026-09-07 · 统一 PC 运行环境与时间接口
+
+- PC 端 Python 版本统一为 **3.11.x**，Qt 绑定统一为 **PyQt6**。
+- 新增 `.python-version` 与 `requirements.txt`，当前固定 `PyQt6==6.11.0`。
+- 新增 `docs/time-interface.md`，约定 A 从系统 UTC 授时生成 `sampled_at_utc`，B/C 原样保存并另记接收时间。
+- 本次完成环境和接口文档配置，尚未据此宣称 Qt 界面或三方联网已经实现。
+
 ## 当前状态与下一步
 
 B 已完成调度基础、闭环核心、本地数据层以及**带安全兜底的无网络周期运行框架**。本阶段只完成 B 单模块的代码骨架与测试覆盖，不能据此宣称 TCP 或 A/B/C 联调已经完成。
@@ -97,7 +104,14 @@ B 已完成调度基础、闭环核心、本地数据层以及**带安全兜底�
 
 ## 本地运行与检查
 
-Python 版本：**3.11**。
+Python 版本：**3.11.x**；Qt 绑定：**PyQt6 6.11.0**。首次配置环境：
+
+```powershell
+uv python install 3.11
+uv venv --python 3.11 .venv
+uv pip install --python .venv\\Scripts\\python.exe -r requirements.txt
+.\\.venv\\Scripts\\activate
+```
 
 初始化 EMS 数据库：
 
@@ -131,3 +145,5 @@ python -m unittest discover -s tests -v
 
 ---
 原仓库备注（保留）：王鸡的彬巴
+
+
