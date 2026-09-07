@@ -137,6 +137,9 @@ class EMSRepository:
             raise ValueError(f"missing state fields: {', '.join(missing)}")
         values = tuple(state[key] for key in required)
         pitch = state.get("pitch_actual_deg")
+        # Keep the SQL column order and Python tuple order identical.  Pitch is
+        # inserted explicitly after wind_target_kw in both tables.
+        db_values = values[:8] + (pitch,) + values[8:]
         with self.connection() as conn:
             conn.execute(
                 """INSERT INTO current_state(id,session_id,step,sim_time_s,wind_speed_mps,load_power_kw,wind_actual_kw,
@@ -146,13 +149,13 @@ class EMSRepository:
                    load_power_kw=excluded.load_power_kw,wind_actual_kw=excluded.wind_actual_kw,diesel_actual_kw=excluded.diesel_actual_kw,
                    wind_target_kw=excluded.wind_target_kw,pitch_actual_deg=excluded.pitch_actual_deg,wind_running=excluded.wind_running,
                    fault=excluded.fault,received_at_utc=excluded.received_at_utc,received_age_s=excluded.received_age_s""",
-                values[:9] + (pitch,) + values[9:],
+                db_values,
             )
             conn.execute(
                 """INSERT INTO state_history(session_id,step,sim_time_s,wind_speed_mps,load_power_kw,wind_actual_kw,
                    diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,received_at_utc,received_age_s)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                values[:9] + (pitch,) + values[9:],
+                db_values,
             )
 
     def get_current_state(self) -> Optional[sqlite3.Row]:
