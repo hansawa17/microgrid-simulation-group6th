@@ -1,0 +1,193 @@
+"""Threaded TCP server for the draft LF-delimited JSON protocol."""
+
+from __future__ import annotations
+
+import json
+import math
+import socketserver
+
+from .repository import Repository
+
+
+class ProtocolError(ValueError):
+    pass
+
+
+def _reject_constant(value: str) -> None:
+    raise ProtocolError(f"non-finite JSON number is not allowed: {value}")
+
+
+def decode_frame(frame: bytes, max_frame_bytes: int) -> dict[str, object]:
+    if len(frame) > max_frame_bytes:
+        raise ProtocolError("frame_too_large")
+    if not frame.endswith(b"\n"):
+        raise ProtocolError("incomplete_frame")
+    try:
+        text = frame[:-1].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ProtocolError("invalid_utf8") from exc
+    try:
+        message = json.loads(text, parse_constant=_reject_constant)
+    except (json.JSONDecodeError, ProtocolError) as exc:
+        raise ProtocolError("invalid_json") from exc
+    if not isinstance(message, dict):
+        raise ProtocolError("frame_root_must_be_object")
+    validate_envelope(message)
+    return message
+
+
+def encode_frame(message: dict[str, object], max_frame_bytes: int) -> bytes:
+    try:
+        frame = (json.dumps(
+            message, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        ) + "\n").encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ProtocolError("response_not_serializable") from exc
+    if len(frame) > max_frame_bytes:
+        raise ProtocolError("response_frame_too_large")
+    return frame
+
+
+def validate_envelope(message: dict[str, object]) -> None:
+    required = {"version", "type", "source", "target", "session_id", "seq", "step", "sim_time_s", "payload"}
+    if not required.issubset(message):
+        raise ProtocolError("missing_envelope_field")
+    if message["version"] != 1:
+        raise ProtocolError("unsupported_version")
+    if not isinstance(message["type"], str):
+        raise ProtocolError("invalid_type")
+    if message["source"] not in {"B", "C"} or message["target"] != "A":
+        raise ProtocolError("invalid_direction")
+    if isinstance(message["seq"], bool) or not isinstance(message["seq"], int) or message["seq"] < 0:
+        raise ProtocolError("invalid_seq")
+    if isinstance(message["step"], bool) or not isinstance(message["step"], int) or message["step"] < 0:
+        raise ProtocolError("invalid_step")
+    sim_time = message["sim_time_s"]
+    if isinstance(sim_time, bool) or not isinstance(sim_time, (int, float)):
+        raise ProtocolError("invalid_sim_time_s")
+    if not math.isfinite(float(sim_time)) or sim_time < 0:
+        raise ProtocolError("invalid_sim_time_s")
+    if not isinstance(message["payload"], dict):
+        raise ProtocolError("invalid_payload")
+    session_id = message["session_id"]
+    if session_id is not None and not isinstance(session_id, str):
+        raise ProtocolError("invalid_session_id")
+
+
+class MessageProcessor:
+    def __init__(self, repository: Repository):
+        self.repository = repository
+
+    def process(self, message: dict[str, object]) -> dict[str, object]:
+        validate_envelope(message)
+        message_type = message["type"]
+        source = str(message["source"])
+        if message_type == "state_request":
+            payload = message["payload"]
+            assert isinstance(payload, dict)
+            if type(payload.get("full")) is not bool:
+                raise ProtocolError("invalid_full")
+            state = self.repository.get_state()
+            return {
+                "version": 1,
+                "type": "state",
+                "source": "A",
+                "target": source,
+                "session_id": state.session_id,
+                "seq": self.repository.next_server_seq(),
+                "step": state.step,
+                "sim_time_s": state.sim_time_s,
+                "payload": state.protocol_payload(),
+            }
+        if message_type not in {"dispatch", "wind_action"}:
+            raise ProtocolError("unsupported_message_type")
+        result = self.repository.apply_command(message)
+        state = self.repository.get_state()
+        reason = f"duplicate_{result.reason}" if result.duplicate else result.reason
+        return {
+            "version": 1,
+            "type": "ack",
+            "source": "A",
+            "target": source,
+            "session_id": state.session_id,
+            "seq": self.repository.next_server_seq(),
+            "step": state.step,
+            "sim_time_s": state.sim_time_s,
+            "payload": {
+                "ack_seq": message["seq"],
+                "accepted": result.accepted,
+                "reason": reason,
+            },
+        }
+
+    def error_ack(self, message: object, reason: str) -> dict[str, object] | None:
+        if not isinstance(message, dict) or message.get("source") not in {"B", "C"}:
+            return None
+        state = self.repository.get_state()
+        seq = message.get("seq")
+        ack_seq = seq if isinstance(seq, int) and not isinstance(seq, bool) else -1
+        return {
+            "version": 1,
+            "type": "ack",
+            "source": "A",
+            "target": message["source"],
+            "session_id": state.session_id,
+            "seq": self.repository.next_server_seq(),
+            "step": state.step,
+            "sim_time_s": state.sim_time_s,
+            "payload": {"ack_seq": ack_seq, "accepted": False, "reason": reason},
+        }
+
+
+class _RequestHandler(socketserver.StreamRequestHandler):
+    server: "SimulatorTCPServer"
+
+    def handle(self) -> None:
+        peer: str | None = None
+        try:
+            while True:
+                frame = self.rfile.readline(self.server.max_frame_bytes + 1)
+                if not frame:
+                    break
+                if len(frame) > self.server.max_frame_bytes:
+                    if not frame.endswith(b"\n"):
+                        while True:
+                            remainder = self.rfile.readline(self.server.max_frame_bytes + 1)
+                            if not remainder or remainder.endswith(b"\n"):
+                                break
+                    self.server.repository.log("WARNING", "frame_rejected", "frame_too_large")
+                    continue
+                decoded: object = None
+                try:
+                    decoded = decode_frame(frame, self.server.max_frame_bytes)
+                    peer = str(decoded["source"])
+                    self.server.repository.mark_connection(peer, True, "message received")
+                    response = self.server.processor.process(decoded)
+                except ProtocolError as exc:
+                    self.server.repository.log("WARNING", "frame_rejected", str(exc))
+                    response = self.server.processor.error_ack(decoded, str(exc))
+                    if response is None:
+                        continue
+                self.wfile.write(encode_frame(response, self.server.max_frame_bytes))
+                self.wfile.flush()
+        finally:
+            if peer is not None:
+                self.server.repository.mark_connection(peer, False, "connection closed")
+
+
+class SimulatorTCPServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(self, address: tuple[str, int], repository: Repository, max_frame_bytes: int):
+        self.repository = repository
+        self.processor = MessageProcessor(repository)
+        self.max_frame_bytes = max_frame_bytes
+        super().__init__(address, _RequestHandler)
+
+
+def serve(repository: Repository, bind: str, port: int, max_frame_bytes: int) -> None:
+    with SimulatorTCPServer((bind, port), repository, max_frame_bytes) as server:
+        actual_host, actual_port = server.server_address
+        print(f"A simulator TCP server listening on {actual_host}:{actual_port}", flush=True)
+        server.serve_forever(poll_interval=0.2)

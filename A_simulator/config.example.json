@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "parameter_status": "example_unconfirmed",
+  "simulation": {
+    "start_s": 0.0,
+    "end_s": 10.0,
+    "step_s": 1.0,
+    "poll_interval_s": 1.0
+  },
+  "network": {
+    "server_bind": "0.0.0.0",
+    "server_port": 5000,
+    "max_frame_bytes": 4096
+  },
+  "wind_turbine": {
+    "rated_power_kw": 100.0,
+    "cut_in_speed_mps": 3.0,
+    "rated_speed_mps": 12.0,
+    "cut_out_speed_mps": 25.0,
+    "pitch_full_output_deg": 0.0,
+    "pitch_feather_deg": 90.0,
+    "ramp_up_kw_per_s": 40.0,
+    "ramp_down_kw_per_s": 60.0
+  },
+  "diesel_generator": {
+    "min_power_kw": 20.0,
+    "max_power_kw": 120.0,
+    "ramp_up_kw_per_s": 30.0,
+    "ramp_down_kw_per_s": 40.0
+  },
+  "initial_control": {
+    "wind_target_kw": 100.0,
+    "diesel_target_kw": 60.0,
+    "dispatch_wind_enable": true,
+    "controller_wind_enable": true,
+    "diesel_enable": true,
+    "pitch_target_deg": 0.0
+  },
+  "model_note": "All physical values are runnable examples, not confirmed course requirements. The basic pitch model linearly derates power. Wind operation currently requires both B and C enable permits."
+}
+
