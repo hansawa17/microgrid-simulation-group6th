@@ -16,12 +16,14 @@ source/target 为 A、B、C（C 指单片机）；session_id 为 A 仿真会话�
 | type | 方向 | payload 关键字段 |
 |---|---|---|
 | state_request | B/C → A | full: bool；首次会话字段可为 null |
-| state | A → B/C | sampled_at_utc、wind_speed_mps、load_power_kw、wind_actual_kw、diesel_actual_kw、wind_target_kw、pitch_actual_deg、wind_running、fault |
+| state | A → B/C | sampled_at_utc、wind_speed_mps、wind_available_kw、load_power_kw、wind_actual_kw、diesel_actual_kw、wind_target_kw、pitch_actual_deg、wind_running、fault |
 | dispatch | B → A | wind_target_kw、diesel_target_kw、wind_enable、diesel_enable |
 | wind_action | C → A | wind_enable、pitch_target_deg |
 | ack | A → B/C | ack_seq、accepted、reason |
 
 功率统一 kW，风速 m/s，桨距 deg；bool 使用 JSON true/false，不用字符串。字段名中的 actual/target 不能省略。模型相关合法区间从设备配置读取，不猜测额定值。
+
+`wind_available_kw` 表示 A 根据当前 `wind_speed_mps` 和已配置风机功率曲线计算的资源可用功率，单位 kW，为有限非负数并受风机额定功率限制。它不考虑 B 的 `wind_target_kw`、B/C 启停请求、桨距限功率或实际爬坡过程；因此不能用 `wind_actual_kw` 替代。B 用它约束可下发的风机目标，A 仍根据目标、启停、桨距和动态约束独立计算 `wind_actual_kw`。
 
 `sampled_at_utc` 为 A 读取系统授时并生成状态断面时的 UTC RFC 3339 时间；B/C 应原样保存，并另外记录本机 `received_at_utc`。控制顺序仍以 `session_id + step + seq` 为准，不使用三台电脑的墙钟时间排序。
 
@@ -36,4 +38,3 @@ ack.accepted 只说明指令通过校验并接收，不代表设备达到目标�
 
 样例见 messages.example.json：这是 JSON 数组形式的文档样例；实际发送要逐对象序列化并各加一个 LF，不发送整个数组。
 串口不直接套用本草案；帧头、长度与校验将在硬件确认后另立协议。
-
