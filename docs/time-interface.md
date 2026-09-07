@@ -79,6 +79,7 @@ step,sim_time_s,wind_speed_mps,load_power_kw
   "payload": {
     "sampled_at_utc": "2026-09-07T08:03:25.417Z",
     "wind_speed_mps": 8.2,
+    "wind_available_kw": 68.0,
     "load_power_kw": 76.0,
     "wind_actual_kw": 42.0,
     "diesel_actual_kw": 34.0,
@@ -143,10 +144,9 @@ GUI 刷新周期不属于控制周期，可以独立设置，但不得阻塞计�
 
 ## 9. 各模块实现清单
 
-- A（已完成）：扩展 `grid.db` 状态/历史结构和状态模型；统一读取一次 UTC 并写入 `state.payload.sampled_at_utc`；CSV 继续保存相对时间曲线。
+- A：`grid.db` 和状态模型已有 `wind_available_kw`；TCP `state.payload` 需按公共草案发布该字段。授时、`sampled_at_utc` 和 CSV 相对时间曲线已完成。
 - B：扩展本地状态模型、`ems.db` 状态/调度历史字段与 RFC 3339 时间格式校验。
 - C：确认 MCU 时间戳透传方式，扩展 `wind.db`，并在串口协议中记录映射。
 - 三方：组合联调前验证同一状态的四个关联字段完全一致，并测试暂停、恢复、系统校时、断线重连和场景重放。
 
 本规范不要求三台电脑共享 SQLite 文件；每个模块只操作自己的数据库，通过协议同步业务状态。
-
