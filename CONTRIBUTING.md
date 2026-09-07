@@ -4,23 +4,24 @@
 
 首次由仓库所有者在 GitHub 设置中邀请另外两人为协作者。本初始化不修改成员权限或分支保护。
 
-## 各自模块直接更新
+## 共同维护并直接更新
 
-三名成员直接在 `main` 中更新各自负责的项目目录，不再为模块内日常开发创建功能分支：
+三名成员直接在 `main` 中共同维护整个仓库，不再把 A/B/C 目录作为权限边界：
 
-- A 只更新 `A_simulator/` 及对应的 `tests/test_a_*.py`。
-- B 只更新 `B_dispatch/` 及对应的 `tests/test_b_*.py`。
-- C 只更新 `C_controller/` 及对应的 `tests/test_c_*.py`。
-- 不修改、移动或删除其他成员目录中的文件；发现必须跨目录修改时，先与相关成员确认。
+- A、B、C 的目录仍表示主要责任分工，便于说明个人工作和排查问题。
+- 任一成员及其 Agent 均可直接跨目录实现、修复、重构和补充测试，无需事先请求目录负责人授权。
+- 跨目录修改前应阅读对应模块 README 和公共协议；提交时列出影响目录、测试结果以及尚未验证的硬件范围。
+- 保留其他成员已有改动，不强推、不重置、不用整目录覆盖远端内容。
 
-提交前先同步最新 `main`，完成后只暂存自己负责的目录和测试：
+提交前先同步最新 `main`，完成后只暂存本次任务实际修改的文件：
 
 ```bash
 git switch main
 git pull --ff-only origin main
-# 修改并测试后，以 A 为例：
-git add A_simulator/ tests/test_a_*.py
-git commit -m "feat(a): add scenario loader"
+# 修改并测试后，交互式暂存本次文件，可包含多个模块：
+git add -p
+git diff --cached --check
+git commit -m "feat: update cross-module data flow"
 git push origin main
 ```
 
@@ -28,10 +29,10 @@ git push origin main
 
 ## 公共接口修改
 
-`common/`、`docs/` 和根目录文件不属于任一成员的独占目录。公共接口修改应先更新 common/protocol.md 和 docs/decisions.md，说明生产方、消费方、单位、兼容影响；同步样例与测试，并在 PR 中由相关成员确认后再合并。
+`common/`、`docs/` 和根目录文件同样由全组共同维护，无需因目录归属另行申请权限。公共接口修改必须同步更新 common/protocol.md 和 docs/decisions.md，说明生产方、消费方、单位、兼容影响，并同步样例与测试；提交后及时通知受影响成员，避免联调时使用不同协议版本。
 
 ## 给 Agent 的任务示例
 
-“先阅读 AGENTS.md 和 A_simulator/README.md，仅在 A_simulator/ 和对应的 tests/test_a_*.py 中实现 A 的场景加载器；不要修改 B/C；未确认的物理参数保持配置项；补测试，提交前说明验证结果。”
+“先阅读 AGENTS.md、相关模块 README 和公共协议；实现 A 的场景加载器，并按需要同步调整 B/C 或集成测试；未确认的物理参数保持配置项；提交前说明跨模块影响、测试结果和硬件验证范围。”
 
 真实姓名已用于任务分工，不猜测其他成员的 GitHub 用户名，不自动设置 CODEOWNERS。
