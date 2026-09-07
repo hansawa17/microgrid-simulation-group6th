@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS current_state (
     load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
     diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
     pitch_actual_deg REAL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
-    received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
+    sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 CREATE TABLE IF NOT EXISTS state_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, step INTEGER NOT NULL CHECK (step >= 0),
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS state_history (
     load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
     diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
     pitch_actual_deg REAL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
-    received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
+    sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 CREATE TABLE IF NOT EXISTS dispatch_commands (
     id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, step INTEGER NOT NULL CHECK (step >= 0),
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS event_log (
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class EMSRepository:
@@ -85,7 +85,7 @@ class EMSRepository:
     def initialize(self) -> None:
         with self.connection() as conn:
             conn.executescript(SCHEMA)
-            conn.execute("INSERT OR IGNORE INTO schema_meta(key,value) VALUES (?,?)", ("schema_version", "1"))
+            conn.execute("INSERT OR IGNORE INTO schema_meta(key,value) VALUES (?,?)", ("schema_version", "2"))
             conn.execute("INSERT OR IGNORE INTO ems_runtime_config(id,updated_at) VALUES (1,?)", (utc_now(),))
 
     def set_parameters(self, *, wind_min_kw: float, wind_max_kw: float, diesel_max_kw: float, reserve_kw: float = 10.0) -> None:
@@ -131,30 +131,29 @@ class EMSRepository:
 
     def save_state(self, state: Mapping[str, object]) -> None:
         required = ("session_id", "step", "sim_time_s", "wind_speed_mps", "load_power_kw", "wind_actual_kw",
-                    "diesel_actual_kw", "wind_target_kw", "wind_running", "fault", "received_at_utc", "received_age_s")
+                    "diesel_actual_kw", "wind_target_kw", "wind_running", "fault", "sampled_at_utc",
+                    "received_at_utc", "received_age_s")
         missing = [key for key in required if key not in state]
         if missing:
             raise ValueError(f"missing state fields: {', '.join(missing)}")
         values = tuple(state[key] for key in required)
         pitch = state.get("pitch_actual_deg")
-        # Keep the SQL column order and Python tuple order identical.  Pitch is
-        # inserted explicitly after wind_target_kw in both tables.
         db_values = values[:8] + (pitch,) + values[8:]
         with self.connection() as conn:
             conn.execute(
                 """INSERT INTO current_state(id,session_id,step,sim_time_s,wind_speed_mps,load_power_kw,wind_actual_kw,
-                   diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,received_at_utc,received_age_s)
-                   VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id,
+                   diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,sampled_at_utc,received_at_utc,received_age_s)
+                   VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id,
                    step=excluded.step,sim_time_s=excluded.sim_time_s,wind_speed_mps=excluded.wind_speed_mps,
                    load_power_kw=excluded.load_power_kw,wind_actual_kw=excluded.wind_actual_kw,diesel_actual_kw=excluded.diesel_actual_kw,
                    wind_target_kw=excluded.wind_target_kw,pitch_actual_deg=excluded.pitch_actual_deg,wind_running=excluded.wind_running,
-                   fault=excluded.fault,received_at_utc=excluded.received_at_utc,received_age_s=excluded.received_age_s""",
+                   fault=excluded.fault,sampled_at_utc=excluded.sampled_at_utc,received_at_utc=excluded.received_at_utc,received_age_s=excluded.received_age_s""",
                 db_values,
             )
             conn.execute(
                 """INSERT INTO state_history(session_id,step,sim_time_s,wind_speed_mps,load_power_kw,wind_actual_kw,
-                   diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,received_at_utc,received_age_s)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,sampled_at_utc,received_at_utc,received_age_s)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 db_values,
             )
 
