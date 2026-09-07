@@ -1,9 +1,9 @@
 """Tests for the local EMS SQLite repository."""
 
-import tempfile
-from pathlib import Path
 import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 
 from B_dispatch.repository import EMSRepository
 
@@ -14,11 +14,14 @@ class RepositoryTests(unittest.TestCase):
             db = Path(tmp) / "ems.db"
             repo = EMSRepository(db)
             repo.initialize()
-            with sqlite3.connect(db) as conn:
+            conn = sqlite3.connect(db)
+            try:
                 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 self.assertTrue({"schema_meta", "dispatch_parameters", "ems_runtime_config", "current_state",
                                  "state_history", "dispatch_commands", "dispatch_evaluation", "event_log"} <= tables)
                 self.assertIsNone(conn.execute("SELECT 1 FROM dispatch_parameters WHERE id=1").fetchone())
+            finally:
+                conn.close()
 
     def test_parameters_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -41,9 +44,17 @@ class RepositoryTests(unittest.TestCase):
                 "fault": False, "received_at_utc": "2026-09-07T03:00:00Z", "received_age_s": 0.1,
             }
             repo.save_state(state)
-            with sqlite3.connect(repo.db_path) as conn:
+            current = repo.get_current_state()
+            self.assertEqual(current["pitch_actual_deg"], 2.0)
+            self.assertEqual(current["wind_running"], 1)
+            conn = sqlite3.connect(repo.db_path)
+            try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM current_state").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM state_history").fetchone()[0], 1)
+                history = conn.execute("SELECT pitch_actual_deg, wind_running, fault FROM state_history").fetchone()
+                self.assertEqual(history, (2.0, 1, 0))
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":
