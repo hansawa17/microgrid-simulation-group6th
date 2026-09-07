@@ -1,9 +1,11 @@
-"""B EMS dispatch package: state/parameter driven power-target calculation."""
+"""B EMS dispatch package."""
 
-from .dispatch import DispatchConfig, DispatchResult, GridState, calculate_dispatch
+from .dispatch import DispatchError, calculate_dispatch
+from .models import DispatchConfig, DispatchResult, GridState
 
 __all__ = [
     "DispatchConfig",
+    "DispatchError",
     "DispatchResult",
     "GridState",
     "calculate_dispatch",
