@@ -2,6 +2,7 @@
 
 import unittest
 
+from B_dispatch.dispatch import DispatchError
 from B_dispatch.models import DispatchConfig, GridState
 from B_dispatch.operator_core import EMSCore
 from B_dispatch.runtime import EMSRuntime, RuntimeConfig
@@ -19,7 +20,7 @@ class FakeClock:
 
 
 class RuntimeTests(unittest.TestCase):
-    def _state(self, step: int) -> GridState:
+    def _state(self, step: int, *, received_age_s: float = 0.1) -> GridState:
         return GridState(
             session_id="session-1",
             step=step,
@@ -29,7 +30,7 @@ class RuntimeTests(unittest.TestCase):
             wind_actual_kw=50.0,
             diesel_actual_kw=0.0,
             wind_running=True,
-            received_age_s=0.1,
+            received_age_s=received_age_s,
         )
 
     def test_first_poll_and_dispatch_happen_immediately(self):
@@ -115,6 +116,75 @@ class RuntimeTests(unittest.TestCase):
 
         self.assertEqual(len(decisions), 2)
         self.assertEqual(decisions[-1].state.step, 2)
+
+    def test_stale_state_emits_zero_output_safe_fallback(self):
+        clock = FakeClock()
+        decisions = []
+        errors = []
+        runtime = EMSRuntime(
+            EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0, max_state_age_s=1.0)),
+            lambda: self._state(1, received_age_s=2.0),
+            decisions.append,
+            error_sink=errors.append,
+            clock=clock,
+        )
+
+        decision = runtime.run_cycle()
+
+        self.assertIsNotNone(decision)
+        self.assertEqual(decision.result.wind_target_kw, 0.0)
+        self.assertEqual(decision.result.diesel_target_kw, 0.0)
+        self.assertFalse(decision.result.wind_enable)
+        self.assertFalse(decision.result.diesel_enable)
+        self.assertEqual(decision.result.target_unserved_kw, 80.0)
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], DispatchError)
+
+    def test_dispatch_error_can_be_configured_not_to_emit_fallback(self):
+        clock = FakeClock()
+        decisions = []
+        runtime = EMSRuntime(
+            EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0, max_state_age_s=1.0)),
+            lambda: self._state(1, received_age_s=2.0),
+            decisions.append,
+            RuntimeConfig(safe_fallback_on_dispatch_error=False),
+            clock=clock,
+        )
+
+        decision = runtime.run_cycle()
+
+        self.assertIsNone(decision)
+        self.assertEqual(decisions, [])
+
+    def test_provider_error_clears_cached_state(self):
+        clock = FakeClock()
+        decisions = []
+        errors = []
+        calls = [0]
+
+        def provider():
+            calls[0] += 1
+            if calls[0] == 1:
+                return self._state(1)
+            raise RuntimeError("state source unavailable")
+
+        runtime = EMSRuntime(
+            EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)),
+            provider,
+            decisions.append,
+            error_sink=errors.append,
+            clock=clock,
+        )
+
+        runtime.run_cycle(0.0)
+        clock.advance(1.0)
+        decision = runtime.run_cycle()
+
+        self.assertIsNone(decision)
+        self.assertIsNone(runtime.latest_state)
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], RuntimeError)
 
     def test_invalid_runtime_config_is_rejected(self):
         with self.assertRaises(ValueError):
