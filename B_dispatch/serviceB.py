@@ -10,11 +10,7 @@ from .tcpB import EMSTcpClient
 
 
 class EMSServiceB:
-    """Compose B's transport, persistence and closed-loop decision layers.
-
-    The service deliberately keeps A/C transport semantics out of the decision core:
-    A remains the owner of actual grid state and C remains the owner of wind protection.
-    """
+    """Compose B's transport, persistence and closed-loop decision layers."""
 
     def __init__(
         self,
@@ -32,7 +28,7 @@ class EMSServiceB:
             core=core,
             state_provider=self._poll_state,
             decision_sink=self._send_decision,
-            runtime_config=runtime_config,
+            config=runtime_config,
             error_sink=error_sink or self._record_error,
         )
 
@@ -54,13 +50,8 @@ class EMSServiceB:
         self.runtime.run(max_cycles=max_cycles)
 
     def run_cycle(self) -> EMSDecision | None:
-        """Run one runtime cycle and return the decision if one was emitted."""
-        before = self.runtime.latest_state
-        self.runtime.run_cycle()
-        state = self.runtime.latest_state
-        if state is None or state is before:
-            return None
-        return EMSDecision(state=state, result=self.core.decide(state).result)
+        """Run one runtime cycle and return the decision emitted by EMSRuntime."""
+        return self.runtime.run_cycle()
 
     def _poll_state(self):
         state = self.client.poll_state()
