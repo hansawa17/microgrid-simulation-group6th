@@ -134,6 +134,9 @@ class EMSTcpClient:
         self.framer = JsonLineFramer()
         self._next_seq = 0
         self._last_incoming_seq: int | None = None
+        self._pending_state_request_seq: int | None = None
+        self._pending_ack_seq: int | None = None
+        self._received_acks: dict[int, Ack] = {}
         self.session_id: str | None = None
         self.latest_state: GridState | None = None
         self.needs_full_sync = True
@@ -148,6 +151,9 @@ class EMSTcpClient:
         self.sock.settimeout(self.timeout_s)
         self.framer = JsonLineFramer()
         self._last_incoming_seq = None
+        self._pending_state_request_seq = None
+        self._pending_ack_seq = None
+        self._received_acks.clear()
         self.needs_full_sync = True
         self.request_state(full=True)
 
@@ -157,6 +163,9 @@ class EMSTcpClient:
                 self.sock.close()
             finally:
                 self.sock = None
+        self._pending_state_request_seq = None
+        self._pending_ack_seq = None
+        self._received_acks.clear()
 
     def _send(self, message: dict[str, Any]) -> None:
         if self.sock is None:
@@ -191,6 +200,8 @@ class EMSTcpClient:
         }
 
     def request_state(self, *, full: bool) -> int:
+        if self._pending_state_request_seq is not None:
+            return self._pending_state_request_seq
         state = self.latest_state
         message = self._envelope(
             "state_request",
@@ -200,18 +211,25 @@ class EMSTcpClient:
             payload={"full": full},
         )
         self._send(message)
+        self._pending_state_request_seq = int(message["seq"])
         return int(message["seq"])
 
     def poll_state(self) -> GridState | None:
-        """Request state and wait for one A response; timeout is propagated."""
+        """Keep at most one outstanding state request and wait until a state arrives."""
         self.request_state(full=self.needs_full_sync)
-        self.receive_once()
+        while self.latest_state is None or self._pending_state_request_seq is not None:
+            results = self.receive_once()
+            for result in results:
+                if isinstance(result, GridState):
+                    return result
         return self.latest_state
 
     def send_dispatch(self, decision: EMSDecision) -> int:
         state = decision.state
         if self.session_id is not None and state.session_id != self.session_id:
             raise ProtocolError("dispatch state belongs to an old or different session")
+        if self._pending_ack_seq is not None:
+            raise ProtocolError("another dispatch ACK is still pending")
         message = self._envelope(
             "dispatch",
             session_id=state.session_id,
@@ -224,8 +242,14 @@ class EMSTcpClient:
                 "diesel_enable": decision.result.diesel_enable,
             },
         )
+        seq = int(message["seq"])
         self._send(message)
-        return int(message["seq"])
+        self._pending_ack_seq = seq
+        while self._pending_ack_seq is not None:
+            results = self.receive_once()
+            if any(isinstance(result, Ack) and result.ack_seq == seq for result in results):
+                break
+        return seq
 
     def receive_once(self) -> list[GridState | Ack]:
         if self.sock is None:
@@ -256,17 +280,20 @@ class EMSTcpClient:
                 if self.session_id is not None and state.session_id != self.session_id:
                     self.latest_state = None
                     self.session_id = state.session_id
+                    self._pending_state_request_seq = None
                     self.needs_full_sync = True
                     self.request_state(full=True)
                     continue
                 if self.latest_state is not None and state.session_id == self.latest_state.session_id and state.step < self.latest_state.step:
                     self.latest_state = None
+                    self._pending_state_request_seq = None
                     self.needs_full_sync = True
                     self.request_state(full=True)
                     continue
                 self.session_id = state.session_id
                 self.latest_state = state
                 self.needs_full_sync = False
+                self._pending_state_request_seq = None
                 results.append(state)
             elif message["type"] == "ack":
                 payload = message["payload"]
@@ -275,7 +302,11 @@ class EMSTcpClient:
                     raise ProtocolError("invalid ack_seq")
                 if not isinstance(payload.get("accepted"), bool) or not isinstance(payload.get("reason"), str):
                     raise ProtocolError("invalid ack payload")
-                results.append(Ack(ack_seq, payload["accepted"], payload["reason"]))
+                ack = Ack(ack_seq, payload["accepted"], payload["reason"])
+                self._received_acks[ack_seq] = ack
+                if self._pending_ack_seq == ack_seq:
+                    self._pending_ack_seq = None
+                results.append(ack)
             else:
                 raise ProtocolError(f"unsupported A→B message type: {message['type']}")
         return results
