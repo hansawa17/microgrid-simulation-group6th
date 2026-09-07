@@ -1,0 +1,6 @@
+[
+  {"version":1,"type":"state","source":"A","target":"B","session_id":"demo-001","seq":1,"step":10,"sim_time_s":10.0,"payload":{"wind_speed_mps":8.5,"load_power_kw":100.0,"wind_actual_kw":58.0,"diesel_actual_kw":42.0,"wind_target_kw":60.0,"pitch_actual_deg":5.0,"wind_running":true,"fault":false}},
+  {"version":1,"type":"dispatch","source":"B","target":"A","session_id":"demo-001","seq":1,"step":10,"sim_time_s":10.0,"payload":{"wind_target_kw":60.0,"diesel_target_kw":40.0,"wind_enable":true,"diesel_enable":true}},
+  {"version":1,"type":"wind_action","source":"C","target":"A","session_id":"demo-001","seq":1,"step":10,"sim_time_s":10.0,"payload":{"wind_enable":true,"pitch_target_deg":5.0}},
+  {"version":1,"type":"ack","source":"A","target":"C","session_id":"demo-001","seq":2,"step":10,"sim_time_s":10.0,"payload":{"ack_seq":1,"accepted":true,"reason":"accepted"}}
+]

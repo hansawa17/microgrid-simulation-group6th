@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "status": "draft",
+  "network": {
+    "server_bind": "0.0.0.0",
+    "server_host": "127.0.0.1",
+    "server_port": 5000,
+    "max_frame_bytes": 4096
+  },
+  "timing": {
+    "simulation_step_s": 1.0,
+    "b_poll_s": 1.0,
+    "b_dispatch_s": 5.0,
+    "c_control_s": null,
+    "command_timeout_s": null
+  },
+  "databases": {
+    "A": "data/runtime/grid.db",
+    "B": "data/runtime/ems.db",
+    "C_host": "data/runtime/wind.db"
+  },
+  "control": {"b_closed_loop": true, "c_closed_loop": false},
+  "note": "null 项和物理参数需确认后补齐；未确认不得启用闭环。"
+}
