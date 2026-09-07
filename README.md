@@ -191,6 +191,7 @@ python -m unittest discover -s tests -v
 - [通信字段、方向和帧边界](common/protocol.md)
 - [统一时间接口](docs/time-interface.md)
 - [网络联调](docs/network.md)
+- [A/B/C 通信方案草案](docs/tcp-interface-design.md)
 - [数据库职责](docs/database.md)
 - [实施顺序与待确认项](docs/decisions.md)
 - [验收清单](docs/acceptance.md)
