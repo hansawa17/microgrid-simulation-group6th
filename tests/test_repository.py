@@ -20,6 +20,7 @@ class RepositoryTests(unittest.TestCase):
                 self.assertTrue({"schema_meta", "dispatch_parameters", "ems_runtime_config", "current_state",
                                  "state_history", "dispatch_commands", "dispatch_evaluation", "event_log"} <= tables)
                 self.assertIsNone(conn.execute("SELECT 1 FROM dispatch_parameters WHERE id=1").fetchone())
+                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "1")
             finally:
                 conn.close()
 
@@ -29,9 +30,42 @@ class RepositoryTests(unittest.TestCase):
             repo.initialize()
             repo.set_parameters(wind_min_kw=0.0, wind_max_kw=80.0, diesel_max_kw=100.0, reserve_kw=10.0)
             row = repo.get_parameters()
+            self.assertEqual(row["wind_min_kw"], 0.0)
             self.assertEqual(row["wind_max_kw"], 80.0)
             self.assertEqual(row["diesel_max_kw"], 100.0)
             self.assertEqual(row["reserve_kw"], 10.0)
+
+    def test_invalid_parameters_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = EMSRepository(Path(tmp) / "ems.db")
+            repo.initialize()
+            with self.assertRaises(ValueError):
+                repo.set_parameters(wind_min_kw=20.0, wind_max_kw=10.0, diesel_max_kw=100.0)
+            with self.assertRaises(ValueError):
+                repo.set_parameters(wind_min_kw=0.0, wind_max_kw=80.0, diesel_max_kw=5.0, reserve_kw=10.0)
+
+    def test_runtime_config_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = EMSRepository(Path(tmp) / "ems.db")
+            repo.initialize()
+            repo.set_runtime_config(poll_period_s=1.0, dispatch_period_s=5.0,
+                                    closed_loop=False, command_timeout_s=3.0)
+            row = repo.get_runtime_config()
+            self.assertEqual(row["poll_period_s"], 1.0)
+            self.assertEqual(row["dispatch_period_s"], 5.0)
+            self.assertEqual(row["closed_loop"], 0)
+            self.assertEqual(row["command_timeout_s"], 3.0)
+
+    def test_runtime_config_rejects_non_positive_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = EMSRepository(Path(tmp) / "ems.db")
+            repo.initialize()
+            with self.assertRaises(ValueError):
+                repo.set_runtime_config(poll_period_s=0.0)
+            with self.assertRaises(ValueError):
+                repo.set_runtime_config(dispatch_period_s=-1.0)
+            with self.assertRaises(ValueError):
+                repo.set_runtime_config(command_timeout_s=0.0)
 
     def test_state_and_history_are_written_together(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -55,6 +89,51 @@ class RepositoryTests(unittest.TestCase):
                 self.assertEqual(history, (2.0, 1, 0))
             finally:
                 conn.close()
+
+    def test_command_evaluation_and_log_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = EMSRepository(Path(tmp) / "ems.db")
+            repo.initialize()
+            command_id = repo.record_command({
+                "session_id": "s1", "step": 2, "sim_time_s": 2.0, "seq": 7,
+                "wind_target_kw": 40.0, "diesel_target_kw": 30.0,
+                "wind_enable": True, "diesel_enable": True,
+                "status": "generated", "reason": "wind-first",
+            })
+            self.assertGreater(command_id, 0)
+            evaluation_id = repo.record_evaluation(
+                command_id=command_id,
+                target_unserved_kw=0.0,
+                target_surplus_kw=0.0,
+                actual_unserved_kw=2.0,
+                actual_surplus_kw=0.0,
+            )
+            self.assertGreater(evaluation_id, 0)
+            repo.record_log("INFO", "dispatch", "command generated", session_id="s1", step=2)
+
+            conn = sqlite3.connect(repo.db_path)
+            try:
+                command = conn.execute(
+                    "SELECT session_id, seq, wind_target_kw, diesel_target_kw, wind_enable, diesel_enable FROM dispatch_commands"
+                ).fetchone()
+                self.assertEqual(command, ("s1", 7, 40.0, 30.0, 1, 1))
+                evaluation = conn.execute(
+                    "SELECT command_id, target_unserved_kw, actual_unserved_kw FROM dispatch_evaluation"
+                ).fetchone()
+                self.assertEqual(evaluation, (command_id, 0.0, 2.0))
+                log = conn.execute(
+                    "SELECT level, event_type, session_id, step FROM event_log"
+                ).fetchone()
+                self.assertEqual(log, ("INFO", "dispatch", "s1", 2))
+            finally:
+                conn.close()
+
+    def test_missing_state_field_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = EMSRepository(Path(tmp) / "ems.db")
+            repo.initialize()
+            with self.assertRaises(ValueError):
+                repo.save_state({"session_id": "s1"})
 
 
 if __name__ == "__main__":
