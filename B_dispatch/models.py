@@ -1,8 +1,4 @@
-"""Data models shared by the B/EMS dispatch layer.
-
-B models describe inputs received from A and power targets produced by B.
-Actual values remain observations owned by A; targets are control requests.
-"""
+"""Data models shared by the B/EMS dispatch layer."""
 
 from __future__ import annotations
 
@@ -13,8 +9,8 @@ from dataclasses import dataclass
 class GridState:
     """Snapshot received from A.
 
-    Power values are kW, wind speed is m/s, simulation time is seconds, and
-    ``received_age_s`` is wall-clock age measured by B.
+    ``sampled_at_utc`` is A's state-sampling time; ``received_at_utc`` is B's
+    local receive time. Neither is used to order control commands.
     """
 
     session_id: str
@@ -27,6 +23,10 @@ class GridState:
     wind_running: bool
     fault: bool = False
     received_age_s: float = 0.0
+    sampled_at_utc: str = ""
+    received_at_utc: str = ""
+    wind_target_kw: float = 0.0
+    pitch_actual_deg: float | None = None
 
 
 @dataclass(frozen=True)
@@ -46,8 +46,6 @@ class DispatchConfig:
 
     @property
     def diesel_dispatch_max_kw(self) -> float:
-        """Maximum diesel target available to normal B dispatch."""
-
         return self.diesel_max_kw - self.reserve_kw
 
 
