@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS current_state (
     wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0), diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0),
     wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0), pitch_actual_deg REAL,
     wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
-    received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
+    sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS state_history (
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS state_history (
     wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0), diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0),
     wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0), pitch_actual_deg REAL,
     wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
-    received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
+    sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS dispatch_commands (
