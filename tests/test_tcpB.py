@@ -6,7 +6,7 @@ import unittest
 
 from B_dispatch.models import DispatchConfig, GridState
 from B_dispatch.operator_core import EMSCore
-from B_dispatch.tcpB import Ack, EMSTcpClient, JsonLineFramer, ProtocolError, encode_frame
+from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, JsonLineFramer, ProtocolError, encode_frame
 
 
 class FakeSocket:
@@ -31,15 +31,18 @@ class FakeSocket:
         self.closed = True
 
 
-def state_message(step=5, session="s1", seq=10):
+def state_message(step=5, session="s1", seq=10, **overrides):
+    payload = {
+        "sampled_at_utc": "2026-09-07T08:03:25.417Z", "wind_speed_mps": 8.2,
+        "wind_available_kw": 70.0, "wind_operating_limit_kw": 60.0,
+        "load_power_kw": 76.0, "wind_actual_kw": 0.0, "diesel_actual_kw": 34.0,
+        "wind_target_kw": 45.0, "pitch_actual_deg": 0.0, "wind_running": True, "fault": False,
+    }
+    payload.update(overrides)
     return {
         "version": 1, "type": "state", "source": "A", "target": "B",
         "session_id": session, "seq": seq, "step": step, "sim_time_s": float(step),
-        "payload": {
-            "sampled_at_utc": "2026-09-07T08:03:25.417Z", "wind_speed_mps": 8.2,
-            "load_power_kw": 76.0, "wind_actual_kw": 42.0, "diesel_actual_kw": 34.0,
-            "wind_target_kw": 45.0, "pitch_actual_deg": 0.0, "wind_running": True, "fault": False,
-        },
+        "payload": payload,
     }
 
 
@@ -49,6 +52,15 @@ def ack_message(ack_seq, seq=20, accepted=True, reason="accepted"):
         "session_id": "s1", "seq": seq, "step": 5, "sim_time_s": 5.0,
         "payload": {"ack_seq": ack_seq, "accepted": accepted, "reason": reason},
     }
+
+
+def ready_state():
+    return GridState(
+        session_id="s1", step=5, sim_time_s=5.0, wind_speed_mps=8.0,
+        wind_available_kw=70.0, wind_operating_limit_kw=60.0,
+        load_power_kw=60.0, wind_actual_kw=0.0, diesel_actual_kw=0.0,
+        wind_running=True, sampled_at_utc="2026-09-07T08:03:25.417Z",
+    )
 
 
 class TcpBTests(unittest.TestCase):
@@ -87,15 +99,30 @@ class TcpBTests(unittest.TestCase):
         self.assertEqual(state.step, 5)
         self.assertEqual(len(requests), 1)
 
-    def test_client_parses_state_and_keeps_both_times(self):
+    def test_client_parses_all_current_state_fields_and_keeps_both_times(self):
         fake = FakeSocket()
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
         client.connect()
         result = client.receive(encode_frame(state_message()))
         state = result[0]
+        self.assertEqual(state.wind_available_kw, 70.0)
+        self.assertEqual(state.wind_operating_limit_kw, 60.0)
+        self.assertEqual(state.wind_actual_kw, 0.0)
         self.assertEqual(state.sampled_at_utc, "2026-09-07T08:03:25.417Z")
         self.assertTrue(state.received_at_utc.endswith("Z"))
         self.assertNotEqual(state.sampled_at_utc, state.received_at_utc)
+
+    def test_state_rejects_operating_limit_above_available(self):
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: FakeSocket())
+        client.connect()
+        with self.assertRaises(ProtocolError):
+            client.receive(encode_frame(state_message(wind_operating_limit_kw=71.0)))
+
+    def test_state_rejects_invalid_timestamp(self):
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: FakeSocket())
+        client.connect()
+        with self.assertRaises(ProtocolError):
+            client.receive(encode_frame(state_message(sampled_at_utc="not-a-timestamp")))
 
     def test_duplicate_or_old_sequence_is_ignored(self):
         fake = FakeSocket()
@@ -121,31 +148,51 @@ class TcpBTests(unittest.TestCase):
         fake = FakeSocket()
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
         client.connect()
-        state = GridState(session_id="s1", step=5, sim_time_s=5.0, wind_speed_mps=8.0,
-                          load_power_kw=60.0, wind_actual_kw=40.0, diesel_actual_kw=0.0,
-                          wind_running=True, sampled_at_utc="2026-09-07T08:03:25.417Z")
+        client.receive(encode_frame(state_message()))
+        state = ready_state()
         decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(state)
         dispatch_seq = client._next_seq
         fake.recv_queue.append(encode_frame(ack_message(dispatch_seq)))
         result = client.send_dispatch(decision)
         self.assertEqual(result, dispatch_seq)
         self.assertIsNone(client._pending_ack_seq)
-        self.assertIsInstance(client._received_acks[dispatch_seq], Ack)
+        self.assertEqual(client.get_ack(dispatch_seq), Ack(dispatch_seq, True, "accepted"))
+
+    def test_rejected_ack_is_retained_as_rejection(self):
+        fake = FakeSocket()
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
+        client.connect()
+        client.receive(encode_frame(state_message()))
+        decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(ready_state())
+        dispatch_seq = client._next_seq
+        fake.recv_queue.append(encode_frame(ack_message(dispatch_seq, accepted=False, reason="stale command")))
+        client.send_dispatch(decision)
+        self.assertEqual(client.get_ack(dispatch_seq), Ack(dispatch_seq, False, "stale command"))
 
     def test_dispatch_contains_only_allowed_b_targets(self):
         fake = FakeSocket()
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
         client.connect()
-        state = GridState(session_id="s1", step=5, sim_time_s=5.0, wind_speed_mps=8.0,
-                          load_power_kw=60.0, wind_actual_kw=40.0, diesel_actual_kw=0.0,
-                          wind_running=True, sampled_at_utc="2026-09-07T08:03:25.417Z")
-        decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(state)
+        client.receive(encode_frame(state_message()))
+        decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(ready_state())
         dispatch_seq = client._next_seq
         fake.recv_queue.append(encode_frame(ack_message(dispatch_seq)))
         client.send_dispatch(decision)
         message = json.loads(fake.sent[-1])
         self.assertEqual(set(message["payload"]), {"wind_target_kw", "diesel_target_kw", "wind_enable", "diesel_enable"})
         self.assertNotIn("pitch_target_deg", message["payload"])
+
+    def test_dispatch_timeout_marks_delivery_unknown(self):
+        fake = FakeSocket()
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake, timeout_s=0.1)
+        client.connect()
+        client.receive(encode_frame(state_message()))
+        decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(ready_state())
+        with self.assertRaises(DispatchDeliveryUnknown) as ctx:
+            client.send_dispatch(decision)
+        self.assertEqual(ctx.exception.seq, 1)
+        self.assertFalse(client.connected)
+        self.assertEqual(client._uncertain_dispatch_seq, 1)
 
     def test_receive_once_timeout_is_not_silently_converted_to_state(self):
         class TimeoutSocket(FakeSocket):
