@@ -17,13 +17,18 @@ class RepositoryTests(unittest.TestCase):
             conn = sqlite3.connect(db)
             try:
                 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                self.assertTrue({"schema_meta", "dispatch_parameters", "ems_runtime_config", "current_state",
+                self.assertTrue({"schema_meta", "physical_parameters", "dispatch_parameters", "ems_runtime_config", "current_state",
                                  "state_history", "dispatch_commands", "dispatch_evaluation", "event_log"} <= tables)
+                physical = conn.execute("SELECT wind_rated_kw, wind_cut_in_mps, wind_rated_speed_mps, wind_cut_out_mps,
+                    pitch_min_deg, pitch_max_deg, wind_ramp_up_kw_s, wind_ramp_down_kw_s,
+                    diesel_min_kw, diesel_max_kw, diesel_ramp_up_kw_s, diesel_ramp_down_kw_s
+                    FROM physical_parameters WHERE id=1").fetchone()
+                self.assertEqual(physical, (100.0, 3.0, 12.0, 25.0, 0.0, 90.0, 40.0, 60.0, 20.0, 120.0, 30.0, 40.0))
                 params = conn.execute("SELECT wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw FROM dispatch_parameters WHERE id=1").fetchone()
                 self.assertEqual(params, (0.0, 100.0, 120.0, 10.0))
                 runtime = conn.execute("SELECT poll_period_s, dispatch_period_s, closed_loop, command_timeout_s FROM ems_runtime_config WHERE id=1").fetchone()
                 self.assertEqual(runtime, (1.0, 5.0, 1, 3.0))
-                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "3")
+                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "4")
                 state_columns = {row[1] for row in conn.execute("PRAGMA table_info(current_state)")}
                 self.assertTrue({"wind_available_kw", "wind_operating_limit_kw"} <= state_columns)
                 command_columns = {row[1] for row in conn.execute("PRAGMA table_info(dispatch_commands)")}
@@ -31,16 +36,22 @@ class RepositoryTests(unittest.TestCase):
             finally:
                 conn.close()
 
-    def test_parameters_round_trip(self):
+    def test_parameter_baseline_is_fixed(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = EMSRepository(Path(tmp) / "ems.db")
             repo.initialize()
-            repo.set_parameters(wind_min_kw=0.0, wind_max_kw=80.0, diesel_max_kw=100.0, reserve_kw=10.0)
+            repo.set_parameters(wind_min_kw=0.0, wind_max_kw=100.0, diesel_max_kw=120.0, reserve_kw=10.0)
             row = repo.get_parameters()
-            self.assertEqual(row["wind_min_kw"], 0.0)
-            self.assertEqual(row["wind_max_kw"], 80.0)
-            self.assertEqual(row["diesel_max_kw"], 100.0)
-            self.assertEqual(row["reserve_kw"], 10.0)
+            self.assertEqual(tuple(row[k] for k in ("wind_min_kw", "wind_max_kw", "diesel_max_kw", "reserve_kw")),
+                             (0.0, 100.0, 120.0, 10.0))
+            with self.assertRaises(ValueError):
+                repo.set_parameters(wind_min_kw=0.0, wind_max_kw=80.0, diesel_max_kw=100.0, reserve_kw=10.0)
+            physical = repo.get_physical_parameters()
+            self.assertEqual(physical["wind_rated_kw"], 100.0)
+            self.assertEqual(physical["wind_cut_in_mps"], 3.0)
+            self.assertEqual(physical["wind_cut_out_mps"], 25.0)
+            self.assertEqual(physical["diesel_min_kw"], 20.0)
+            self.assertEqual(physical["diesel_max_kw"], 120.0)
 
     def test_invalid_parameters_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -51,17 +62,19 @@ class RepositoryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 repo.set_parameters(wind_min_kw=0.0, wind_max_kw=80.0, diesel_max_kw=5.0, reserve_kw=10.0)
 
-    def test_runtime_config_round_trip(self):
+    def test_runtime_config_is_fixed(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = EMSRepository(Path(tmp) / "ems.db")
             repo.initialize()
             repo.set_runtime_config(poll_period_s=1.0, dispatch_period_s=5.0,
-                                    closed_loop=False, command_timeout_s=3.0)
+                                    closed_loop=True, command_timeout_s=3.0)
             row = repo.get_runtime_config()
-            self.assertEqual(row["poll_period_s"], 1.0)
-            self.assertEqual(row["dispatch_period_s"], 5.0)
-            self.assertEqual(row["closed_loop"], 0)
-            self.assertEqual(row["command_timeout_s"], 3.0)
+            self.assertEqual((row["poll_period_s"], row["dispatch_period_s"], row["closed_loop"], row["command_timeout_s"]),
+                             (1.0, 5.0, 1, 3.0))
+            with self.assertRaises(ValueError):
+                repo.set_runtime_config(poll_period_s=2.0)
+            with self.assertRaises(ValueError):
+                repo.set_runtime_config(closed_loop=False)
 
     def test_runtime_config_rejects_non_positive_values(self):
         with tempfile.TemporaryDirectory() as tmp:
