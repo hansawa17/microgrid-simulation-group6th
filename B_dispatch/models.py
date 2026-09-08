@@ -7,16 +7,20 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class GridState:
-    """Snapshot received from A.
+    """Snapshot received from A according to the current common TCP protocol.
 
-    ``sampled_at_utc`` is A's state-sampling time; ``received_at_utc`` is B's
-    local receive time. Neither is used to order control commands.
+    ``wind_available_kw`` describes wind-resource capability, while
+    ``wind_operating_limit_kw`` is the current steady-state operating limit
+    after C/device constraints. ``wind_actual_kw`` is the simulated result and
+    must never be used as the capability input for B dispatch.
     """
 
     session_id: str
     step: int
     sim_time_s: float
     wind_speed_mps: float
+    wind_available_kw: float
+    wind_operating_limit_kw: float
     load_power_kw: float
     wind_actual_kw: float
     diesel_actual_kw: float
