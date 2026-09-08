@@ -70,17 +70,12 @@ WIND_FIELDS = [
     "cycle",
     "wind_speed_mps",
     "wind_available_kw",
+    "wind_operating_limit_kw",
     "wind_target_kw",
     "wind_actual_kw",
     "wind_running",
     "pitch_target_deg",
     "control_mode",
-]
-
-# 本地 mock 在串口 8 字段基础上额外计算的字段：wind_operating_limit_kw。
-# 该字段由 C 根据可用功率与运行许可计算，再经 A 存储/转发给 B；真实 MCU 尚未上送。
-WIND_EXTRA_FIELDS = [
-    "wind_operating_limit_kw",
 ]
 
 # 参数标签 / 单位（GUI 表单与历史显示用）

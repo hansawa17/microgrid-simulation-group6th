@@ -185,7 +185,7 @@ class Database:
                 cur.execute(
                     "INSERT INTO device (device_id, device_name, device_type, model, location, rated_power, create_time, update_time) "
                     "VALUES (?,?,?,?,?,?,?,?)",
-                    (1, "WT001", "Wind Turbine", "WT-100kW", "南极考察站", 100.0, ts, ts),
+                    (1, "WT001", "Wind Turbine", "SG-1.0MW", "南极考察站", 1000.0, ts, ts),
                 )
             cur.execute("SELECT COUNT(*) FROM parameter")
             if cur.fetchone()[0] == 0:
@@ -244,7 +244,7 @@ class Database:
     #  遥测 / 控制历史
     # ------------------------------------------------------------------ #
     def insert_telemetry(self, data, communication_status=1):
-        """插入一条遥测。data 含对齐仓库命名的字段（见 config.WIND_FIELDS / WIND_EXTRA_FIELDS）。"""
+        """插入一条遥测。data 含对齐仓库命名的字段（见 config.WIND_FIELDS）。"""
         with self._lock:
             self._conn.execute(
                 "INSERT INTO telemetry (device_id, cycle, timestamp, wind_speed_mps, wind_available_kw, "

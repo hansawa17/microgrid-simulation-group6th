@@ -50,15 +50,22 @@ C_controller/
 - 约束 `0 <= wind_operating_limit_kw <= wind_available_kw <= wind_rated_kw` 已落地。
 - `wind.db` 相应列改名并新增 `wind_operating_limit_kw`，旧库首次启动自动迁移。
 
+### 2026-09-08 · STM32 Wi-Fi/TCP 客户端（ESP8266-01S，联调）
+
+- 新增 `esp8266.c`（AT 驱动，USART1）与 `wifi_client.c`（JSON Lines 客户端，`source=C`）。
+- 连接流程：`AT → ATE0 → CWMODE=1 → CWJAP → CIPSTART → state_request(full=true) → ONLINE`，断线自动重连。
+- 联调时 STM32 读 A 的 `state`（风速/目标/实际），算启停 + 桨距并发 `wind_action`；串口 `$WIND` 扩为 9 字段（新增 `wind_operating_limit_kw`）。
+- 配置项在 `Core/Inc/wifi_config.h`（SSID / 密码 / A 的 IP:端口）。
+
 ## 尚未完成 / 待确认
 
-- **STM32 的 Wi-Fi TCP 客户端**（USART1 → Wi-Fi 模块，JSON Lines 连 A）尚未实现；当前
-  `host/tcp_client.py` 是上位机侧预留框架，需按拓扑重定位到 STM32。
-- **实际功率仍由本地计算**：联调后 `wind_actual_kw` 改由 A 计算（含爬坡），C 不再自算。
-- **串口协议未冻结**：`$WIND/$PARAM/$CMD/$ACK` 为自拟方案，需与团队确认并扩展以承载
-  A 状态（`session_id/step/sim_time_s/sampled_at_utc/wind_operating_limit_kw` 等）。
-- 物理参数已统一：额定功率 100 kW，切入/额定/切出风速 3/12/25 m/s，三次功率曲线，
-  桨距 0-90 deg；这些是小组配置，不是课程原文指定数值。
+- **C 代码参数尚未对齐冻结值**：固件/上位机默认仍为额定 1000 kW、线性曲线、桨距 0-20°，
+  需对齐 `docs/parameter-ownership.md`（100 kW、三次曲线、桨距 0-90°）；且 `wind_action`
+  尚未按文档带上 `wind_available_kw / wind_operating_limit_kw`（需由 C 计算后上报）。
+- **实际功率联调后由 A 计算**：当前联网时读 A、离线时本地兜底估算。
+- **串口协议未冻结**：`$WIND` 现为 9 个功率字段，仍需扩展 `session_id/step/sim_time_s/sampled_at_utc`。
+- 物理参数已统一（见 `docs/parameter-ownership.md`）：额定 100 kW、切入/额定/切出风速
+  3/12/25 m/s、三次功率曲线、桨距 0-90 deg；这些是小组配置，不是课程原文指定数值。
 - 未接真实 STM32；当前结果均属软件 mock，不等同于真实硬件联调。
 
 ## 快速运行（上位机）
@@ -81,10 +88,10 @@ python main.py
 
 ## 下一步（与 A/B 联调）
 
-1. 把 TCP 客户端迁入 STM32 固件（JSON Lines：`state_request(full=true)` / 收 `state` /
-   发含 `wind_enable/pitch_target_deg/wind_available_kw/wind_operating_limit_kw` 的 `wind_action`）。
-2. 冻结并扩展 C 串口协议。
+1. 对齐冻结参数（`docs/parameter-ownership.md`）：C 改为 100 kW / 三次曲线 / 桨距 0-90°，
+   并由 C 计算 `wind_available_kw`、`wind_operating_limit_kw` 后随 `wind_action` 上报。
+2. 冻结并扩展 C 串口协议（补 `session_id/step/sim_time_s/sampled_at_utc`）。
 3. 联调顺序：A/B 先跑通 socket → STM32→A → C 上位机 UART。
-4. 环境统一 Python 3.11 + `PyQt6==6.11.0`；连 A 端口 5000。
+4. 环境统一 Python 3.11 + `PyQt6==6.11.0`；连 A 端口（当前 5005，与仓库草案 5000 需统一）。
 
 完整计算职责和统一公式见 `docs/parameter-ownership.md`。

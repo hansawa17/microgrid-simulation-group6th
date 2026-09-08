@@ -22,6 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "wind_turbine.h"
+#include "esp8266.h"
+#include "wifi_client.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -93,6 +95,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
   WindTurbine_Init();
   WindTurbine_StartRx();
+  Esp8266_StartRx();    /* 启动 USART1 中断接收（Wi-Fi 模块） */
+  WifiClient_Init();    /* 初始化 Wi-Fi/TCP 客户端状态机 */
+  /* 上电立即发送首帧遥测，方便上位机连接后最快收到数据（随后每 1 s 一帧） */
+  WindTurbine_PeriodicTask();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -103,6 +109,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    /* 推进 Wi-Fi/TCP 连接状态机（非阻塞） */
+    WifiClient_Task();
+
     /* 按控制周期执行风机控制闭环：模拟输入 -> 计算 -> 串口上报 */
     if (HAL_GetTick() - last_period_tick >= WindTurbine_GetPeriodMs())
     {

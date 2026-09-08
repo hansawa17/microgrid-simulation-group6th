@@ -137,6 +137,10 @@ class Controller(QObject):
             self.ui.status_message("STM32 串口已连接")
             self.db.insert_system_log("INFO", "UART_CONNECT", "STM32 串口连接成功", source="UART")
 
+    def _on_serial_error(self, msg):
+        self.ui.status_message(msg)
+        self.db.insert_system_log("ERROR", "SERIAL_ERROR", msg, source="UART")
+
     def connect_tcp(self):
         host = self.ui.tcpHostEdit.text().strip() or config.TCP_HOST_DEFAULT
         try:
@@ -167,6 +171,10 @@ class Controller(QObject):
         if ok:
             self.ui.status_message("PC-A TCP 已连接（预留链路）")
             self.db.insert_system_log("INFO", "TCP_CONNECT", "PC-A TCP 连接成功", source="TCP")
+
+    def _on_tcp_error(self, msg):
+        self.ui.status_message(msg)
+        self.db.insert_system_log("ERROR", "TCP_ERROR", msg, source="TCP")
 
     def toggle_simulator(self):
         if self._sim_on:

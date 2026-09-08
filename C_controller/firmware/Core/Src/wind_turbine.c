@@ -4,16 +4,16 @@
   * @brief   风力发电机控制器 —— 控制计算与串口协议实现
   ******************************************************************************
   * 控制规则：
- *   1) 可用功率 power_available 由风速按分段三次曲线得到：
+  *   1) 可用功率 power_available 由风速按分段线性映射得到：
   *        [0, cut_in)              -> 0（停机）
- *        [cut_in, rated)          -> 0 ~ rated_power 三次增加
- *        [rated, cut_out)         -> rated_power 恒定
- *        [cut_out, +inf)          -> 0（停机）
+  *        [cut_in, rated)          -> 0 ~ rated_power 线性增加
+  *        [rated, cut_out]         -> rated_power 恒定
+  *        (cut_out, +inf)          -> 0（停机）
   *   2) 启停状态 status：
   *        run_enable 且 cut_in <= wind <= cut_out -> 运行(1)，否则停止(0)
   *   3) 桨距角 deg（闭环）：power_set < power_available 时线性变桨限功率，
   *      deg = deg_max * (1 - power_set / power_available)；
- *      power_set >= power_available 或开环运行时 deg = 0；停机时顺桨至 deg_max。
+  *      power_set >= power_available 或开环/停机时 deg = 0。
   *   4) 实际功率 power_actual：
   *        停机 -> 0；开环 -> power_available；闭环 -> min(power_available, power_set)
   *
@@ -22,6 +22,8 @@
   ******************************************************************************
   */
 #include "wind_turbine.h"
+#include "esp8266.h"
+#include "wifi_client.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -48,10 +50,11 @@ typedef struct
     float    comm_timeout;    /* 通信超时 s */
 
     /* 计算输出 */
-    float    power_available; /* 可用功率 kW */
-    float    power_actual;    /* 实际功率 kW */
-    float    deg;             /* 桨距角   °  */
-    uint8_t  status;          /* 启停 0停止/1运行 */
+    float    power_available;        /* 可用功率 kW */
+    float    power_operating_limit;  /* 稳态运行上限 kW（联调后由 A 计算） */
+    float    power_actual;           /* 实际功率 kW */
+    float    deg;                    /* 桨距角   °  */
+    uint8_t  status;                 /* 启停 0停止/1运行 */
 
     /* 运行控制 */
     uint8_t  run_enable;      /* 允许运行（STOP 置 0） */
@@ -104,6 +107,14 @@ static void wt_send(const char *s)
     HAL_UART_Transmit(&huart2, (uint8_t *)s, (uint16_t)strlen(s), 100);
 }
 
+/* 上电横幅：串口助手按 115200 8N1 打开对应 COM 口后复位单片机，应能看到本行。
+ * 若能看到横幅但收不到 $WIND，说明发送通路正常、问题在周期任务；若横幅也看不到，
+ * 说明是接线（TX/RX/GND）、COM 口或波特率不对。 */
+static void wt_send_banner(void)
+{
+    wt_send("$BOOT,wind_turbine,USART2,115200,8N1\r\n");
+}
+
 static void wt_send_ack(const char *type, uint8_t ok)
 {
     char buf[32];
@@ -113,20 +124,21 @@ static void wt_send_ack(const char *type, uint8_t ok)
 
 static void wt_send_telemetry(void)
 {
-    char buf[160];
-    char f1[16], f2[16], f3[16], f4[16], f5[16];
+    char buf[192];
+    char f1[16], f2[16], f3[16], f4[16], f5[16], f6[16];
 
     wt_ftoa2(f1, wt.wind_speed);
     wt_ftoa2(f2, wt.power_available);
-    wt_ftoa2(f3, wt.power_set);
-    wt_ftoa2(f4, wt.power_actual);
-    wt_ftoa2(f5, wt.deg);
+    wt_ftoa2(f3, wt.power_operating_limit);
+    wt_ftoa2(f4, wt.power_set);
+    wt_ftoa2(f5, wt.power_actual);
+    wt_ftoa2(f6, wt.deg);
 
-    sprintf(buf, "$WIND,%lu,%s,%s,%s,%s,%u,%s,%u\r\n",
+    sprintf(buf, "$WIND,%lu,%s,%s,%s,%s,%s,%u,%s,%u\r\n",
             (unsigned long)wt.cycle,
-            f1, f2, f3, f4,
+            f1, f2, f3, f4, f5,
             (unsigned)wt.status,
-            f5,
+            f6,
             (unsigned)wt.control_mode);
     wt_send(buf);
 }
@@ -157,14 +169,12 @@ static float wt_power_available(void)
     }
 }
 
-static void wt_compute(void)
+/* 计算启停状态 + 桨距目标（C 的职责；输入 wind_speed/power_set/power_available 已就绪） */
+static void wt_compute_status_pitch(void)
 {
-    wt.power_available = wt_power_available();
-
-    /* 启停状态 */
     if (wt.run_enable &&
         wt.wind_speed >= wt.cut_in_speed &&
-        wt.wind_speed < wt.cut_out_speed)
+        wt.wind_speed <= wt.cut_out_speed)
     {
         wt.status = WT_STATUS_RUN;
     }
@@ -173,16 +183,13 @@ static void wt_compute(void)
         wt.status = WT_STATUS_STOP;
     }
 
-    /* 桨距角与实际功率 */
     if (wt.status == WT_STATUS_STOP)
     {
-        wt.deg = wt.deg_max;
-        wt.power_actual = 0.0f;
+        wt.deg = 0.0f;
     }
     else if (wt.control_mode == WT_MODE_OPEN_LOOP)
     {
         wt.deg = 0.0f;                       /* 开环：最大功率捕获 */
-        wt.power_actual = wt.power_available;
     }
     else /* 闭环 */
     {
@@ -194,7 +201,39 @@ static void wt_compute(void)
         {
             wt.deg = wt.deg_max * (1.0f - wt.power_set / wt.power_available);
         }
+    }
+}
+
+/* 本地完整计算（WiFi 未连 A 时的兜底）：可用 + 启停 + 桨距 + 实际 + 稳态上限 */
+static void wt_compute_local(void)
+{
+    wt.power_available = wt_power_available();
+    wt_compute_status_pitch();
+
+    if (wt.status == WT_STATUS_STOP)
+    {
+        wt.power_actual = 0.0f;
+    }
+    else if (wt.control_mode == WT_MODE_OPEN_LOOP)
+    {
+        wt.power_actual = wt.power_available;
+    }
+    else
+    {
         wt.power_actual = (wt.power_set < wt.power_available) ? wt.power_set : wt.power_available;
+    }
+
+    /* 稳态运行上限：扣启停/桨距/设备上限（与 A 语义一致） */
+    if (wt.status != WT_STATUS_RUN)
+    {
+        wt.power_operating_limit = 0.0f;
+    }
+    else
+    {
+        float f = (wt.deg_max > 0.0f) ? (1.0f - wt.deg / wt.deg_max) : 1.0f;
+        if (f < 0.0f) f = 0.0f;
+        wt.power_operating_limit = wt.power_available * f;
+        if (wt.power_operating_limit > wt.rated_power) wt.power_operating_limit = wt.rated_power;
     }
 }
 
@@ -209,7 +248,7 @@ static void wt_simulate_inputs(void)
     if (wt.wind_speed > 30.0f) wt.wind_speed = 30.0f;
 
     /* 有功设定：随机游走，范围 [0, rated_power] kW */
-    wt.power_set += wt_randf(-8.0f, 8.0f);
+    wt.power_set += wt_randf(-80.0f, 80.0f);
     if (wt.power_set < 0.0f)              wt.power_set = 0.0f;
     if (wt.power_set > wt.rated_power)    wt.power_set = wt.rated_power;
 }
@@ -220,7 +259,7 @@ static void wt_simulate_inputs(void)
 static void wt_reset_defaults(void)
 {
     wt.wind_speed      = 9.0f;
-    wt.power_set       = 50.0f;
+    wt.power_set       = 500.0f;
     wt.control_mode    = WT_MODE_CLOSED_LOOP;
     wt.cut_in_speed    = WT_DEFAULT_CUT_IN_SPEED;
     wt.rated_speed     = WT_DEFAULT_RATED_SPEED;
@@ -231,10 +270,11 @@ static void wt_reset_defaults(void)
     wt.comm_timeout    = WT_DEFAULT_COMM_TIMEOUT;
     wt.run_enable      = 1u;
     wt.cycle           = 0u;
-    wt.power_available = 0.0f;
-    wt.power_actual    = 0.0f;
-    wt.deg             = 0.0f;
-    wt.status          = WT_STATUS_STOP;
+    wt.power_available       = 0.0f;
+    wt.power_operating_limit = 0.0f;
+    wt.power_actual          = 0.0f;
+    wt.deg                   = 0.0f;
+    wt.status                = WT_STATUS_STOP;
 }
 
 /* ------------------------------------------------------------------ */
@@ -288,6 +328,7 @@ void WindTurbine_Init(void)
     wt_reset_defaults();
     lcg_seed = HAL_GetTick() + 0x5A5A5A5AUL;
     if (lcg_seed == 0u) lcg_seed = 1u;
+    wt_send_banner();
 }
 
 void WindTurbine_StartRx(void)
@@ -305,8 +346,25 @@ uint32_t WindTurbine_GetPeriodMs(void)
 
 void WindTurbine_PeriodicTask(void)
 {
-    wt_simulate_inputs();
-    wt_compute();
+    if (WifiClient_IsOnline() && WifiClient_HasState())
+    {
+        /* 联调：从 A 读取风速/目标/可用/稳态上限/实际，不再本地随机 */
+        wt.wind_speed            = WifiClient_GetWindSpeedMps();
+        wt.power_set             = WifiClient_GetWindTargetKw();
+        wt.power_available       = WifiClient_GetWindAvailableKw();
+        wt.power_operating_limit = WifiClient_GetWindOperatingLimitKw();
+        wt.power_actual          = WifiClient_GetWindActualKw();
+
+        wt_compute_status_pitch();   /* 只算启停 + 桨距 */
+        WifiClient_SendWindAction(wt.run_enable, wt.deg);
+    }
+    else
+    {
+        /* WiFi 未连 A 时：本地随机模拟（兜底） */
+        wt_simulate_inputs();
+        wt_compute_local();
+    }
+
     wt_send_telemetry();
     wt.cycle++;
 }
@@ -345,5 +403,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     {
         WindTurbine_OnRxByte(rx_byte);
         HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+    }
+    else if (huart->Instance == USART1)
+    {
+        Esp8266_OnRxCplt();
     }
 }
