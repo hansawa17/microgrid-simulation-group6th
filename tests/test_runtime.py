@@ -26,6 +26,8 @@ class RuntimeTests(unittest.TestCase):
             step=step,
             sim_time_s=float(step),
             wind_speed_mps=8.0,
+            wind_available_kw=70.0,
+            wind_operating_limit_kw=70.0,
             load_power_kw=80.0,
             wind_actual_kw=50.0,
             diesel_actual_kw=0.0,
