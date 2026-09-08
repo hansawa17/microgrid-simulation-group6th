@@ -120,15 +120,19 @@ class EMSRepository:
                 self._migrate_to_v3(conn)
             now = utc_now()
             conn.execute(
-                """INSERT OR IGNORE INTO dispatch_parameters
+                """INSERT INTO dispatch_parameters
                    (id, wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw, updated_at)
-                   VALUES (1, 0.0, 100.0, 120.0, 10.0, ?)""",
+                   VALUES (1, 0.0, 100.0, 120.0, 10.0, ?)
+                   ON CONFLICT(id) DO UPDATE SET wind_min_kw=100.0*0.0,
+                   wind_max_kw=100.0, diesel_max_kw=120.0, reserve_kw=10.0, updated_at=excluded.updated_at""",
                 (now,),
             )
             conn.execute(
-                """INSERT OR IGNORE INTO ems_runtime_config
+                """INSERT INTO ems_runtime_config
                    (id, poll_period_s, dispatch_period_s, closed_loop, command_timeout_s, updated_at)
-                   VALUES (1, 1.0, 5.0, 1, 3.0, ?)""",
+                   VALUES (1, 1.0, 5.0, 1, 3.0, ?)
+                   ON CONFLICT(id) DO UPDATE SET poll_period_s=1.0,
+                   dispatch_period_s=5.0, command_timeout_s=3.0, updated_at=excluded.updated_at""",
                 (now,),
             )
 
