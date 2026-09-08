@@ -19,10 +19,12 @@ class RepositoryTests(unittest.TestCase):
                 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 self.assertTrue({"schema_meta", "physical_parameters", "dispatch_parameters", "ems_runtime_config", "current_state",
                                  "state_history", "dispatch_commands", "dispatch_evaluation", "event_log"} <= tables)
-                physical = conn.execute("SELECT wind_rated_kw, wind_cut_in_mps, wind_rated_speed_mps, wind_cut_out_mps,
-                    pitch_min_deg, pitch_max_deg, wind_ramp_up_kw_s, wind_ramp_down_kw_s,
-                    diesel_min_kw, diesel_max_kw, diesel_ramp_up_kw_s, diesel_ramp_down_kw_s
-                    FROM physical_parameters WHERE id=1").fetchone()
+                physical = conn.execute(
+                    "SELECT wind_rated_kw, wind_cut_in_mps, wind_rated_speed_mps, wind_cut_out_mps, "
+                    "pitch_min_deg, pitch_max_deg, wind_ramp_up_kw_s, wind_ramp_down_kw_s, "
+                    "diesel_min_kw, diesel_max_kw, diesel_ramp_up_kw_s, diesel_ramp_down_kw_s "
+                    "FROM physical_parameters WHERE id=1"
+                ).fetchone()
                 self.assertEqual(physical, (100.0, 3.0, 12.0, 25.0, 0.0, 90.0, 40.0, 60.0, 20.0, 120.0, 30.0, 40.0))
                 params = conn.execute("SELECT wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw FROM dispatch_parameters WHERE id=1").fetchone()
                 self.assertEqual(params, (0.0, 100.0, 120.0, 10.0))
