@@ -1,6 +1,6 @@
 # B EMS 主站 · 李佳霖
 
-B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和后续 PyQt6 操作界面；B 是 A 的 TCP 客户端，不充当 TCP 中心。
+B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 操作界面；B 是 A 的 TCP 客户端，不充当 TCP 中心。
 
 > 本 README 按当前 `common/protocol.md` 更新。公共协议目前仍是草案；A 已先制定协议，但 A 的 TCP/state 代码尚未完成对应实施。因此本阶段只让 B 提前对齐协议，不把 A 当前旧代码当作最终接口。
 
@@ -18,6 +18,9 @@ B_dispatch/
 ├── tcpB.py            # B-owned A-facing TCP JSON-line 客户端
 ├── serviceB.py        # B-owned TCP + SQLite + runtime 服务桥接
 └── README.md
+
+根目录：
+├── gui_b.py           # B / EMS PyQt6 GUI（仿照 C gui.py 风格）
 
 tests/
 ├── test_scaffold.py
@@ -106,6 +109,23 @@ B **使用 `wind_operating_limit_kw` 约束目标，不再使用 `wind_actual_kw
 
 **注意：这些测试已更新，但本次通过 GitHub 文件接口修改，当前环境没有执行项目 Python 测试，因此不能宣称测试已通过。**
 
+### 2026-09-08 · 第五阶段：先做 B PyQt6 GUI，跳过通信联调
+
+按照当前项目安排，本节点**暂时跳过 A/B/C socket 联调**，先完成 B 的 GUI，与 C 已提交的 `gui.py` 保持同一套视觉语言。
+
+新增根目录文件：`gui_b.py`。
+
+GUI 当前提供：
+
+- **运行监控**：负荷、风电 available、operating limit、target、actual、柴油 actual、EMS 闭环状态、C 优先权、状态新鲜度。
+- **实时曲线**：轻量级 Qt 绘图，展示负荷、风电能力、目标/实际、柴油和风速趋势，不增加对 pyqtgraph 的硬依赖。
+- **调度参数**：风电/柴油额定与 reserve、状态年龄、1 s 采集周期、5 s 调度周期等本地参数入口。
+- **手动调度**：可以直接在 GUI 中输入演示状态，调用现有 `calculate_dispatch()` 计算 B 的目标，验证风优先、operating limit、柴油 10 kW reserve、C fault 优先等约束。
+- **历史数据**：提供与 `ems.db` 字段对应的演示表格，后续可接 `repository.py`。
+- **报警与事件**：记录 GUI 本地调度、参数和当前集成边界事件。
+
+GUI **不会**在当前阶段创建 TCP 连接，也不会假定 A 已经完成最新协议实施。预留了 `set_state_snapshot()` 和 `apply_dispatch_result()` 作为后续接入 `runtime.py / serviceB.py` 的统一入口。
+
 ## 当前 B 的闭环路径
 
 ```text
@@ -142,15 +162,13 @@ B 不负责把 target 变成 actual；A 根据双方启停条件、设备限制�
 
 ## 当前边界
 
-1. **A 尚未实施最新协议**：A 当前 TCP/state 代码仍需要把 `wind_available_kw`、`wind_operating_limit_kw` 等新字段真正输出并完成对应校验。
+1. **A 尚未实施最新公共协议**：A 当前 TCP/state 代码仍需要把 `wind_available_kw`、`wind_operating_limit_kw` 等新字段真正输出并完成对应校验。
 2. **物理参数仍未冻结**：风机额定功率、柴油额定功率、风速—功率曲线、爬坡/启停等不能由 B 自行猜测。
 3. **C 侧仍需实现/确认**：`wind_action`、STM32G431RBT6、C 的保护/启停和运行上限产生逻辑。
 4. **跨设备 ACK/重连行为仍需实机验证**：B 已实现“不盲目换 seq 重发”，但最终重连后的状态协调需要 A/B 联调确认。
-5. **B 的 PyQt6 UI 尚未接入**：应在 TCP 和数据库追溯稳定后再做。
+5. **GUI 已建立但暂未接真实通信/实时数据库**：当前 `gui_b.py` 是本地演示与接入骨架，通信联调按阶段计划后置。
 
 ## 下一步工作
-
-按优先级：
 
 1. **A 实施最新公共协议**：A 的 state payload 补齐 `wind_available_kw`、`wind_operating_limit_kw`，并完成 A 侧协议校验。
 2. **A/B 实际 socket 联调**：验证 JSON Lines、4096 bytes、半帧/粘包、state_request、dispatch、ACK、seq/session/step、timeout、断线重连。
@@ -158,7 +176,7 @@ B 不负责把 target 变成 actual；A 根据双方启停条件、设备限制�
 4. **数据库追溯验证**：验证 state → dispatch → ACK → 后续 actual state 能在 `ems.db` 复原，并保持 sim time / sampled time / received time 语义独立。
 5. **A/B/C 组合调试**：确认 C 的保护/控制始终优先于 B 正常调度。
 6. **STM32G431RBT6 实机验证**：由 C 完成硬件/Wi-Fi/串口部分，B 配合验证目标闭环。
-7. **PyQt6 UI**：底层联调稳定后再接界面。
+7. **GUI 接入**：把 `gui_b.py` 的状态入口、历史表和事件区分别接到 `serviceB.py` / `runtime.py` / `repository.py`。
 
 ## 本地运行
 
@@ -174,6 +192,12 @@ python scripts/init_ems_db.py
 
 ```bash
 python -m unittest discover -s tests -v
+```
+
+预览 B GUI：
+
+```bash
+python gui_b.py
 ```
 
 `data/runtime/ems.db` 是本地运行数据，不提交 GitHub。
