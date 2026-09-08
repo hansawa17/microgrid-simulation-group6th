@@ -54,7 +54,7 @@ def _get_local_ip() -> str:
 
 
 def _launch_gui() -> int:
-    """启动 GUI，并在 B 界面状态栏显示本机网络 IPv4 地址。"""
+    """启动 GUI，并在页眉和状态栏显示本机网络 IPv4 地址。"""
     from PyQt6 import QtWidgets
     from . import gui_b
 
@@ -62,6 +62,17 @@ def _launch_gui() -> int:
         def __init__(self) -> None:
             super().__init__()
             ip = _get_local_ip()
+
+            # 页眉是始终可见区域；把 IP 放在副标题中，避免窗口底部状态栏
+            # 因系统缩放或窗口裁切而不可见。
+            if hasattr(self, "appSubtitle"):
+                self.appSubtitle.setText(
+                    f"PC-B · 能量管理与调度系统 · 闭环 EMS · 本机 IP：{ip}"
+                )
+
+            # 窗口标题也同步显示 IP，便于最小化/切换窗口时确认当前地址。
+            self.setWindowTitle(f"南极孤立微电网 EMS 主站 B · 本机 IP：{ip}")
+
             label = QtWidgets.QLabel(f"本机 IP：{ip}")
             label.setToolTip("B 主站当前电脑用于局域网通信的 IPv4 地址")
             self.statusBar().addPermanentWidget(label)
