@@ -23,7 +23,6 @@ import config
 import protocol
 from database import Database
 from serial_comm import SerialWorker, list_serial_ports
-from tcp_client import TcpClient
 from simulator import Simulator
 
 
@@ -34,7 +33,6 @@ class Controller(QObject):
 
         self.db = Database()
         self.serial = None          # SerialWorker
-        self.tcp = None             # TcpClient
         self.simulator = Simulator()
 
         # 状态
@@ -71,8 +69,6 @@ class Controller(QObject):
         ui.connectSerialButton.clicked.connect(self.connect_serial)
         ui.disconnectSerialButton.clicked.connect(self.disconnect_serial)
         ui.refreshPortsButton.clicked.connect(self._refresh_port_list)
-        ui.connectTcpButton.clicked.connect(self.connect_tcp)
-        ui.disconnectTcpButton.clicked.connect(self.disconnect_tcp)
         ui.simulateButton.clicked.connect(self.toggle_simulator)
 
         # 参数
@@ -141,41 +137,6 @@ class Controller(QObject):
         self.ui.status_message(msg)
         self.db.insert_system_log("ERROR", "SERIAL_ERROR", msg, source="UART")
 
-    def connect_tcp(self):
-        host = self.ui.tcpHostEdit.text().strip() or config.TCP_HOST_DEFAULT
-        try:
-            port = int(self.ui.tcpPortEdit.text().strip())
-        except ValueError:
-            port = config.TCP_PORT_DEFAULT
-        self.disconnect_tcp(silent=True)
-        self.tcp = TcpClient(host, port)
-        self.tcp.line_received.connect(self._on_tcp_line)
-        self.tcp.connected.connect(self._on_tcp_connected)
-        self.tcp.error.connect(self._on_tcp_error)
-        self.tcp.start()
-        self.ui.status_message(f"正在连接 PC-A {host}:{port} …")
-
-    def disconnect_tcp(self, silent=False):
-        if self.tcp is not None:
-            self.tcp.stop()
-            self.tcp.wait(1000)
-            self.tcp = None
-        self._on_tcp_connected(False)
-        if not silent:
-            self.ui.status_message("TCP 已断开")
-
-    def _on_tcp_connected(self, ok):
-        self.ui.set_comm_pills(pca_online=ok, stm32_online=None)
-        self.ui.connectTcpButton.setEnabled(not ok)
-        self.ui.disconnectTcpButton.setEnabled(ok)
-        if ok:
-            self.ui.status_message("PC-A TCP 已连接（预留链路）")
-            self.db.insert_system_log("INFO", "TCP_CONNECT", "PC-A TCP 连接成功", source="TCP")
-
-    def _on_tcp_error(self, msg):
-        self.ui.status_message(msg)
-        self.db.insert_system_log("ERROR", "TCP_ERROR", msg, source="TCP")
-
     def toggle_simulator(self):
         if self._sim_on:
             self._sim_on = False
@@ -200,11 +161,6 @@ class Controller(QObject):
         self.db.insert_communication_log("UART", "RX", self._msg_type(text), self._msg_cycle(text),
                                          data_length=len(text), result=1)
         self._dispatch_line(text)
-
-    def _on_tcp_line(self, text):
-        self.db.insert_communication_log("TCP", "RX", self._msg_type(text), self._msg_cycle(text),
-                                         data_length=len(text), result=1)
-        # 预留：解析 A 侧数据后与串口数据融合
 
     def _dispatch_line(self, text):
         r = protocol.parse_frame(text)
@@ -399,7 +355,6 @@ class Controller(QObject):
     # ------------------------------------------------------------------ #
     def shutdown(self):
         self.disconnect_serial(silent=True)
-        self.disconnect_tcp(silent=True)
         if self._sim_on:
             self.simulator.stop()
             self.simulator.wait(1000)

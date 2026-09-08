@@ -337,30 +337,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.disconnectSerialButton.setEnabled(False)
         grid.addWidget(self.disconnectSerialButton, 0, 4)
 
-        # 本地仿真
+        # 本地仿真 + 数据库状态
         grid.addWidget(QtWidgets.QLabel("无硬件演示"), 0, 5)
         self.simulateButton = self._button("启动本地仿真", "secondary")
         grid.addWidget(self.simulateButton, 0, 6)
 
-        # TCP（PC-A，预留）
-        grid.addWidget(QtWidgets.QLabel("TCP (PC-A)"), 1, 0)
-        self.tcpHostEdit = QtWidgets.QLineEdit(config.TCP_HOST_DEFAULT)
-        self.tcpHostEdit.setMinimumWidth(140)
-        grid.addWidget(self.tcpHostEdit, 1, 1)
-        self.tcpPortEdit = QtWidgets.QLineEdit(str(config.TCP_PORT_DEFAULT))
-        self.tcpPortEdit.setMaximumWidth(80)
-        grid.addWidget(self.tcpPortEdit, 1, 2)
-        self.connectTcpButton = self._button("连接 TCP", "primary")
-        grid.addWidget(self.connectTcpButton, 1, 3)
-        self.disconnectTcpButton = self._button("断开 TCP", "secondary")
-        self.disconnectTcpButton.setEnabled(False)
-        grid.addWidget(self.disconnectTcpButton, 1, 4)
-
-        # 数据库状态
-        grid.addWidget(QtWidgets.QLabel("数据库"), 1, 5)
+        grid.addWidget(QtWidgets.QLabel("数据库"), 0, 7)
         self.dbStatusLabel = QtWidgets.QLabel("已连接 wind.db")
         self.dbStatusLabel.setProperty("state", "good")
-        grid.addWidget(self.dbStatusLabel, 1, 6)
+        grid.addWidget(self.dbStatusLabel, 0, 8)
 
         grid.setColumnStretch(1, 1)
         return card

@@ -13,7 +13,7 @@
 
 /* ------------------ Wi-Fi 热点（手机热点 / 路由器） ------------------ */
 #define WIFI_SSID          "hansawa"
-#define WIFI_PASSWORD      "18638778359"
+#define WIFI_PASSWORD      "YOUR_WIFI_PASSWORD"   /* 占位符：真实密码仅本地烧录用，勿提交 */
 
 /* ------------------ A 电网模拟器 TCP 服务端 -------------------------- */
 #define WIFI_SERVER_IP     "172.20.10.2"   /* 待 A 确定后填写 */
