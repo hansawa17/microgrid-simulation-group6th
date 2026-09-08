@@ -1,20 +1,22 @@
 # B EMS 主站 · 李佳霖
 
-B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和后续 PyQt6 操作界面；B 是 A 的 TCP 客户端，不充当项目 TCP 中心。
+B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和后续 PyQt6 操作界面；B 是 A 的 TCP 客户端，不充当 TCP 中心。
+
+> 本 README 按当前 `common/protocol.md` 更新。公共协议目前仍是草案；A 已先制定协议，但 A 的 TCP/state 代码尚未完成对应实施。因此本阶段只让 B 提前对齐协议，不把 A 当前旧代码当作最终接口。
 
 ## 当前目录
 
 ```text
 B_dispatch/
-├── __init__.py        # B 包公开接口
-├── models.py          # 状态、调度参数、调度结果数据模型
+├── __init__.py
+├── models.py          # 协议状态、调度参数、调度结果模型
 ├── dispatch.py        # B 核心约束调度逻辑
-├── operator_core.py   # 闭环决策核心：状态 -> 调度目标
-├── runtime.py         # 无网络运行框架：1 s 采集 / 5 s 调度编排与安全兜底
+├── operator_core.py   # 闭环决策核心：state -> dispatch target
+├── runtime.py         # 1 s 采集 / 5 s 调度编排与 B 软件兜底
 ├── repository.py      # SQLite 本地数据访问层
-├── db_schema.sql      # ems.db 数据库结构
-├── tcpB.py            # B-owned A-facing TCP JSON-line 客户端与协议校验
-├── serviceB.py        # B-owned TCP + SQLite + runtime 运行服务桥接
+├── db_schema.sql      # ems.db 结构
+├── tcpB.py            # B-owned A-facing TCP JSON-line 客户端
+├── serviceB.py        # B-owned TCP + SQLite + runtime 服务桥接
 └── README.md
 
 tests/
@@ -27,86 +29,140 @@ tests/
 └── test_serviceB.py
 ```
 
-> B 侧与 TCP/服务相关的文件统一使用 `*B` 后缀，避免和其他成员的 TCP 文件混淆。`tcp.py` / `test_tcp.py` 已替换为 `tcpB.py` / `test_tcpB.py`。
+B 侧 TCP/服务相关文件统一使用 `*B` 后缀，避免与其他成员混淆。不要重新创建无后缀的 `tcp.py` / `service.py` / `test_tcp.py`。
 
 ## 已完成开发节点
 
 ### 2026-09-07 · 第一阶段：调度基础
 
-- 建立 `GridState / DispatchConfig / DispatchResult`。
+- 建立 `GridState / DispatchConfig / DispatchResult` 和无状态 `EMSCore`。
 - 实现风优先、柴发补缺。
-- 柴发保留容量固定为 **10 kW**；B 常规柴发上限为 `diesel_max_kw - reserve_kw`。
-- 柴发允许完全停机，目标 0 kW 时 `diesel_enable=False`。
-- C 具有控制优先权；C 优先故障时 B 不请求正常风机出力。
-- 不虚构风速—功率曲线；额定参数必须由配置提供。
+- 柴发备用容量固定 **10 kW**；B 常规柴油目标上限为 `diesel_max_kw - reserve_kw`。
+- 柴油允许完全 OFF，目标 0 kW 时 `diesel_enable=False`。
+- C 对风机保护/控制具有优先权；故障状态下 B 不请求正常风机出力。
+- B 只产生 target/enable，不修改 actual，不发送 `pitch_target_deg`。
+- 未确认的设备额定功率和风速—功率曲线不硬编码。
 
-### 2026-09-07 · 第一阶段：闭环核心与本地数据库
+### 2026-09-07 · 第二阶段：闭环 Runtime 与 SQLite
 
-- `EMSCore` 保持无状态：A 状态 -> B 调度目标。
-- B 只产生 target/enable，不修改 actual，不发送桨距角。
-- `repository.py` / `db_schema.sql` 保存参数、运行配置、状态、历史、命令、评价和日志。
-- SQLite 使用独立连接、短事务、外键和 busy timeout。
-- 状态写入保留 `pitch_actual_deg`；物理额定功率不偷偷写默认值。
+- `runtime.py` 默认 1 s 状态采集、5 s 调度决策。
+- 状态异常清空缓存；调度异常可产生 B 软件层零风/零柴兜底。
+- `repository.py` / `db_schema.sql` 保存参数、运行配置、当前状态、状态历史、dispatch、评价和事件日志。
+- SQLite 每次操作独立连接、短事务、外键和 busy timeout。
+- `sampled_at_utc`（A 采样时间）与 `received_at_utc`（B 接收时间）分开保存。
 
-### 2026-09-07 · 第二阶段：本地 EMS 周期运行与安全处理
+### 2026-09-07 · 第三阶段：TCPB 基础与 ACK 风险处理
 
-- `runtime.py` 默认 1 s 采集、5 s 调度。
-- 状态源异常时清空缓存；`DispatchError` 默认产生零风/零柴、两者 OFF 的 B 软件兜底。
-- `error_sink` 可供上层记录异常；该兜底不等同于 C/STM32 保护动作。
-- 相关单元测试覆盖首次调度、周期、最新状态、过期状态、异常和缓存清空。
+- `tcpB.py` 实现 B→A `state_request` / `dispatch`，以及 A→B `state` / `ack`。
+- UTF-8 JSON Lines，LF 分帧，最大 **4096 bytes（含 LF）**；处理半帧、粘包、多帧，拒绝非法 JSON、NaN/Infinity、错误 envelope。
+- 校验 `version/type/source/target/session_id/seq/step/sim_time_s/payload`。
+- 首次连接请求全量状态；step 回退、会话变化和旧 seq 会触发重新同步/停止使用旧状态。
+- 同一 TCP 连接不允许同时保持未完成的应用层 state request 与 dispatch ACK；dispatch 发送后等待对应 ACK。
+- ACK 的 `accepted` / `reason` 被 B 保存；`accepted=true` 只表示 A 接收/校验，不表示 actual 已达到目标。
+- 如果 dispatch 已发送但 ACK 因 timeout/断线无法确认，B 标记为 **delivery_unknown**，不会换一个新 seq 静默重发同一命令。
 
-### 2026-09-07 · 第三阶段：TCPB 协议基础对齐
+### 2026-09-08 · 第四阶段：按最新公共协议完成 B 对齐
 
-依据 `common/protocol.md`、`docs/time-interface.md`、`docs/network.md` 与 `docs/acceptance.md`，排查并补齐 B 侧 TCP 基础接口：
+本阶段以当前 `common/protocol.md` 为接口真值；**不修改 A，也不假定 A 已完成实施**。
 
-- `tcpB.py` 实现 B -> A 的 `state_request` / `dispatch`，A -> B 的 `state` / `ack` 解析。
-- UTF-8 JSON 一行一帧，按 LF 分帧；严格限制最大帧 **4096 bytes（含 LF）**。
-- 正确处理 TCP 半帧、粘包、多帧；拒绝非法 JSON、非有限数和错误 envelope。
-- 校验公共字段 `version/type/source/target/session_id/seq/step/sim_time_s/payload`。
-- B 的 `dispatch` 只包含 `wind_target_kw/diesel_target_kw/wind_enable/diesel_enable`，明确不发送 `pitch_target_deg`。
-- 首次连接自动发送 `state_request(full=true)`；客户端地址禁止使用服务端监听地址 `0.0.0.0`。
-- 状态必须包含 A 的 `sampled_at_utc`；B 另外生成并保存 `received_at_utc`，不混用两种时间。
-- 检测会话变化或 step 回退后清空旧状态并请求全量同步；发送 socket 错误时关闭连接，支持上层调用 `connect()` 重连。
-- 增加 A -> B `seq` 的重复/旧序号抑制，避免重复状态被当成新状态处理。
-- `test_tcpB.py` 覆盖半帧/粘包、4096 字节限制、NaN、方向校验、首次全量请求、时间字段、seq 重复、step 回退、EOF/timeout 以及 B 写权限边界。
+#### 1. 状态字段对齐
 
-### 2026-09-07 · 第四阶段：TCP + SQLite + Runtime 服务层
+B `GridState` 和 TCP parser 现在明确区分：
 
-- 新增 `serviceB.py`，把 `tcpB.py`、`repository.py`、`runtime.py`、`EMSCore` 组合成 B 正式运行服务。
-- 状态轮询路径：A state -> `tcpB` -> `serviceB` -> `repository.current_state/state_history` -> `runtime`。
-- 调度路径：`EMSCore` -> `serviceB` -> `tcpB.dispatch` -> `repository.dispatch_commands/dispatch_evaluation`。
-- 运行异常写入 `event_log`；网络断线/超时不把旧状态静默当作新状态。
-- `test_serviceB.py` 覆盖状态落库、命令/评价落库和首次 runtime 闭环调用。
+| 字段 | B 的语义 |
+|---|---|
+| `wind_available_kw` | A 根据风速和配置功率曲线计算的资源可用功率 |
+| `wind_operating_limit_kw` | 考虑 C/STM32 许可、保护、当前桨距和设备限制后的稳态运行上限 |
+| `wind_target_kw` | B 发给 A 的风机目标 |
+| `wind_actual_kw` | A 仿真产生的实际风机出力 |
 
-### 2026-09-07 · 第五阶段：A/B 联调风险预处理（仅修改 B）
+B **使用 `wind_operating_limit_kw` 约束目标，不再使用 `wind_actual_kw` 推断能力**。
 
-A 已按共同协议完成第一轮 TCP server 对齐；本阶段只修改 B，不修改 A：
+这解决了冷启动语义问题：例如 `wind_actual_kw=0`、`wind_available_kw=70`、`wind_operating_limit_kw=70` 时，B 仍可以根据负荷下发风机启动目标，而不会因为 actual 为 0 永远得到 0 目标。
 
-- **同一时刻只允许一个未完成的 `state_request`**：B 记录 `_pending_state_request_seq`，重复轮询不会连续发送新的状态请求。
-- `poll_state()` 不再只读取一次 TCP 响应，而是持续消费 A 返回的帧，直到获得对应的新 `state`；期间到达的 ACK 不会被静默丢弃。
-- **dispatch 发送后立即等待并消费对应 ACK**，通过 `_pending_ack_seq` 约束同一时刻只有一个待确认 dispatch。
-- ACK 保存在 B 客户端内存中，`accepted/reason` 可被后续上层联调检查；ACK 只表示 A 接收/校验，不代表 actual 已达到目标。
-- TCP 断线/超时仍向上层抛出，不把旧状态冒充新状态。
-- 新增回归测试覆盖“未决 state request 不重复发送”和“dispatch 必须消费匹配 ACK”。
+#### 2. 数据库升级
 
-**风功率启动风险暂不通过虚构字段解决。** 当前共同协议没有 `wind_available_kw`，B 也没有获得已确认的风速—功率曲线，因此不能把 `wind_speed_mps` 擅自换算成可用功率，也不能把 `wind_max_kw` 当成当前可用功率。B 当前仍以 A 实际状态中的 `wind_actual_kw` 作为保守可用出力依据；若后续验收要求“风机停机且 actual=0 时可主动启动”，必须先在共同设计中确认启动语义或可用功率来源，再修改 B。
+- `current_state` / `state_history` 增加 `wind_available_kw` 和 `wind_operating_limit_kw`。
+- `dispatch_commands` 增加 `ack_accepted`、`ack_reason`、`ack_received_at_utc`，用于追踪 A 是否接受命令。
+- schema version 升至 **3**。
+- `repository.initialize()` 对已有旧数据库执行必要的 v3 字段迁移，避免旧 `ems.db` 因缺列直接失效。
 
-## 当前状态
+#### 3. TCP 安全边界
 
-B 已具备**调度 + 本地数据库 + 周期 runtime + B-owned TCPB + 服务层桥接 + 单未决请求/ACK 消费机制**。当前代码层已经把 TCP、SQLite 和 EMS runtime 接通，但这仍不等于 A/B 实机 TCP 联调已经完成。
+- `sampled_at_utc` 按 RFC 3339 UTC 校验，并原样保存。
+- `received_at_utc` 由 B 本机生成，不与 A 的采样时间混用。
+- 发送 dispatch 后如果 ACK 未知，抛出 `DispatchDeliveryUnknown` 并阻止直接产生新的 dispatch，等待后续重新连接/状态同步处理。
+- `serviceB.py` 将 ACK accepted/rejected 和 delivery_unknown 写入 `dispatch_commands`。
 
-TCP 关键约束：
+#### 4. 测试同步
 
-- A：TCP server；B：TCP client；默认端口按项目草案为 `5000`。
-- B 每 1 s 检查/请求状态，但不会在已有 `state_request` 未完成时重复发送请求；EMS 默认每 5 s 决策。
-- 控制关联依赖 `session_id + step + seq`，不依赖三台电脑墙钟时间。
-- `sampled_at_utc` 是 A 的采样时间；`received_at_utc` 是 B 的接收时间；数据库均按字段分别保存。
-- ACK 的 `accepted` 只表示 A 接收并通过校验，不表示实际设备已经达到目标；实际结果仍以后续 `state` 为准。
-- 超时、断线、非法报文等最终安全动作仍需结合共同确认的 A/C 行为进行联调；B 不擅自定义 C 的保护动作。
+已同步修改：
+
+- `tests/test_b_dispatch.py`：冷启动、operating limit 上限、actual 不得作为能力值、C 优先、柴油 10 kW reserve。
+- `tests/test_operator_core.py` / `tests/test_runtime.py`：使用新的状态模型。
+- `tests/test_tcpB.py`：新状态字段、能力关系、RFC 3339、ACK accepted/rejected、未知投递结果、单未决请求、分包/粘包/seq/EOF/timeout。
+- `tests/test_repository.py`：schema v3、功率字段、双时间字段和 ACK 追踪。
+- `tests/test_serviceB.py`：ACK accepted/rejected 和 delivery_unknown 的数据库记录。
+
+**注意：这些测试已更新，但本次通过 GitHub 文件接口修改，当前环境没有执行项目 Python 测试，因此不能宣称测试已通过。**
+
+## 当前 B 的闭环路径
+
+```text
+A state
+  │
+  ├─ wind_available_kw
+  ├─ wind_operating_limit_kw
+  ├─ wind_actual_kw
+  └─ load_power_kw
+        │
+        ▼
+     tcpB.py
+        │
+        ▼
+   serviceB.py / EMSCore
+        │
+        ├─ wind target <= operating limit
+        ├─ diesel target <= diesel_max - 10 kW
+        └─ C fault/priority suppresses normal wind request
+        │
+        ▼
+   dispatch -> A
+        │
+        ▼
+      ACK
+        │
+        └─ accepted/rejected/unknown -> ems.db
+        │
+        ▼
+   later A state -> actual result
+```
+
+B 不负责把 target 变成 actual；A 根据双方启停条件、设备限制和爬坡过程计算 actual。B 不发送桨距命令，桨距/风机保护属于 C。
+
+## 当前边界
+
+1. **A 尚未实施最新协议**：A 当前 TCP/state 代码仍需要把 `wind_available_kw`、`wind_operating_limit_kw` 等新字段真正输出并完成对应校验。
+2. **物理参数仍未冻结**：风机额定功率、柴油额定功率、风速—功率曲线、爬坡/启停等不能由 B 自行猜测。
+3. **C 侧仍需实现/确认**：`wind_action`、STM32G431RBT6、C 的保护/启停和运行上限产生逻辑。
+4. **跨设备 ACK/重连行为仍需实机验证**：B 已实现“不盲目换 seq 重发”，但最终重连后的状态协调需要 A/B 联调确认。
+5. **B 的 PyQt6 UI 尚未接入**：应在 TCP 和数据库追溯稳定后再做。
+
+## 下一步工作
+
+按优先级：
+
+1. **A 实施最新公共协议**：A 的 state payload 补齐 `wind_available_kw`、`wind_operating_limit_kw`，并完成 A 侧协议校验。
+2. **A/B 实际 socket 联调**：验证 JSON Lines、4096 bytes、半帧/粘包、state_request、dispatch、ACK、seq/session/step、timeout、断线重连。
+3. **闭环功能验证**：重点验证“停机 actual=0 但 operating_limit>0 时，B 能主动下发启动目标”，以及 operating limit 限制和 C fault 优先。
+4. **数据库追溯验证**：验证 state → dispatch → ACK → 后续 actual state 能在 `ems.db` 复原，并保持 sim time / sampled time / received time 语义独立。
+5. **A/B/C 组合调试**：确认 C 的保护/控制始终优先于 B 正常调度。
+6. **STM32G431RBT6 实机验证**：由 C 完成硬件/Wi-Fi/串口部分，B 配合验证目标闭环。
+7. **PyQt6 UI**：底层联调稳定后再接界面。
 
 ## 本地运行
 
-Python 版本统一为 3.11.x。
+Python 统一为 **3.11.x**。
 
 初始化数据库：
 
@@ -121,12 +177,3 @@ python -m unittest discover -s tests -v
 ```
 
 `data/runtime/ems.db` 是本地运行数据，不提交 GitHub。
-
-## 当前边界与后续
-
-- `runtime.py` 仍保持可独立测试；正式运行组合由 `serviceB.py` 完成。
-- `tcpB.py` 是 B 专属 TCP 文件；不要再新建无后缀的 `tcp.py`，避免和其他成员冲突。
-- B 不控制桨距角；桨距动作属于 C。
-- B 不修改 A 的 actual 功率。
-- 未确定的设备额定功率、功率曲线、爬坡、启停和 C 安全策略不得硬编码。
-- 下一步：A/B 实际 socket 联调 -> 根据 ACK/state 验证数据库追溯 -> 再做 A/B/C 组合调试 -> 最后接 PyQt6 UI。
