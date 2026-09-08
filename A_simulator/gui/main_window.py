@@ -902,4 +902,3 @@ def run_gui(*, db_path: Path, config_path: Path, scenario_path: Path) -> int:
     )
     window.show()
     return app.exec()
-

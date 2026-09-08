@@ -290,4 +290,3 @@ class CurveEditor(QWidget):
             painter.drawRoundedRect(box, 4, 4)
             painter.setPen(QColor("#26364a"))
             painter.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
-
