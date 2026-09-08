@@ -36,10 +36,10 @@ def _reject_constant(value: str) -> None:
 
 
 def _validate_rfc3339_utc(value: object, field_name: str) -> str:
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value or "T" not in value or not value.endswith("Z"):
         raise ProtocolError(f"{field_name} must be a non-empty RFC 3339 UTC string")
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
     except ValueError as exc:
         raise ProtocolError(f"{field_name} must be RFC 3339") from exc
     if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
