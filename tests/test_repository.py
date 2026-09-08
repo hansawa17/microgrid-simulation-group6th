@@ -9,7 +9,7 @@ from B_dispatch.repository import EMSRepository
 
 
 class RepositoryTests(unittest.TestCase):
-    def test_initialize_creates_expected_tables_without_physical_defaults(self):
+    def test_initialize_creates_expected_tables_and_unified_defaults(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "ems.db"
             repo = EMSRepository(db)
@@ -19,7 +19,10 @@ class RepositoryTests(unittest.TestCase):
                 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 self.assertTrue({"schema_meta", "dispatch_parameters", "ems_runtime_config", "current_state",
                                  "state_history", "dispatch_commands", "dispatch_evaluation", "event_log"} <= tables)
-                self.assertIsNone(conn.execute("SELECT 1 FROM dispatch_parameters WHERE id=1").fetchone())
+                params = conn.execute("SELECT wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw FROM dispatch_parameters WHERE id=1").fetchone()
+                self.assertEqual(params, (0.0, 100.0, 120.0, 10.0))
+                runtime = conn.execute("SELECT poll_period_s, dispatch_period_s, closed_loop, command_timeout_s FROM ems_runtime_config WHERE id=1").fetchone()
+                self.assertEqual(runtime, (1.0, 5.0, 1, 3.0))
                 self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "3")
                 state_columns = {row[1] for row in conn.execute("PRAGMA table_info(current_state)")}
                 self.assertTrue({"wind_available_kw", "wind_operating_limit_kw"} <= state_columns)
