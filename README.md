@@ -83,13 +83,13 @@ B 的 TCP/服务文件统一使用 `*B` 后缀，避免和其他成员冲突。
 1. **运行监控**：A 可达 IP、TCP 端口、本机 IP、连接/断开；负荷、available、operating limit、actual、target、功率不平衡、柴油余量、状态年龄等。
 2. **实时曲线**：负荷、风电能力/限制、目标/实际及柴油实际趋势。
 3. **本地场景 / 手动调度**：构造 mock `GridState`，验证风优先、operating limit、10 kW reserve、柴油 OFF、C fault 优先和缺供结果。
-4. **参数设置**：运行参数可配置；风机/柴油容量与 10 kW reserve 按小组统一基线初始化到 `ems.db`，不作为课程原文指定值。
+4. **参数设置**：统一基线从 `ems.db` 读取并按职责展示；生产基线不允许由 GUI 任意改写。
 5. **EMS 调度**：手动计算/下发和可选自动闭环；显示 target unserved、target surplus、reason、ACK。
 6. **历史数据**：读取 `ems.db/state_history`、session 过滤和 CSV 导出。
 7. **通信诊断**：连接、pending request、full-sync、seq、ACK 和 GUI 事件日志。
 8. **报警与评价**：C fault、状态过期、delivery unknown 以及数据库评价 KPI。
 
-`EMSRepository.initialize()` 会创建/迁移本地 `ems.db`，并把 B 的统一数据库基线对齐为：风电 0/100 kW、柴油最大 120 kW、reserve 10 kW、B 采集 1 s、B 调度 5 s、命令超时 3 s。真实 `data/runtime/ems.db` 不提交仓库。
+`EMSRepository.initialize()` 会创建/迁移本地 `ems.db` 到 schema v4，并把统一数据库基线写入三个参数层：`physical_parameters` 保存 A/B 只读物理参数副本；`dispatch_parameters` 保存 B 调度限值；`ems_runtime_config` 保存 B/C 周期与闭环基线。真实 `data/runtime/ems.db` 不提交仓库。
 
 GUI 可以直接启动：
 
@@ -117,7 +117,8 @@ python -m B_dispatch gui
 - B-owned `tcpB.py` / `serviceB.py`。
 - JSON Lines、4096 bytes、seq/session/step、双时间字段、ACK 风险处理。
 - `wind_available_kw` / `wind_operating_limit_kw` 已进入 B 模型、TCP parser、dispatch、数据库和测试。
-- B PyQt6 GUI 已进入 `B_dispatch/gui_b.py`，支持 A IP/端口、真实 TCP 接入、本地 mock、参数管理、历史导出、通信诊断和调度评价。
+- `ems.db` schema v4 已增加完整物理参数只读副本，并固定 B dispatch / runtime baseline。
+- B PyQt6 GUI 已进入 `B_dispatch/gui_b.py`，支持 A IP/端口、真实 TCP 接入、本地 mock、参数展示、历史导出、通信诊断和调度评价。
 
 ### 尚需完成
 
@@ -129,7 +130,7 @@ python -m B_dispatch gui
 
 ## 测试说明
 
-当前会话中没有在用户本机执行测试，也没有可用于证明最新 GUI 修改已经通过的 CI 结果，因此 **不宣称测试通过**。
+当前会话中没有在用户本机执行测试，也没有可用于证明最新修改已经通过的 CI 结果，因此 **不宣称测试通过**。
 
 建议在 Python 3.11 环境执行：
 
