@@ -1,16 +1,11 @@
 # -*- coding: utf-8 -*-
 """B / EMS PyQt6 SCADA GUI.
 
-B 是闭环 EMS 主站和 A 的 TCP client。本界面保留原有 A IP/端口、TCP state/dispatch/ACK、
-实时监控、曲线、参数、历史、报警等功能，并补充课程要求中的：
-- 本地场景/手动调度验证；
-- 功率不平衡、柴油备用余量、状态新鲜度；
-- ems.db 历史读取与 CSV 导出；
-- 通信诊断、full-sync/未决请求/ACK 状态；
-- 自动闭环调度开关；
-- 调度评价 KPI 与数据库事件回放。
+本界面按课程 3.2 要求组织：SCADA 副本、周期采集/调度、设备参数、连接状态、
+调度与四遥历史、日志、调度评价，并保留 B→A TCP 客户端的 IP/端口配置。
 
-本地演示输入明确标记为 mock，不替代 A 的正式场景曲线。B 只发送 target/enable，不发送 pitch。
+设计边界：B 只发送 target/enable；不写 A 的 actual，不发送 pitch。
+C 对风机保护/控制具有优先权；柴油 reserve 固定为 10 kW；柴油允许 OFF。
 """
 from __future__ import annotations
 
@@ -26,244 +21,555 @@ from typing import Iterable
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 try:
-    from B_dispatch.models import DispatchConfig, DispatchResult, GridState
+    from B_dispatch.models import DispatchConfig, GridState
     from B_dispatch.operator_core import EMSCore
+    from B_dispatch.repository import EMSRepository
     from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError
 except ImportError:
-    from .models import DispatchConfig, DispatchResult, GridState
+    from .models import DispatchConfig, GridState
     from .operator_core import EMSCore
+    from .repository import EMSRepository
     from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError
 
-COLORS={"bg":"#e9eff6","surface":"#fff","border":"#d7e2ed","nav":"#f6f9fc","primary":"#2f6fd6","dark":"#16324f","text":"#274056","soft":"#45607a","muted":"#8b9caf","good":"#1fa15a","warn":"#e19a1a","bad":"#d64545","load":"#355a78","avail":"#1fa15a","limit":"#2b93b5","target":"#e19a1a","actual":"#6b4fd8","diesel":"#8a5a2b"}
-QSS=f"""
-QMainWindow{{background:{COLORS['bg']};}} QWidget{{font-family:'Microsoft YaHei','Segoe UI';color:{COLORS['text']};}}
-#header{{background:#fff;border-bottom:1px solid {COLORS['border']};}} #logo{{background:{COLORS['primary']};border-radius:6px;color:#fff;font-size:19px;font-weight:800;}}
-#title{{color:{COLORS['dark']};font-size:20px;font-weight:700;}} #subtitle{{color:{COLORS['muted']};font-size:12px;}}
-#nav{{background:{COLORS['nav']};border-right:1px solid #dbe5ef;}}
-QPushButton[nav='true']{{background:transparent;border:none;text-align:left;border-radius:7px;padding:12px 18px;color:#33516d;font-size:14px;font-weight:600;}}
-QPushButton[nav='true']:hover{{background:#e8f0f8;}} QPushButton[nav='true']:checked{{background:{COLORS['primary']};color:#fff;}}
-QFrame[card='true']{{background:#fff;border:1px solid {COLORS['border']};border-radius:8px;}}
-QLabel[section='true']{{color:{COLORS['dark']};font-size:19px;font-weight:700;}} QLabel[cardtitle='true']{{color:{COLORS['soft']};font-size:13px;font-weight:600;}}
-QLabel[value='true']{{color:#123a5f;font-size:26px;font-weight:700;}} QLabel[hint='true']{{color:{COLORS['muted']};font-size:11px;}}
-QPushButton[kind='primary']{{background:{COLORS['primary']};color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;}}
-QPushButton[kind='success']{{background:{COLORS['good']};color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;}}
-QPushButton[kind='danger']{{background:{COLORS['bad']};color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;}}
-QPushButton[kind='secondary']{{background:#eef3f8;color:#33516d;border:1px solid #d2dfea;border-radius:6px;padding:9px 18px;font-weight:600;}}
-QLineEdit,QComboBox,QDoubleSpinBox,QSpinBox{{background:#fff;border:1px solid #c9d8e6;border-radius:5px;padding:6px 8px;min-height:20px;}}
-QTableWidget{{background:#fff;border:1px solid #d5e2ed;gridline-color:#e4ecf3;alternate-background-color:#f7fafd;}}
-QHeaderView::section{{background:#edf3f9;color:#33516d;font-weight:700;border:none;border-bottom:1px solid #d5e2ed;padding:8px;}}
-QStatusBar{{background:#e6edf5;color:#5e7891;}}
+BLUE = '#2f6fd6'
+BG = '#e9eff6'
+BORDER = '#d7e2ed'
+DARK = '#16324f'
+TEXT = '#274056'
+MUTED = '#7f93a7'
+GOOD = '#1fa15a'
+WARN = '#e19a1a'
+BAD = '#d64545'
+QSS = f"""
+QMainWindow {{ background:{BG}; }}
+QWidget {{ font-family:'Microsoft YaHei','Segoe UI'; color:{TEXT}; }}
+#header {{ background:#fff; border-bottom:1px solid {BORDER}; }}
+#logo {{ background:{BLUE}; color:#fff; border-radius:6px; font-size:19px; font-weight:800; }}
+#title {{ color:{DARK}; font-size:20px; font-weight:700; }}
+#subtitle {{ color:{MUTED}; font-size:12px; }}
+#nav {{ background:#f6f9fc; border-right:1px solid #dbe5ef; }}
+QPushButton[nav='true'] {{ background:transparent; border:none; border-radius:7px; text-align:left; padding:11px 16px; color:#33516d; font-size:14px; font-weight:600; }}
+QPushButton[nav='true']:hover {{ background:#e8f0f8; }}
+QPushButton[nav='true']:checked {{ background:{BLUE}; color:#fff; }}
+QFrame[card='true'] {{ background:#fff; border:1px solid {BORDER}; border-radius:8px; }}
+QLabel[section='true'] {{ color:{DARK}; font-size:19px; font-weight:700; }}
+QLabel[cardtitle='true'] {{ color:#45607a; font-size:13px; font-weight:600; }}
+QLabel[value='true'] {{ color:#123a5f; font-size:24px; font-weight:700; }}
+QLabel[hint='true'] {{ color:{MUTED}; font-size:11px; }}
+QPushButton[kind='primary'] {{ background:{BLUE}; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-weight:600; }}
+QPushButton[kind='success'] {{ background:{GOOD}; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-weight:600; }}
+QPushButton[kind='danger'] {{ background:{BAD}; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-weight:600; }}
+QPushButton[kind='secondary'] {{ background:#eef3f8; color:#33516d; border:1px solid #d2dfea; border-radius:6px; padding:8px 16px; font-weight:600; }}
+QLineEdit,QComboBox,QDoubleSpinBox,QSpinBox,QDateTimeEdit {{ background:#fff; border:1px solid #c9d8e6; border-radius:5px; padding:6px 8px; min-height:20px; }}
+QTableWidget {{ background:#fff; border:1px solid #d5e2ed; gridline-color:#e4ecf3; alternate-background-color:#f7fafd; }}
+QHeaderView::section {{ background:#edf3f9; color:#33516d; font-weight:700; border:none; border-bottom:1px solid #d5e2ed; padding:8px; }}
+QStatusBar {{ background:#e6edf5; color:#5e7891; }}
 """
 
-def local_ip():
+
+def local_ip() -> str:
     try:
-        with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as s:
-            s.connect(('8.8.8.8',80)); return s.getsockname()[0]
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('8.8.8.8', 80))
+            return s.getsockname()[0]
     except OSError:
-        try:return socket.gethostbyname(socket.gethostname())
-        except OSError:return '未知'
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return '未知'
 
-def utc_now():return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
 
-class ValueCard(QtWidgets.QFrame):
-    def __init__(self,title,unit=''):
-        super().__init__();self.setProperty('card',True);l=QtWidgets.QVBoxLayout(self);l.setContentsMargins(15,12,15,12)
-        t=QtWidgets.QLabel(title);t.setProperty('cardtitle',True);self.value=QtWidgets.QLabel('--');self.value.setProperty('value',True);u=QtWidgets.QLabel(unit);u.setProperty('hint',True);l.addWidget(t);l.addWidget(self.value);l.addWidget(u)
-    def set(self,v):self.value.setText(str(v))
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+
+class Card(QtWidgets.QFrame):
+    def __init__(self, title: str, unit: str = '') -> None:
+        super().__init__()
+        self.setProperty('card', True)
+        l = QtWidgets.QVBoxLayout(self)
+        l.setContentsMargins(14, 10, 14, 10)
+        t = QtWidgets.QLabel(title); t.setProperty('cardtitle', True)
+        self.value = QtWidgets.QLabel('--'); self.value.setProperty('value', True)
+        u = QtWidgets.QLabel(unit); u.setProperty('hint', True)
+        l.addWidget(t); l.addWidget(self.value); l.addWidget(u)
+
+    def set_value(self, value: object) -> None:
+        self.value.setText(str(value))
+
 
 class TrendChart(QtWidgets.QWidget):
-    def __init__(self,names:Iterable[str]):super().__init__();self.names=list(names);self.data={n:[] for n in self.names};self.setMinimumHeight(285)
-    def push(self,values,max_points=120):
-        for n in self.names:
-            self.data[n].append(float(values.get(n,math.nan)))
-            if len(self.data[n])>max_points:del self.data[n][:-max_points]
+    def __init__(self, names: Iterable[str]) -> None:
+        super().__init__()
+        self.names = list(names)
+        self.data = {n: [] for n in self.names}
+        self.setMinimumHeight(300)
+        self.palette_colors = ['#355a78','#1fa15a','#2b93b5','#e19a1a','#6b4fd8','#8a5a2b']
+
+    def push(self, row: dict[str, float], max_points: int = 180) -> None:
+        for name in self.names:
+            v = row.get(name, math.nan)
+            self.data[name].append(float(v) if v is not None else math.nan)
+            if len(self.data[name]) > max_points:
+                del self.data[name][:-max_points]
         self.update()
-    def clear(self):
-        for a in self.data.values():a.clear()
+
+    def clear(self) -> None:
+        for values in self.data.values():
+            values.clear()
         self.update()
-    def paintEvent(self,e):
-        p=QtGui.QPainter(self);p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing);r=self.rect().adjusted(58,18,-18,-48);p.fillRect(self.rect(),QtGui.QColor('#f7fafd'));p.setPen(QtGui.QPen(QtGui.QColor('#dde6ef'),1))
-        for i in range(6):p.drawLine(r.left(),int(r.top()+r.height()*i/5),r.right(),int(r.top()+r.height()*i/5))
-        vals=[v for a in self.data.values() for v in a if math.isfinite(v)]
-        if not vals:p.setPen(QtGui.QColor(COLORS['muted']));p.drawText(r,QtCore.Qt.AlignmentFlag.AlignCenter,'等待状态数据 / 本地演示数据');return
-        lo,hi=min(vals),max(vals)
-        if hi-lo<1e-9:lo-=1;hi+=1
-        pal=[COLORS['load'],COLORS['avail'],COLORS['limit'],COLORS['target'],COLORS['actual'],COLORS['diesel']]
-        for k,n in enumerate(self.names):
-            pts=[];a=self.data[n]
-            for i,v in enumerate(a):
-                if not math.isfinite(v):continue
-                x=r.left()+r.width()*i/max(1,len(a)-1);y=r.bottom()-r.height()*(v-lo)/(hi-lo);pts.append(QtCore.QPointF(x,y))
-            if len(pts)>1:p.setPen(QtGui.QPen(QtGui.QColor(pal[k%len(pal)]),2));p.drawPolyline(QtGui.QPolygonF(pts))
-        p.setPen(QtGui.QColor(COLORS['muted']));p.drawText(5,r.top(),45,18,QtCore.Qt.AlignmentFlag.AlignRight,f'{hi:.0f}');p.drawText(5,r.bottom()-18,45,18,QtCore.Qt.AlignmentFlag.AlignRight,f'{lo:.0f}')
-        x=62;y=self.height()-20
-        for k,n in enumerate(self.names):
-            p.setPen(QtGui.QPen(QtGui.QColor(pal[k%len(pal)]),3));p.drawLine(x,y,x+14,y);p.setPen(QtGui.QColor(COLORS['soft']));p.drawText(x+18,y+4,n);x+=max(80,len(n)*9+40)
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QtGui.QColor('#f7fafd'))
+        r = self.rect().adjusted(58, 18, -18, -46)
+        p.setPen(QtGui.QPen(QtGui.QColor('#dde6ef'), 1))
+        for i in range(6):
+            y = int(r.top() + r.height() * i / 5)
+            p.drawLine(r.left(), y, r.right(), y)
+        finite = [v for values in self.data.values() for v in values if math.isfinite(v)]
+        if not finite:
+            p.setPen(QtGui.QColor(MUTED)); p.drawText(r, QtCore.Qt.AlignmentFlag.AlignCenter, '等待 A 状态或本地 mock 数据')
+            return
+        lo, hi = min(finite), max(finite)
+        if hi - lo < 1e-9: lo -= 1; hi += 1
+        for idx, name in enumerate(self.names):
+            values = self.data[name]; points = []
+            for i, value in enumerate(values):
+                if not math.isfinite(value): continue
+                x = r.left() + r.width() * i / max(1, len(values)-1)
+                y = r.bottom() - r.height() * (value-lo)/(hi-lo)
+                points.append(QtCore.QPointF(x, y))
+            if len(points) >= 2:
+                p.setPen(QtGui.QPen(QtGui.QColor(self.palette_colors[idx % len(self.palette_colors)]), 2))
+                p.drawPolyline(QtGui.QPolygonF(points))
+        p.setPen(QtGui.QColor(MUTED))
+        p.drawText(4, r.top(), 48, 18, QtCore.Qt.AlignmentFlag.AlignRight, f'{hi:.0f}')
+        p.drawText(4, r.bottom()-18, 48, 18, QtCore.Qt.AlignmentFlag.AlignRight, f'{lo:.0f}')
+        x = 64
+        y = self.height() - 18
+        for idx, name in enumerate(self.names):
+            p.setPen(QtGui.QPen(QtGui.QColor(self.palette_colors[idx % len(self.palette_colors)]), 3))
+            p.drawLine(x, y, x+14, y)
+            p.setPen(QtGui.QColor('#45607a')); p.drawText(x+18, y+4, name)
+            x += max(82, len(name)*9+42)
+
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
-        super().__init__();self.setWindowTitle('南极孤立微电网 EMS 主站 B');self.resize(1920,1080);self.setMinimumSize(1400,800);self.setStyleSheet(QSS)
-        self.client=None;self.state=None;self.core=None;self.last_decision=None;self.last_ack=None;self.auto_dispatch=False
-        self.db_path=Path(__file__).resolve().parents[1]/'data'/'runtime'/'ems.db';self.demo_mode=True
-        self.params={'wind_min_kw':0.0,'wind_max_kw':100.0,'diesel_max_kw':120.0,'reserve_kw':10.0,'max_age_s':2.0}
-        self.build_ui();self.build_timers();self.set_connection('A 未连接','warn');self.log('GUI 启动：本地演示模式；可配置 A IP 后进入 TCP 模式')
-    def card(self):x=QtWidgets.QFrame();x.setProperty('card',True);return x
-    def section(self,t):x=QtWidgets.QLabel(t);x.setProperty('section',True);return x
-    def build_ui(self):
-        c=QtWidgets.QWidget();self.setCentralWidget(c);root=QtWidgets.QVBoxLayout(c);root.setContentsMargins(0,0,0,0);root.setSpacing(0);root.addWidget(self.header())
-        body=QtWidgets.QHBoxLayout();body.setContentsMargins(0,0,0,0);body.setSpacing(0);body.addWidget(self.nav());self.stack=QtWidgets.QStackedWidget()
-        for f in (self.monitor_page,self.curve_page,self.demo_page,self.dispatch_page,self.history_page,self.comm_page,self.alarm_page):self.stack.addWidget(f())
-        body.addWidget(self.stack,1);root.addLayout(body,1);self.group=QtWidgets.QButtonGroup(self);self.group.setExclusive(True)
-        for i,b in enumerate(self.nav_buttons):self.group.addButton(b,i);b.clicked.connect(lambda _,j=i:self.stack.setCurrentIndex(j))
-        self.nav_buttons[0].setChecked(True);self.statusBar().showMessage('B EMS 就绪')
-    def header(self):
-        bar=QtWidgets.QFrame();bar.setObjectName('header');bar.setFixedHeight(72);l=QtWidgets.QHBoxLayout(bar);l.setContentsMargins(20,0,20,0);logo=QtWidgets.QLabel('B');logo.setObjectName('logo');logo.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter);logo.setFixedSize(38,38);l.addWidget(logo)
-        t=QtWidgets.QVBoxLayout();a=QtWidgets.QLabel('南极孤立微电网 EMS 主站');a.setObjectName('title');b=QtWidgets.QLabel('PC-B · 能量管理与调度 · Closed Loop');b.setObjectName('subtitle');t.addWidget(a);t.addWidget(b);l.addLayout(t);l.addStretch();self.clock=QtWidgets.QLabel();l.addWidget(self.clock);self.a_status=QtWidgets.QLabel('A 未连接');l.addWidget(self.a_status);self.mode_status=QtWidgets.QLabel('本地演示');l.addWidget(self.mode_status);l.addWidget(QtWidgets.QLabel('C 优先'));return bar
-    def nav(self):
-        p=QtWidgets.QFrame();p.setObjectName('nav');p.setFixedWidth(205);l=QtWidgets.QVBoxLayout(p);l.setContentsMargins(0,16,0,16);cap=QtWidgets.QLabel('功能导航');cap.setProperty('hint',True);l.addWidget(cap);self.nav_buttons=[]
-        for text in ['运行监控','实时曲线','本地场景 / 手动调度','EMS 调度','历史数据','通信诊断','报警与评价']:
-            b=QtWidgets.QPushButton(text);b.setProperty('nav',True);b.setCheckable(True);self.nav_buttons.append(b);l.addWidget(b)
-        l.addStretch();s=QtWidgets.QLabel('B / EMS\nTCP Client → A Server\nReserve = 10 kW\nC protection priority');s.setProperty('hint',True);l.addWidget(s);return p
-    def monitor_page(self):
-        w=QtWidgets.QWidget();l=QtWidgets.QVBoxLayout(w);l.setContentsMargins(22,18,22,18);l.addWidget(self.section('运行监控'));con=self.card();g=QtWidgets.QGridLayout(con);g.setContentsMargins(14,12,14,12);g.addWidget(QtWidgets.QLabel('A 服务器连接'),0,0,1,2);g.addWidget(QtWidgets.QLabel('A 可达 IP'),1,0);self.host=QtWidgets.QLineEdit('127.0.0.1');self.host.setPlaceholderText('例如 192.168.1.100');g.addWidget(self.host,1,1);g.addWidget(QtWidgets.QLabel('TCP 端口'),1,2);self.port=QtWidgets.QSpinBox();self.port.setRange(1,65535);self.port.setValue(5000);g.addWidget(self.port,1,3);self.connect_btn=QtWidgets.QPushButton('连接 A 服务器');self.connect_btn.setProperty('kind','success');self.connect_btn.clicked.connect(self.toggle_connection);g.addWidget(self.connect_btn,1,4);g.addWidget(QtWidgets.QLabel(f'本机 IP：{local_ip()}'),0,4,1,2,QtCore.Qt.AlignmentFlag.AlignRight);l.addWidget(con)
-        grid=QtWidgets.QGridLayout();self.cards={};specs=[('load','负荷','kW'),('avail','风电 Available','kW'),('limit','风电 Operating Limit','kW'),('wind_actual','风电 Actual','kW'),('diesel_actual','柴油 Actual','kW'),('wind_target','风电 Target','kW'),('diesel_target','柴油 Target','kW'),('imbalance','功率不平衡','kW'),('wind_speed','风速','m/s'),('diesel_headroom','柴油备用余量','kW'),('state_age','状态年龄','s'),('pitch','桨距 Actual','deg')]
-        for i,s in enumerate(specs):self.cards[s[0]]=ValueCard(s[1],s[2]);grid.addWidget(self.cards[s[0]],i//4,i%4)
-        l.addLayout(grid);info=self.card();f=QtWidgets.QFormLayout(info);self.session=QtWidgets.QLabel('--');self.simtime=QtWidgets.QLabel('--');self.sampled=QtWidgets.QLabel('--');self.wind_state=QtWidgets.QLabel('--');self.last_reason=QtWidgets.QLabel('--');f.addRow('Session / Step',self.session);f.addRow('Simulation Time',self.simtime);f.addRow('A sampled_at_utc',self.sampled);f.addRow('风机状态 / Fault',self.wind_state);f.addRow('最近调度',self.last_reason);l.addWidget(info);l.addStretch();return w
-    def curve_page(self):
-        w=QtWidgets.QWidget();l=QtWidgets.QVBoxLayout(w);l.setContentsMargins(22,18,22,18);l.addWidget(self.section('实时曲线'));c=self.card();q=QtWidgets.QVBoxLayout(c);self.chart=TrendChart(['Load','Available','Operating Limit','Wind Target','Wind Actual','Diesel Actual']);q.addWidget(self.chart);l.addWidget(c,1);row=QtWidgets.QHBoxLayout();b=QtWidgets.QPushButton('清空曲线');b.setProperty('kind','secondary');b.clicked.connect(self.chart.clear);r=QtWidgets.QPushButton('立即请求 A 状态');r.setProperty('kind','primary');r.clicked.connect(self.request_state);row.addWidget(b);row.addWidget(r);row.addStretch();l.addLayout(row);return w
-    def demo_page(self):
-        w=QtWidgets.QWidget();l=QtWidgets.QVBoxLayout(w);l.setContentsMargins(22,18,22,18);l.addWidget(self.section('本地场景 / 手动调度'));n=QtWidgets.QLabel('仅用于 B 算法验证：输入明确标记为 mock，不替代 A 正式场景曲线。联网后以 A state 为唯一状态源。');n.setProperty('hint',True);l.addWidget(n);c=self.card();f=QtWidgets.QFormLayout(c)
-        self.dw=self.spin(0,50,8);self.da=self.spin(0,100,60);self.dl=self.spin(0,100,60);self.dload=self.spin(0,300,100);self.dwa=self.spin(0,100,0);self.dda=self.spin(0,120,0);self.df=QtWidgets.QCheckBox('模拟 C fault / protection');self.dr=QtWidgets.QCheckBox('模拟风机运行');self.dr.setChecked(True)
-        for a,b in [('风速 (m/s)',self.dw),('Available (kW)',self.da),('Operating Limit (kW)',self.dl),('负荷 (kW)',self.dload),('Wind Actual (kW)',self.dwa),('Diesel Actual (kW)',self.dda)]:f.addRow(a,b)
-        f.addRow('Fault',self.df);f.addRow('Wind Running',self.dr);l.addWidget(c);row=QtWidgets.QHBoxLayout();x=QtWidgets.QPushButton('本地计算 Dispatch');x.setProperty('kind','primary');x.clicked.connect(self.demo_calculate);y=QtWidgets.QPushButton('设为当前状态');y.setProperty('kind','secondary');y.clicked.connect(self.demo_set_current);row.addWidget(x);row.addWidget(y);row.addStretch();l.addLayout(row);self.demo_result=QtWidgets.QPlainTextEdit();self.demo_result.setReadOnly(True);l.addWidget(self.demo_result,1);return w
-    def dispatch_page(self):
-        w=QtWidgets.QWidget();l=QtWidgets.QVBoxLayout(w);l.setContentsMargins(22,18,22,18);l.addWidget(self.section('EMS 调度'));row=QtWidgets.QHBoxLayout();self.req=QtWidgets.QPushButton('请求 A 状态');self.req.setProperty('kind','secondary');self.req.clicked.connect(self.request_state);self.calc_send=QtWidgets.QPushButton('计算并发送 Dispatch');self.calc_send.setProperty('kind','primary');self.calc_send.clicked.connect(self.dispatch_now);self.auto=QtWidgets.QCheckBox('自动闭环：每 5 s 决策一次');self.auto.stateChanged.connect(lambda v:setattr(self,'auto_dispatch',bool(v)));row.addWidget(self.req);row.addWidget(self.calc_send);row.addWidget(self.auto);row.addStretch();l.addLayout(row)
-        r=self.card();f=QtWidgets.QFormLayout(r);self.out_wind=QtWidgets.QLabel('--');self.out_diesel=QtWidgets.QLabel('--');self.out_unserved=QtWidgets.QLabel('--');self.out_surplus=QtWidgets.QLabel('--');self.out_reason=QtWidgets.QLabel('--');self.out_ack=QtWidgets.QLabel('--')
-        for a,b in [('Wind Target',self.out_wind),('Diesel Target',self.out_diesel),('Target Unserved',self.out_unserved),('Target Surplus',self.out_surplus),('Reason',self.out_reason),('ACK',self.out_ack)]:f.addRow(a,b)
-        l.addWidget(r);p=self.card();pf=QtWidgets.QFormLayout(p);pf.addRow('风电约束','0 ≤ target ≤ C 发布的 operating_limit');pf.addRow('柴油常规上限','diesel_max - 10 kW');pf.addRow('柴油 OFF','target = 0 时 diesel_enable=false');pf.addRow('C 优先','fault / operating limit 优先于 B 正常请求');pf.addRow('Pitch','B 不发送 pitch_target_deg');pf.addRow('ACK','accepted 只表示 A 接收，actual 必须看后续 state');l.addWidget(p);l.addStretch();return w
-    def history_page(self):
-        w=QtWidgets.QWidget();l=QtWidgets.QVBoxLayout(w);l.setContentsMargins(22,18,22,18);l.addWidget(self.section('历史数据 / 可追溯'));row=QtWidgets.QHBoxLayout();self.db_label=QtWidgets.QLabel(f'数据库：{self.db_path}');self.db_label.setProperty('hint',True);load=QtWidgets.QPushButton('读取 ems.db');load.setProperty('kind','secondary');load.clicked.connect(self.load_db_history);exp=QtWidgets.QPushButton('导出 CSV');exp.setProperty('kind','primary');exp.clicked.connect(self.export_history);row.addWidget(self.db_label);row.addStretch();row.addWidget(load);row.addWidget(exp);l.addLayout(row);self.history=QtWidgets.QTableWidget(0,10);self.history.setHorizontalHeaderLabels(['received','session/step','sim s','Load','Avail','Limit','Wind Actual','Diesel Actual','Wind Target','Age']);self.history.horizontalHeader().setStretchLastSection(True);self.history.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers);l.addWidget(self.history,1);return w
-    def comm_page(self):
-        w=QtWidgets.QWidget();l=QtWidgets.QVBoxLayout(w);l.setContentsMargins(22,18,22,18);l.addWidget(self.section('通信诊断'));c=self.card();f=QtWidgets.QFormLayout(c);self.comm_tcp=QtWidgets.QLabel('--');self.comm_local=QtWidgets.QLabel(local_ip());self.comm_remote=QtWidgets.QLabel('--');self.comm_pending=QtWidgets.QLabel('--');self.comm_sync=QtWidgets.QLabel('--');self.comm_frames=QtWidgets.QLabel('0');self.comm_last_rx=QtWidgets.QLabel('--')
-        for a,b in [('TCP 状态',self.comm_tcp),('本机 IP',self.comm_local),('A endpoint',self.comm_remote),('Pending state/ACK',self.comm_pending),('Full sync',self.comm_sync),('状态/ACK 帧数',self.comm_frames),('最近接收',self.comm_last_rx)]:f.addRow(a,b)
-        l.addWidget(c);self.events=QtWidgets.QTableWidget(0,3);self.events.setHorizontalHeaderLabels(['UTC','级别','事件']);self.events.horizontalHeader().setStretchLastSection(True);self.events.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers);l.addWidget(self.events,1);return w
-    def alarm_page(self):
-        w=QtWidgets.QWidget();l=QtWidgets.QVBoxLayout(w);l.setContentsMargins(22,18,22,18);l.addWidget(self.section('报警与调度评价'));row=QtWidgets.QHBoxLayout();self.kpi_unserved=ValueCard('累计目标缺电','kW');self.kpi_surplus=ValueCard('累计目标过剩','kW');self.kpi_ack=ValueCard('ACK 接受率','%');self.kpi_fault=ValueCard('Fault 事件','count');self.kpi_state=ValueCard('状态样本','count')
-        for x in [self.kpi_unserved,self.kpi_surplus,self.kpi_ack,self.kpi_fault,self.kpi_state]:row.addWidget(x)
-        l.addLayout(row);self.alarm_table=QtWidgets.QTableWidget(0,4);self.alarm_table.setHorizontalHeaderLabels(['时间','级别','类型','说明']);self.alarm_table.horizontalHeader().setStretchLastSection(True);l.addWidget(self.alarm_table,1);b=QtWidgets.QPushButton('从 ems.db 刷新评价/日志');b.setProperty('kind','secondary');b.clicked.connect(self.refresh_kpi);l.addWidget(b);return w
-    def spin(self,a,b,v):x=QtWidgets.QDoubleSpinBox();x.setRange(a,b);x.setDecimals(2);x.setValue(v);return x
-    def build_timers(self):
-        self.ct=QtCore.QTimer(self);self.ct.timeout.connect(lambda:self.clock.setText(datetime.now().strftime('%Y-%m-%d %H:%M:%S')));self.ct.start(1000);self.nt=QtCore.QTimer(self);self.nt.timeout.connect(self.poll_socket);self.nt.start(250);self.at=QtCore.QTimer(self);self.at.timeout.connect(self.auto_tick);self.at.start(5000);self.kt=QtCore.QTimer(self);self.kt.timeout.connect(self.refresh_kpi);self.kt.start(5000)
-    def set_connection(self,text,level):self.a_status.setText(text);self.a_status.setStyleSheet(f'color:{COLORS[level]};font-weight:700;');self.comm_tcp.setText(text);self.comm_remote.setText(f'{self.client.host}:{self.client.port}' if self.client else '--')
-    def log(self,text,level='INFO'):
-        if hasattr(self,'events'):
-            r=self.events.rowCount();self.events.insertRow(r);self.events.setItem(r,0,QtWidgets.QTableWidgetItem(utc_now()));self.events.setItem(r,1,QtWidgets.QTableWidgetItem(level));self.events.setItem(r,2,QtWidgets.QTableWidgetItem(text));self.events.scrollToBottom()
-        self.statusBar().showMessage(text)
-    def toggle_connection(self):self.disconnect_server() if self.client and self.client.connected else self.connect_server()
-    def connect_server(self):
-        host=self.host.text().strip();port=self.port.value()
-        if not host or host=='0.0.0.0':self.log('A IP 无效：客户端必须填写 A 的可达地址','ERROR');return
-        try:
-            self.client=EMSTcpClient(host,port,timeout_s=2.0);self.client.connect();self.demo_mode=False;self.mode_status.setText('TCP 实时');self.connect_btn.setText('断开 A 服务器');self.set_connection(f'已连接 {host}:{port}','good');self.log(f'B → A TCP connected: {host}:{port}');self.request_state()
-        except Exception as e:self.client=None;self.log(f'连接 A 失败：{e}','ERROR');self.set_connection('A 连接失败','bad')
-    def disconnect_server(self):
-        if self.client:
-            try:self.client.close()
-            except Exception:pass
-        self.client=None;self.demo_mode=True;self.mode_status.setText('本地演示');self.connect_btn.setText('连接 A 服务器');self.set_connection('A 未连接','warn');self.log('已断开 A；回到本地演示模式')
-    def request_state(self):
-        if not self.client or not self.client.connected:self.log('当前未连接 A：请使用本地场景页','WARN');return
-        try:self.client.request_state(full=self.client.needs_full_sync);self.log('发送 state_request')
-        except Exception as e:self.log(f'state_request 失败：{e}','ERROR')
-    def poll_socket(self):
-        c=self.client
-        if not c or not c.connected:return
-        try:res=c.receive_once()
-        except socket.timeout:return
-        except (ConnectionError,OSError,ProtocolError) as e:self.log(f'TCP 中断：{e}','ERROR');self.set_connection('TCP 中断','bad');c.close();self.connect_btn.setText('连接 A 服务器');return
-        for x in res:self.apply_state(x) if isinstance(x,GridState) else self.apply_ack(x)
-        self.comm_pending.setText(f'state={c._pending_state_request_seq} / ack={c._pending_ack_seq}');self.comm_sync.setText(str(c.needs_full_sync))
-        if c._pending_state_request_seq is None and c._pending_ack_seq is None:
-            try:c.request_state(full=c.needs_full_sync)
-            except Exception:pass
-    def apply_state(self,s:GridState):
-        self.state=s;imb=s.load_power_kw-s.wind_actual_kw-s.diesel_actual_kw;head=max(0.0,self.params['diesel_max_kw']-s.diesel_actual_kw)
-        vals={'load':s.load_power_kw,'avail':s.wind_available_kw,'limit':s.wind_operating_limit_kw,'wind_actual':s.wind_actual_kw,'diesel_actual':s.diesel_actual_kw,'wind_target':s.wind_target_kw,'diesel_target':getattr(s,'diesel_target_kw',0.0),'imbalance':imb,'wind_speed':s.wind_speed_mps,'diesel_headroom':head,'state_age':s.received_age_s,'pitch':s.pitch_actual_deg or 0.0}
-        for k,v in vals.items():self.cards[k].set(f'{v:.2f}')
-        self.session.setText(f'{s.session_id} / {s.step}');self.simtime.setText(f'{s.sim_time_s:.2f} s');self.sampled.setText(s.sampled_at_utc or '--');self.wind_state.setText('FAULT · C PRIORITY' if s.fault else ('RUNNING' if s.wind_running else 'STOPPED'));self.last_reason.setText(self.last_decision.result.reason if self.last_decision else '--');self.chart.push({'Load':s.load_power_kw,'Available':s.wind_available_kw,'Operating Limit':s.wind_operating_limit_kw,'Wind Target':s.wind_target_kw,'Wind Actual':s.wind_actual_kw,'Diesel Actual':s.diesel_actual_kw});self.comm_last_rx.setText(utc_now());self.comm_frames.setText(str(int(self.comm_frames.text())+1));self.add_history_state(s)
-        if s.fault:self.add_alarm('WARN','C_FAULT','A state fault：B 不请求正常风机出力')
-        if s.received_age_s>self.params['max_age_s']:self.add_alarm('WARN','STALE_STATE',f'状态年龄 {s.received_age_s:.2f}s 超限')
-    def apply_ack(self,a:Ack):
-        self.last_ack=a;self.out_ack.setText(f'seq={a.ack_seq} · {"accepted" if a.accepted else "rejected"} · {a.reason}');self.comm_frames.setText(str(int(self.comm_frames.text())+1));self.log(f'ACK seq={a.ack_seq}: accepted={a.accepted}, reason={a.reason}','INFO' if a.accepted else 'WARN')
-    def config(self):return DispatchConfig(wind_min_kw=self.params['wind_min_kw'],wind_max_kw=self.params['wind_max_kw'],diesel_max_kw=self.params['diesel_max_kw'],reserve_kw=10.0,max_state_age_s=self.params['max_age_s'],c_has_control_priority=True)
-    def calculate(self,s):
-        self.core=EMSCore(self.config());self.last_decision=self.core.decide(s);r=self.last_decision.result;self.out_wind.setText(f'{r.wind_target_kw:.2f} kW');self.out_diesel.setText(f'{r.diesel_target_kw:.2f} kW');self.out_unserved.setText(f'{r.target_unserved_kw:.2f} kW');self.out_surplus.setText(f'{r.target_surplus_kw:.2f} kW');self.out_reason.setText(r.reason);self.last_reason.setText(r.reason);return self.last_decision
-    def dispatch_now(self):
-        if self.state is None:self.log('没有有效 state，不能调度','WARN');return
-        try:
-            d=self.calculate(self.state)
-            if not self.client or not self.client.connected:self.log('本地演示只计算，不发送 TCP dispatch');return
-            seq=self.client.send_dispatch(d);a=self.client.get_ack(seq);self.log(f'dispatch seq={seq} 已发送；actual 等后续 state')
-            if a:self.apply_ack(a)
-        except DispatchDeliveryUnknown as e:self.log(f'delivery_unknown seq={e.seq}：禁止盲目重发','ERROR');self.add_alarm('ERROR','DELIVERY_UNKNOWN',str(e))
-        except Exception as e:self.log(f'Dispatch 失败：{e}','ERROR')
-    def auto_tick(self):
-        if self.auto_dispatch and self.client and self.client.connected and self.state:self.dispatch_now()
-    def demo_state(self):
-        now=utc_now();return GridState(session_id='LOCAL-DEMO',step=0,sim_time_s=0.0,wind_speed_mps=self.dw.value(),wind_available_kw=self.da.value(),wind_operating_limit_kw=min(self.dl.value(),self.da.value()),load_power_kw=self.dload.value(),wind_actual_kw=self.dwa.value(),diesel_actual_kw=self.dda.value(),wind_running=self.dr.isChecked(),fault=self.df.isChecked(),received_age_s=0.0,sampled_at_utc=now,received_at_utc=now,wind_target_kw=0.0,pitch_actual_deg=0.0)
-    def demo_calculate(self):
-        try:
-            s=self.demo_state();d=self.calculate(s);r=d.result;self.demo_result.setPlainText('\n'.join([f'LOCAL-DEMO（mock）',f'Wind target = {r.wind_target_kw:.2f} kW',f'Diesel target = {r.diesel_target_kw:.2f} kW',f'Wind enable = {r.wind_enable}',f'Diesel enable = {r.diesel_enable}',f'Target unserved = {r.target_unserved_kw:.2f} kW',f'Target surplus = {r.target_surplus_kw:.2f} kW',f'Reason = {r.reason}']));self.log('本地演示调度计算完成')
-        except Exception as e:self.demo_result.setPlainText(str(e));self.log(f'本地调度失败：{e}','ERROR')
-    def demo_set_current(self):
-        if self.client and self.client.connected:self.log('已连接 A 时不能覆盖实时 state','WARN');return
-        self.apply_state(self.demo_state());self.demo_mode=True;self.mode_status.setText('本地演示');self.log('已将本地演示状态设为当前 B state')
-    def add_history_state(self,s):
-        vals=[s.received_at_utc or utc_now(),f'{s.session_id}/{s.step}',f'{s.sim_time_s:.2f}',f'{s.load_power_kw:.2f}',f'{s.wind_available_kw:.2f}',f'{s.wind_operating_limit_kw:.2f}',f'{s.wind_actual_kw:.2f}',f'{s.diesel_actual_kw:.2f}',f'{s.wind_target_kw:.2f}',f'{s.received_age_s:.2f}'];r=self.history.rowCount();self.history.insertRow(r)
-        for i,v in enumerate(vals):self.history.setItem(r,i,QtWidgets.QTableWidgetItem(v))
-        if self.history.rowCount()>1000:self.history.removeRow(0)
-    def load_db_history(self):
-        if not self.db_path.exists():self.log(f'ems.db 不存在：{self.db_path}','WARN');return
-        try:
-            with sqlite3.connect(self.db_path) as db:rows=db.execute('SELECT received_at_utc,session_id,step,sim_time_s,load_power_kw,wind_available_kw,wind_operating_limit_kw,wind_actual_kw,diesel_actual_kw,wind_target_kw,received_age_s FROM state_history ORDER BY id DESC LIMIT 1000').fetchall()
-            self.history.setRowCount(0)
-            for row in reversed(rows):
-                r=self.history.rowCount();self.history.insertRow(r)
-                for i,v in enumerate(row):self.history.setItem(r,i,QtWidgets.QTableWidgetItem(str(v)))
-            self.log(f'从 ems.db 读取 {len(rows)} 条状态历史')
-        except Exception as e:self.log(f'读取 ems.db 失败：{e}','ERROR')
-    def export_history(self):
-        path,_=QtWidgets.QFileDialog.getSaveFileName(self,'导出 B 状态历史','ems_state_history.csv','CSV (*.csv)')
-        if not path:return
-        try:
-            with open(path,'w',newline='',encoding='utf-8-sig') as f:
-                w=csv.writer(f);w.writerow([self.history.horizontalHeaderItem(i).text() for i in range(self.history.columnCount())]);
-                for r in range(self.history.rowCount()):w.writerow([self.history.item(r,c).text() if self.history.item(r,c) else '' for c in range(self.history.columnCount())])
-            self.log(f'历史数据已导出：{path}')
-        except Exception as e:self.log(f'CSV 导出失败：{e}','ERROR')
-    def refresh_kpi(self):
-        if not self.db_path.exists():return
-        try:
-            with sqlite3.connect(self.db_path) as db:
-                q=lambda s:db.execute(s).fetchone()[0] or 0
-                self.kpi_unserved.set(f'{q("SELECT COALESCE(SUM(target_unserved_kw),0) FROM dispatch_evaluation"):.2f}');self.kpi_surplus.set(f'{q("SELECT COALESCE(SUM(target_surplus_kw),0) FROM dispatch_evaluation"):.2f}');total=q('SELECT COUNT(*) FROM dispatch_commands WHERE ack_accepted IS NOT NULL');accepted=q('SELECT COUNT(*) FROM dispatch_commands WHERE ack_accepted=1');self.kpi_ack.set(f'{100*accepted/total:.1f}' if total else '--');self.kpi_fault.set(str(q("SELECT COUNT(*) FROM event_log WHERE event_type=\'C_FAULT\'")));self.kpi_state.set(str(q('SELECT COUNT(*) FROM state_history')));logs=db.execute('SELECT created_at_utc,level,event_type,message FROM event_log ORDER BY id DESC LIMIT 100').fetchall()
-            self.alarm_table.setRowCount(0)
-            for row in reversed(logs):
-                r=self.alarm_table.rowCount();self.alarm_table.insertRow(r)
-                for i,v in enumerate(row):self.alarm_table.setItem(r,i,QtWidgets.QTableWidgetItem(str(v)))
-        except Exception:pass
-    def add_alarm(self,level,typ,msg):
-        r=self.alarm_table.rowCount();self.alarm_table.insertRow(r)
-        for i,v in enumerate([utc_now(),level,typ,msg]):self.alarm_table.setItem(r,i,QtWidgets.QTableWidgetItem(str(v)))
-    def set_state_snapshot(self,state:GridState):self.apply_state(state)
-    def apply_dispatch_result(self,result:DispatchResult):
-        self.out_wind.setText(f'{result.wind_target_kw:.2f} kW');self.out_diesel.setText(f'{result.diesel_target_kw:.2f} kW');self.out_unserved.setText(f'{result.target_unserved_kw:.2f} kW');self.out_surplus.setText(f'{result.target_surplus_kw:.2f} kW');self.out_reason.setText(result.reason)
-    def closeEvent(self,e):
-        if self.client:
-            try:self.client.close()
-            except Exception:pass
-        e.accept()
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle('南极孤立微电网 EMS 主站 B')
+        self.resize(1920, 1080)
+        self.setMinimumSize(1400, 800)
+        self.setStyleSheet(QSS)
+        self.client: EMSTcpClient | None = None
+        self.state: GridState | None = None
+        self.last_decision = None
+        self.last_ack: Ack | None = None
+        self.demo_mode = True
+        self.db_path = Path(__file__).resolve().parents[1] / 'data' / 'runtime' / 'ems.db'
+        self.repo = EMSRepository(self.db_path)
+        self.params = {'wind_min_kw':0.0,'wind_max_kw':100.0,'diesel_max_kw':120.0,'reserve_kw':10.0,'max_age_s':2.0,
+                       'poll_period_s':1.0,'dispatch_period_s':5.0,'closed_loop':True}
+        self.core = EMSCore(self.config())
+        self.auto_dispatch = False
+        self.trace_rows: list[tuple] = []
+        self.log_lines: list[str] = []
+        self._building = True
+        self.build_ui()
+        self.load_db_config()
+        self.build_timers()
+        self._building = False
+        self.set_connection_state(False)
+        self.log('GUI 启动：本地 mock 模式；A 为 TCP server，B 为 TCP client')
 
-def main():
-    app=QtWidgets.QApplication(sys.argv);win=MainWindow();win.show();return app.exec()
-if __name__=='__main__':raise SystemExit(main())
+    def config(self) -> DispatchConfig:
+        return DispatchConfig(wind_min_kw=self.params['wind_min_kw'], wind_max_kw=self.params['wind_max_kw'],
+                              diesel_max_kw=self.params['diesel_max_kw'], reserve_kw=10.0,
+                              max_state_age_s=self.params['max_age_s'], c_has_control_priority=True)
+
+    def make_card(self) -> QtWidgets.QFrame:
+        c = QtWidgets.QFrame(); c.setProperty('card', True); return c
+
+    def section(self, text: str) -> QtWidgets.QLabel:
+        x = QtWidgets.QLabel(text); x.setProperty('section', True); return x
+
+    def build_ui(self) -> None:
+        root = QtWidgets.QWidget(); self.setCentralWidget(root)
+        outer = QtWidgets.QVBoxLayout(root); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
+        outer.addWidget(self.header())
+        body = QtWidgets.QHBoxLayout(); body.setContentsMargins(0,0,0,0); body.setSpacing(0)
+        body.addWidget(self.nav())
+        self.stack = QtWidgets.QStackedWidget()
+        factories = [self.monitor_page, self.curve_page, self.demo_page, self.params_page,
+                     self.dispatch_page, self.history_page, self.comm_page, self.alarm_page]
+        for factory in factories: self.stack.addWidget(factory())
+        body.addWidget(self.stack, 1); outer.addLayout(body, 1)
+        self.group = QtWidgets.QButtonGroup(self); self.group.setExclusive(True)
+        for i, button in enumerate(self.nav_buttons):
+            self.group.addButton(button, i)
+            button.clicked.connect(lambda _, j=i: self.stack.setCurrentIndex(j))
+        self.nav_buttons[0].setChecked(True)
+        self.statusBar().showMessage('B EMS 就绪')
+
+    def header(self) -> QtWidgets.QFrame:
+        bar = QtWidgets.QFrame(); bar.setObjectName('header'); bar.setFixedHeight(72)
+        l = QtWidgets.QHBoxLayout(bar); l.setContentsMargins(20,0,20,0)
+        logo = QtWidgets.QLabel('B'); logo.setObjectName('logo'); logo.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter); logo.setFixedSize(38,38); l.addWidget(logo)
+        t = QtWidgets.QVBoxLayout()
+        a = QtWidgets.QLabel('南极孤立微电网 EMS 主站'); a.setObjectName('title')
+        b = QtWidgets.QLabel('PC-B · 能量管理与调度 · Closed Loop'); b.setObjectName('subtitle')
+        t.addWidget(a); t.addWidget(b); l.addLayout(t); l.addStretch()
+        self.clock = QtWidgets.QLabel(); l.addWidget(self.clock)
+        self.a_status = QtWidgets.QLabel('A 未连接'); l.addWidget(self.a_status)
+        self.mode_status = QtWidgets.QLabel('本地演示'); l.addWidget(self.mode_status)
+        l.addWidget(QtWidgets.QLabel('C 优先'))
+        return bar
+
+    def nav(self) -> QtWidgets.QFrame:
+        panel = QtWidgets.QFrame(); panel.setObjectName('nav'); panel.setFixedWidth(215)
+        l = QtWidgets.QVBoxLayout(panel); l.setContentsMargins(0,16,0,16)
+        cap = QtWidgets.QLabel('功能导航'); cap.setProperty('hint', True); l.addWidget(cap)
+        self.nav_buttons = []
+        labels = ['运行监控','实时曲线','本地场景 / 手动调度','参数设置','EMS 调度','历史数据','通信诊断','报警与评价']
+        for text in labels:
+            b = QtWidgets.QPushButton(text); b.setProperty('nav', True); b.setCheckable(True); self.nav_buttons.append(b); l.addWidget(b)
+        l.addStretch()
+        hint = QtWidgets.QLabel('B / EMS\nTCP Client → A Server\nReserve = 10 kW\nC protection priority\nPython 3.11 · PyQt6')
+        hint.setProperty('hint', True); l.addWidget(hint)
+        return panel
+
+    def connection_card(self) -> QtWidgets.QFrame:
+        c = self.make_card(); g = QtWidgets.QGridLayout(c); g.setContentsMargins(14,10,14,10)
+        g.addWidget(QtWidgets.QLabel('A 服务器连接'),0,0,1,2)
+        g.addWidget(QtWidgets.QLabel('A 可达 IP'),1,0); self.host = QtWidgets.QLineEdit('127.0.0.1'); self.host.setPlaceholderText('如 192.168.1.100'); g.addWidget(self.host,1,1)
+        g.addWidget(QtWidgets.QLabel('TCP 端口'),1,2); self.port = QtWidgets.QSpinBox(); self.port.setRange(1,65535); self.port.setValue(5000); g.addWidget(self.port,1,3)
+        self.connect_btn = QtWidgets.QPushButton('连接 A 服务器'); self.connect_btn.setProperty('kind','success'); self.connect_btn.clicked.connect(self.toggle_connection); g.addWidget(self.connect_btn,1,4)
+        self.request_btn = QtWidgets.QPushButton('请求状态'); self.request_btn.setProperty('kind','primary'); self.request_btn.clicked.connect(self.request_state); g.addWidget(self.request_btn,1,5)
+        ip = QtWidgets.QLabel(f'本机 IP：{local_ip()}'); ip.setProperty('hint', True); g.addWidget(ip,0,4,1,2,QtCore.Qt.AlignmentFlag.AlignRight)
+        return c
+
+    def monitor_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('运行监控')); l.addWidget(self.connection_card())
+        grid = QtWidgets.QGridLayout(); self.cards = {}
+        for i, (key,title,unit) in enumerate([
+            ('load','负荷','kW'),('avail','风电 Available','kW'),('limit','风电 Operating Limit','kW'),('wind_actual','风电 Actual','kW'),
+            ('diesel_actual','柴油 Actual','kW'),('wind_target','风电 Target','kW'),('diesel_target','柴油 Target','kW'),('imbalance','功率不平衡','kW'),
+            ('wind_speed','风速','m/s'),('headroom','柴油可用余量','kW'),('age','状态年龄','s'),('pitch','桨距 Actual','deg')]):
+            self.cards[key] = Card(title, unit); grid.addWidget(self.cards[key], i//4, i%4)
+        l.addLayout(grid)
+        detail = self.make_card(); f = QtWidgets.QFormLayout(detail)
+        self.session = QtWidgets.QLabel('--'); self.simtime = QtWidgets.QLabel('--'); self.sampled = QtWidgets.QLabel('--'); self.wind_state = QtWidgets.QLabel('--'); self.reason = QtWidgets.QLabel('--')
+        for label, widget in [('Session / Step',self.session),('Simulation Time',self.simtime),('A sampled_at_utc',self.sampled),('风机状态 / Fault',self.wind_state),('最近调度',self.reason)]: f.addRow(label,widget)
+        l.addWidget(detail); l.addStretch(); return w
+
+    def curve_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('实时曲线'))
+        c = self.make_card(); q = QtWidgets.QVBoxLayout(c); self.chart = TrendChart(['Load','Available','Operating Limit','Wind Target','Wind Actual','Diesel Actual']); q.addWidget(self.chart); l.addWidget(c,1)
+        row = QtWidgets.QHBoxLayout(); clear = QtWidgets.QPushButton('清空曲线'); clear.setProperty('kind','secondary'); clear.clicked.connect(self.chart.clear); req = QtWidgets.QPushButton('立即请求 A 状态'); req.setProperty('kind','primary'); req.clicked.connect(self.request_state); row.addWidget(clear); row.addWidget(req); row.addStretch(); l.addLayout(row); return w
+
+    def demo_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('本地场景 / 手动调度'))
+        note = QtWidgets.QLabel('MOCK：只验证 B 调度算法，不替代 A 的独立 CSV 场景。联网后 A state 是唯一状态源。'); note.setProperty('hint',True); l.addWidget(note)
+        c = self.make_card(); f = QtWidgets.QFormLayout(c)
+        self.d_load = QtWidgets.QDoubleSpinBox(); self.d_load.setRange(0,1000); self.d_load.setValue(120); self.d_load.setSuffix(' kW')
+        self.d_avail = QtWidgets.QDoubleSpinBox(); self.d_avail.setRange(0,1000); self.d_avail.setValue(90); self.d_avail.setSuffix(' kW')
+        self.d_limit = QtWidgets.QDoubleSpinBox(); self.d_limit.setRange(0,1000); self.d_limit.setValue(80); self.d_limit.setSuffix(' kW')
+        self.d_wind_actual = QtWidgets.QDoubleSpinBox(); self.d_wind_actual.setRange(0,1000); self.d_wind_actual.setValue(70); self.d_wind_actual.setSuffix(' kW')
+        self.d_diesel_actual = QtWidgets.QDoubleSpinBox(); self.d_diesel_actual.setRange(0,1000); self.d_diesel_actual.setValue(40); self.d_diesel_actual.setSuffix(' kW')
+        self.d_speed = QtWidgets.QDoubleSpinBox(); self.d_speed.setRange(0,50); self.d_speed.setValue(10); self.d_speed.setSuffix(' m/s')
+        self.d_fault = QtWidgets.QCheckBox('模拟 C fault / protection active')
+        f.addRow('负荷',self.d_load); f.addRow('风电 Available',self.d_avail); f.addRow('风电 Operating Limit',self.d_limit); f.addRow('风电 Actual',self.d_wind_actual); f.addRow('柴油 Actual',self.d_diesel_actual); f.addRow('风速',self.d_speed); f.addRow('故障',self.d_fault)
+        l.addWidget(c)
+        row = QtWidgets.QHBoxLayout(); b = QtWidgets.QPushButton('生成 Mock State'); b.setProperty('kind','secondary'); b.clicked.connect(self.apply_demo_state); calc = QtWidgets.QPushButton('计算本地调度'); calc.setProperty('kind','primary'); calc.clicked.connect(self.calculate_current); row.addWidget(b); row.addWidget(calc); row.addStretch(); l.addLayout(row)
+        self.demo_result = QtWidgets.QTextEdit(); self.demo_result.setReadOnly(True); self.demo_result.setMinimumHeight(190); l.addWidget(self.demo_result,1); return w
+
+    def params_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('参数设置'))
+        c = self.make_card(); f = QtWidgets.QFormLayout(c)
+        self.p_wind_min = QtWidgets.QDoubleSpinBox(); self.p_wind_min.setRange(0,1000)
+        self.p_wind_max = QtWidgets.QDoubleSpinBox(); self.p_wind_max.setRange(0,1000)
+        self.p_diesel_max = QtWidgets.QDoubleSpinBox(); self.p_diesel_max.setRange(0,2000)
+        self.p_reserve = QtWidgets.QDoubleSpinBox(); self.p_reserve.setRange(10,1000); self.p_reserve.setValue(10); self.p_reserve.setEnabled(False)
+        self.p_age = QtWidgets.QDoubleSpinBox(); self.p_age.setRange(0.1,60); self.p_age.setDecimals(2)
+        self.p_poll = QtWidgets.QDoubleSpinBox(); self.p_poll.setRange(0.1,60); self.p_poll.setDecimals(2)
+        self.p_dispatch = QtWidgets.QDoubleSpinBox(); self.p_dispatch.setRange(0.1,300); self.p_dispatch.setDecimals(2)
+        self.p_closed = QtWidgets.QCheckBox('B closed loop（默认开启）'); self.p_closed.setChecked(True)
+        for label, widget in [('风电最小目标',self.p_wind_min),('风电容量上限',self.p_wind_max),('柴油容量上限',self.p_diesel_max),('柴油 reserve',self.p_reserve),('最大状态年龄',self.p_age),('采集周期',self.p_poll),('调度周期',self.p_dispatch),('运行模式',self.p_closed)]: f.addRow(label,widget)
+        l.addWidget(c)
+        note = QtWidgets.QLabel('柴油 reserve 固定 10 kW；正常 B 目标上限 = diesel_max - 10 kW。数值是可配置输入，不代表课程原文给定的物理额定值。'); note.setProperty('hint',True); l.addWidget(note)
+        row = QtWidgets.QHBoxLayout(); load = QtWidgets.QPushButton('从 ems.db 读取'); load.setProperty('kind','secondary'); load.clicked.connect(self.load_db_config); save = QtWidgets.QPushButton('保存参数'); save.setProperty('kind','primary'); save.clicked.connect(self.save_params); row.addWidget(load); row.addWidget(save); row.addStretch(); l.addLayout(row); l.addStretch(); return w
+
+    def dispatch_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('EMS 调度'))
+        c = self.make_card(); g = QtWidgets.QGridLayout(c); g.addWidget(QtWidgets.QLabel('执行方式'),0,0); self.auto_box = QtWidgets.QCheckBox('自动闭环：按调度周期计算并下发'); self.auto_box.setChecked(False); self.auto_box.toggled.connect(self.set_auto); g.addWidget(self.auto_box,0,1,1,3)
+        self.calc_btn = QtWidgets.QPushButton('计算当前状态'); self.calc_btn.setProperty('kind','primary'); self.calc_btn.clicked.connect(self.calculate_current); g.addWidget(self.calc_btn,1,0)
+        self.send_btn = QtWidgets.QPushButton('下发当前调度'); self.send_btn.setProperty('kind','success'); self.send_btn.clicked.connect(self.send_current); g.addWidget(self.send_btn,1,1)
+        self.safe_label = QtWidgets.QLabel('安全策略：C fault → 风机目标抑制；状态过期 → 不下发；ACK 未知 → 不换新 seq 重发。'); self.safe_label.setProperty('hint',True); g.addWidget(self.safe_label,2,0,1,4)
+        l.addWidget(c)
+        out = self.make_card(); f = QtWidgets.QFormLayout(out); self.d_w = QtWidgets.QLabel('--'); self.d_d = QtWidgets.QLabel('--'); self.d_unserved = QtWidgets.QLabel('--'); self.d_surplus = QtWidgets.QLabel('--'); self.d_enable = QtWidgets.QLabel('--'); self.d_reason = QtWidgets.QLabel('--'); self.ack_label = QtWidgets.QLabel('--')
+        for label, widget in [('风电目标',self.d_w),('柴油目标',self.d_d),('目标缺供',self.d_unserved),('目标过剩',self.d_surplus),('Enable',self.d_enable),('Reason',self.d_reason),('最近 ACK',self.ack_label)]: f.addRow(label,widget)
+        l.addWidget(out); l.addStretch(); return w
+
+    def history_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('历史数据'))
+        bar = self.make_card(); g = QtWidgets.QGridLayout(bar); g.addWidget(QtWidgets.QLabel('Session'),0,0); self.h_session = QtWidgets.QLineEdit(); g.addWidget(self.h_session,0,1); g.addWidget(QtWidgets.QLabel('最多行数'),0,2); self.h_limit = QtWidgets.QSpinBox(); self.h_limit.setRange(10,5000); self.h_limit.setValue(200); g.addWidget(self.h_limit,0,3)
+        q = QtWidgets.QPushButton('查询'); q.setProperty('kind','primary'); q.clicked.connect(self.refresh_history); ex = QtWidgets.QPushButton('导出 CSV'); ex.setProperty('kind','secondary'); ex.clicked.connect(self.export_history); g.addWidget(q,0,4); g.addWidget(ex,0,5); l.addWidget(bar)
+        self.history = QtWidgets.QTableWidget(0,8); self.history.setHorizontalHeaderLabels(['时间','Session','Step','Load','Wind Avail','Wind Limit','Wind Actual','Diesel Actual']); self.history.setAlternatingRowColors(True); self.history.horizontalHeader().setStretchLastSection(True); l.addWidget(self.history,1); return w
+
+    def comm_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('通信诊断'))
+        c = self.make_card(); f = QtWidgets.QFormLayout(c); self.comm_state=QtWidgets.QLabel('--'); self.comm_pending=QtWidgets.QLabel('--'); self.comm_full=QtWidgets.QLabel('--'); self.comm_seq=QtWidgets.QLabel('--'); self.comm_ack=QtWidgets.QLabel('--')
+        for label,widget in [('A 连接状态',self.comm_state),('未完成 state_request',self.comm_pending),('需要 full sync',self.comm_full),('最近入站 seq',self.comm_seq),('最近 ACK',self.comm_ack)]: f.addRow(label,widget)
+        l.addWidget(c); self.log_view=QtWidgets.QPlainTextEdit(); self.log_view.setReadOnly(True); l.addWidget(self.log_view,1); return w
+
+    def alarm_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('报警与评价'))
+        top = QtWidgets.QHBoxLayout(); self.kpi_total=Card('评价样本','项'); self.kpi_unserved=Card('目标缺供','kWh-equivalent'); self.kpi_surplus=Card('目标过剩','kWh-equivalent'); self.kpi_ack=Card('ACK 接受率','%'); top.addWidget(self.kpi_total); top.addWidget(self.kpi_unserved); top.addWidget(self.kpi_surplus); top.addWidget(self.kpi_ack); l.addLayout(top)
+        self.alarm_table=QtWidgets.QTableWidget(0,5); self.alarm_table.setHorizontalHeaderLabels(['等级','事件','说明','Session','Step']); self.alarm_table.horizontalHeader().setStretchLastSection(True); l.addWidget(self.alarm_table,1)
+        return w
+
+    def build_timers(self) -> None:
+        self.clock_timer = QtCore.QTimer(self); self.clock_timer.timeout.connect(self.tick_clock); self.clock_timer.start(500)
+        self.poll_timer = QtCore.QTimer(self); self.poll_timer.timeout.connect(self.poll_socket); self.poll_timer.start(250)
+        self.runtime_timer = QtCore.QTimer(self); self.runtime_timer.timeout.connect(self.runtime_tick)
+        self.set_runtime_timer()
+        self.history_timer = QtCore.QTimer(self); self.history_timer.timeout.connect(self.refresh_views); self.history_timer.start(3000)
+
+    def set_runtime_timer(self) -> None:
+        self.runtime_timer.stop(); self.runtime_timer.start(max(100,int(self.params['dispatch_period_s']*1000)))
+
+    def tick_clock(self) -> None:
+        self.clock.setText(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        self.update_comm_diag()
+
+    def log(self, message: str) -> None:
+        line = f'{datetime.now().strftime("%H:%M:%S")}  {message}'
+        self.log_lines.append(line); self.log_lines = self.log_lines[-500:]
+        if hasattr(self,'log_view'): self.log_view.setPlainText('\n'.join(self.log_lines)); self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
+
+    def set_connection_state(self, connected: bool) -> None:
+        self.demo_mode = not connected
+        self.a_status.setText('A 已连接' if connected else 'A 未连接')
+        self.mode_status.setText('TCP 闭环' if connected else '本地演示')
+        self.connect_btn.setText('断开 A 服务器' if connected else '连接 A 服务器')
+        self.connect_btn.setProperty('kind','danger' if connected else 'success')
+        self.connect_btn.style().unpolish(self.connect_btn); self.connect_btn.style().polish(self.connect_btn)
+        self.update_comm_diag()
+
+    def toggle_connection(self) -> None:
+        if self.client and self.client.connected:
+            self.client.close(); self.client=None; self.set_connection_state(False); self.log('已断开 A server'); return
+        host = self.host.text().strip()
+        if not host or host == '0.0.0.0':
+            QtWidgets.QMessageBox.warning(self,'IP 配置错误','B 是 TCP client，目标必须是 A 的可达 IP，不能填写 0.0.0.0。'); return
+        try:
+            self.client = EMSTcpClient(host, int(self.port.value()), timeout_s=0.25)
+            self.client.connect(); self.set_connection_state(True); self.log(f'连接 A：{host}:{self.port.value()}')
+        except Exception as exc:
+            self.client=None; self.set_connection_state(False); self.log(f'连接失败：{exc}'); QtWidgets.QMessageBox.critical(self,'TCP 连接失败',str(exc))
+
+    def request_state(self) -> None:
+        if not self.client or not self.client.connected:
+            self.log('未连接 A：本地演示模式不会发送 TCP state_request'); return
+        try:
+            seq = self.client.request_state(full=self.client.needs_full_sync); self.log(f'发送 state_request seq={seq}')
+        except Exception as exc:
+            self.log(f'state_request 失败：{exc}')
+
+    def poll_socket(self) -> None:
+        c = self.client
+        if not c or not c.connected: return
+        try:
+            results = c.receive_once()
+            for result in results:
+                if isinstance(result, GridState): self.set_state_snapshot(result); self.log(f'收到 A state session={result.session_id} step={result.step}')
+                elif isinstance(result, Ack): self.last_ack=result; self.handle_ack(result)
+        except (TimeoutError, socket.timeout):
+            return
+        except Exception as exc:
+            self.log(f'TCP 接收异常：{exc}'); c.close(); self.set_connection_state(False)
+
+    def set_state_snapshot(self, state: GridState) -> None:
+        self.state = state; self.demo_mode=False if self.client and self.client.connected else True; self.refresh_state_views(); self.save_state_best_effort()
+
+    def refresh_state_views(self) -> None:
+        s=self.state
+        if s is None: return
+        imbalance=s.load_power_kw-s.wind_actual_kw-s.diesel_actual_kw
+        headroom=max(self.params['diesel_max_kw']-s.diesel_actual_kw,0.0)
+        wind_target=self.last_decision.result.wind_target_kw if self.last_decision else s.wind_target_kw
+        diesel_target=self.last_decision.result.diesel_target_kw if self.last_decision else 0.0
+        for key,value in {'load':f'{s.load_power_kw:.1f}','avail':f'{s.wind_available_kw:.1f}','limit':f'{s.wind_operating_limit_kw:.1f}','wind_actual':f'{s.wind_actual_kw:.1f}',
+                          'diesel_actual':f'{s.diesel_actual_kw:.1f}','wind_target':f'{wind_target:.1f}','diesel_target':f'{diesel_target:.1f}','imbalance':f'{imbalance:+.1f}',
+                          'wind_speed':f'{s.wind_speed_mps:.2f}','headroom':f'{headroom:.1f}','age':f'{s.received_age_s:.2f}','pitch':'--' if s.pitch_actual_deg is None else f'{s.pitch_actual_deg:.1f}'}.items(): self.cards[key].set_value(value)
+        self.session.setText(f'{s.session_id} / {s.step}'); self.simtime.setText(f'{s.sim_time_s:.2f} s'); self.sampled.setText(s.sampled_at_utc or '--'); self.wind_state.setText(f'Running={s.wind_running} / Fault={s.fault}'); self.reason.setText(self.last_decision.result.reason if self.last_decision else '--')
+        self.chart.push({'Load':s.load_power_kw,'Available':s.wind_available_kw,'Operating Limit':s.wind_operating_limit_kw,'Wind Target':wind_target,'Wind Actual':s.wind_actual_kw,'Diesel Actual':s.diesel_actual_kw})
+        self.update_comm_diag(); self.refresh_alarms()
+
+    def demo_state(self) -> GridState:
+        return GridState(session_id='GUI-MOCK', step=0, sim_time_s=0.0, wind_speed_mps=self.d_speed.value(), wind_available_kw=self.d_avail.value(),
+                         wind_operating_limit_kw=min(self.d_limit.value(),self.d_avail.value()), load_power_kw=self.d_load.value(),
+                         wind_actual_kw=self.d_wind_actual.value(), diesel_actual_kw=self.d_diesel_actual.value(), wind_running=True,
+                         fault=self.d_fault.isChecked(), received_age_s=0.0, sampled_at_utc=utc_now(), received_at_utc=utc_now(),
+                         wind_target_kw=0.0, pitch_actual_deg=0.0)
+
+    def apply_demo_state(self) -> None:
+        self.state=self.demo_state(); self.demo_mode=True; self.last_decision=None; self.refresh_state_views(); self.demo_result.setPlainText('Mock State 已加载。')
+        self.log('生成本地 mock state')
+
+    def calculate_current(self) -> None:
+        if self.state is None: self.state=self.demo_state()
+        self.core=EMSCore(self.config())
+        try:
+            self.last_decision=self.core.decide(self.state)
+        except Exception as exc:
+            self.last_decision=None; self.log(f'调度计算拒绝：{exc}'); QtWidgets.QMessageBox.warning(self,'调度未执行',str(exc)); return
+        r=self.last_decision.result
+        self.d_w.setText(f'{r.wind_target_kw:.2f} kW'); self.d_d.setText(f'{r.diesel_target_kw:.2f} kW'); self.d_unserved.setText(f'{r.target_unserved_kw:.2f} kW'); self.d_surplus.setText(f'{r.target_surplus_kw:.2f} kW')
+        self.d_enable.setText(f'Wind={r.wind_enable} / Diesel={r.diesel_enable}'); self.d_reason.setText(r.reason)
+        self.demo_result.setPlainText(f'wind_target = {r.wind_target_kw:.2f} kW\ndiesel_target = {r.diesel_target_kw:.2f} kW\nwind_enable = {r.wind_enable}\ndiesel_enable = {r.diesel_enable}\ntarget_unserved = {r.target_unserved_kw:.2f} kW\ntarget_surplus = {r.target_surplus_kw:.2f} kW\nreason = {r.reason}')
+        self.refresh_state_views(); self.log('EMS decision 已计算')
+
+    def send_current(self) -> None:
+        if self.last_decision is None: self.calculate_current()
+        if self.last_decision is None: return
+        if not self.client or not self.client.connected:
+            self.log('未连接 A：拒绝发送 TCP dispatch'); QtWidgets.QMessageBox.information(self,'当前为本地模式','先连接 A server 才会真正下发 dispatch。'); return
+        try:
+            seq=self.client.send_dispatch(self.last_decision); self.log(f'发送 dispatch seq={seq}，等待 ACK')
+        except DispatchDeliveryUnknown as exc:
+            self.last_ack=None; self.log(f'ACK 未知：seq={exc.seq}，禁止盲目重发'); QtWidgets.QMessageBox.warning(self,'ACK 未知','指令可能已到达 A，但 ACK 无法确认。请先恢复连接并核对历史，不要直接重发。')
+        except Exception as exc:
+            self.log(f'dispatch 失败：{exc}'); QtWidgets.QMessageBox.warning(self,'dispatch 失败',str(exc))
+
+    def handle_ack(self, ack: Ack) -> None:
+        self.ack_label.setText(f'seq={ack.ack_seq} / accepted={ack.accepted} / {ack.reason}')
+        self.comm_ack.setText(f'{ack.ack_seq} / {ack.accepted}')
+        self.statusBar().showMessage(f'ACK seq={ack.ack_seq} accepted={ack.accepted}')
+        self.log(f'ACK seq={ack.ack_seq} accepted={ack.accepted} reason={ack.reason}')
+        self.refresh_views()
+
+    def set_auto(self, checked: bool) -> None:
+        self.auto_dispatch=checked
+        self.log(f'自动闭环调度：{"开启" if checked else "关闭"}')
+
+    def runtime_tick(self) -> None:
+        if not self.auto_dispatch or not self.params['closed_loop']: return
+        if not self.client or not self.client.connected: return
+        if self.state is None: return
+        try:
+            self.calculate_current(); self.send_current()
+        except Exception as exc: self.log(f'自动调度异常：{exc}')
+
+    def save_params(self) -> None:
+        reserve=10.0
+        values={'wind_min_kw':self.p_wind_min.value(),'wind_max_kw':self.p_wind_max.value(),'diesel_max_kw':self.p_diesel_max.value(),
+                'reserve_kw':reserve,'max_age_s':self.p_age.value(),'poll_period_s':self.p_poll.value(),'dispatch_period_s':self.p_dispatch.value(),'closed_loop':self.p_closed.isChecked()}
+        if values['wind_max_kw'] < values['wind_min_kw'] or values['diesel_max_kw'] < reserve:
+            QtWidgets.QMessageBox.warning(self,'参数错误','请检查风电上下限，并确保柴油容量不小于 10 kW reserve。'); return
+        self.params.update(values); self.core=EMSCore(self.config()); self.set_runtime_timer()
+        try:
+            self.repo.initialize(); self.repo.set_parameters(wind_min_kw=values['wind_min_kw'],wind_max_kw=values['wind_max_kw'],diesel_max_kw=values['diesel_max_kw'],reserve_kw=reserve)
+            self.repo.set_runtime_config(poll_period_s=values['poll_period_s'],dispatch_period_s=values['dispatch_period_s'],closed_loop=values['closed_loop'])
+            self.log('参数已写入 ems.db')
+        except Exception as exc: self.log(f'参数写库失败：{exc}')
+        self.statusBar().showMessage('EMS 参数已更新')
+
+    def load_db_config(self) -> None:
+        try:
+            self.repo.initialize(); p=self.repo.get_parameters(); r=self.repo.get_runtime_config()
+            self.params.update(wind_min_kw=p['wind_min_kw'],wind_max_kw=p['wind_max_kw'],diesel_max_kw=p['diesel_max_kw'],reserve_kw=10.0,max_age_s=2.0,
+                               poll_period_s=r['poll_period_s'],dispatch_period_s=r['dispatch_period_s'],closed_loop=bool(r['closed_loop']))
+        except Exception as exc:
+            self.log(f'ems.db 尚未有完整参数，使用 GUI 默认值：{exc}')
+        if hasattr(self,'p_wind_min'):
+            self.p_wind_min.setValue(self.params['wind_min_kw']); self.p_wind_max.setValue(self.params['wind_max_kw']); self.p_diesel_max.setValue(self.params['diesel_max_kw']); self.p_reserve.setValue(10.0); self.p_age.setValue(self.params['max_age_s']); self.p_poll.setValue(self.params['poll_period_s']); self.p_dispatch.setValue(self.params['dispatch_period_s']); self.p_closed.setChecked(self.params['closed_loop'])
+        self.core=EMSCore(self.config()); self.set_runtime_timer() if hasattr(self,'runtime_timer') else None
+
+    def save_state_best_effort(self) -> None:
+        if self.state is None: return
+        try: self.repo.initialize(); self.repo.save_state(self.state)
+        except Exception as exc: self.log(f'状态本地落库失败：{exc}')
+
+    def update_comm_diag(self) -> None:
+        c=self.client
+        self.comm_state.setText('CONNECTED' if c and c.connected else 'DISCONNECTED')
+        if not c:
+            self.comm_pending.setText('--'); self.comm_full.setText('--'); self.comm_seq.setText('--'); return
+        self.comm_pending.setText(str(c._pending_state_request_seq)); self.comm_full.setText(str(c.needs_full_sync)); self.comm_seq.setText(str(c._last_incoming_seq)); self.comm_ack.setText('--' if self.last_ack is None else f'{self.last_ack.ack_seq}/{self.last_ack.accepted}')
+
+    def refresh_history(self) -> None:
+        try:
+            self.repo.initialize()
+            query='SELECT received_at_utc,session_id,step,load_power_kw,wind_available_kw,wind_operating_limit_kw,wind_actual_kw,diesel_actual_kw FROM state_history'
+            args=[]
+            if self.h_session.text().strip(): query += ' WHERE session_id=?'; args.append(self.h_session.text().strip())
+            query += ' ORDER BY id DESC LIMIT ?'; args.append(int(self.h_limit.value()))
+            with self.repo.connection() as conn: rows=conn.execute(query,args).fetchall()
+            self.history.setRowCount(len(rows))
+            for i,row in enumerate(rows):
+                for j,key in enumerate(row.keys()): self.history.setItem(i,j,QtWidgets.QTableWidgetItem(str(row[key])))
+        except Exception as exc: self.log(f'历史查询失败：{exc}')
+
+    def export_history(self) -> None:
+        path,_=QtWidgets.QFileDialog.getSaveFileName(self,'导出状态历史 CSV','ems_state_history.csv','CSV (*.csv)')
+        if not path: return
+        try:
+            self.repo.initialize()
+            with self.repo.connection() as conn: rows=conn.execute('SELECT * FROM state_history ORDER BY id ASC').fetchall()
+            with open(path,'w',newline='',encoding='utf-8-sig') as f:
+                writer=csv.writer(f); writer.writerow(rows[0].keys() if rows else ['no_data']); writer.writerows([list(row) for row in rows])
+            self.log(f'已导出：{path}')
+        except Exception as exc: QtWidgets.QMessageBox.warning(self,'导出失败',str(exc))
+
+    def refresh_views(self) -> None:
+        if self.stack.currentIndex()==5: self.refresh_history()
+        self.refresh_alarms()
+
+    def refresh_alarms(self) -> None:
+        if not hasattr(self,'alarm_table'): return
+        rows=[]
+        if self.state and self.state.fault: rows.append(('HIGH','C_FAULT','C protection/control priority，B 抑制风机目标',self.state.session_id,self.state.step))
+        if self.state and self.state.received_age_s > self.params['max_age_s']: rows.append(('HIGH','STALE_STATE',f'state age={self.state.received_age_s:.2f}s',self.state.session_id,self.state.step))
+        if self.client and self.client._uncertain_dispatch_seq is not None: rows.append(('HIGH','DELIVERY_UNKNOWN',f'dispatch seq={self.client._uncertain_dispatch_seq} ACK unknown',self.state.session_id if self.state else '',self.state.step if self.state else ''))
+        try:
+            self.repo.initialize()
+            with self.repo.connection() as conn: db_rows=conn.execute('SELECT level,event_type,message,session_id,step FROM event_log ORDER BY id DESC LIMIT 100').fetchall()
+            rows.extend([tuple(x) for x in db_rows])
+        except Exception: pass
+        self.alarm_table.setRowCount(min(len(rows),300))
+        for i,row in enumerate(rows[:300]):
+            for j,v in enumerate(row): self.alarm_table.setItem(i,j,QtWidgets.QTableWidgetItem(str(v)))
+        self.calculate_kpi()
+
+    def calculate_kpi(self) -> None:
+        try:
+            self.repo.initialize()
+            with self.repo.connection() as conn:
+                total=conn.execute('SELECT COUNT(*) FROM dispatch_evaluation').fetchone()[0]
+                unserved=conn.execute('SELECT COALESCE(SUM(target_unserved_kw),0) FROM dispatch_evaluation').fetchone()[0]
+                surplus=conn.execute('SELECT COALESCE(SUM(target_surplus_kw),0) FROM dispatch_evaluation').fetchone()[0]
+                all_cmd=conn.execute('SELECT COUNT(*) FROM dispatch_commands WHERE ack_accepted IS NOT NULL').fetchone()[0]
+                accepted=conn.execute('SELECT COUNT(*) FROM dispatch_commands WHERE ack_accepted=1').fetchone()[0]
+            self.kpi_total.set_value(total); self.kpi_unserved.set_value(f'{unserved:.1f}'); self.kpi_surplus.set_value(f'{surplus:.1f}'); self.kpi_ack.set_value('--' if not all_cmd else f'{accepted*100/all_cmd:.1f}')
+        except Exception: pass
+
+    def apply_dispatch_result(self, result) -> None:
+        self.last_decision = type('DecisionProxy', (), {'result': result, 'state': self.state})() if self.state else None
+        self.refresh_state_views()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self.auto_dispatch=False
+        if self.client: self.client.close()
+        event.accept()
+
+
+def main() -> int:
+    app = QtWidgets.QApplication(sys.argv)
+    window = MainWindow(); window.show(); return app.exec()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
