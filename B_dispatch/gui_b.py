@@ -12,7 +12,6 @@ from __future__ import annotations
 import csv
 import math
 import socket
-import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +37,6 @@ DARK = '#16324f'
 TEXT = '#274056'
 MUTED = '#7f93a7'
 GOOD = '#1fa15a'
-WARN = '#e19a1a'
 BAD = '#d64545'
 QSS = f"""
 QMainWindow {{ background:{BG}; }}
@@ -176,6 +174,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_dispatch = False
         self.trace_rows: list[tuple] = []
         self.log_lines: list[str] = []
+        # Manual dispatch is queued instead of rejected when a state_request is outstanding.
+        self._manual_dispatch_pending = False
         self._building = True
         self.build_ui()
         self.load_db_config()
@@ -306,7 +306,7 @@ class MainWindow(QtWidgets.QMainWindow):
         c = self.make_card(); g = QtWidgets.QGridLayout(c); g.addWidget(QtWidgets.QLabel('执行方式'),0,0); self.auto_box = QtWidgets.QCheckBox('自动闭环：按调度周期计算并下发'); self.auto_box.setChecked(False); self.auto_box.toggled.connect(self.set_auto); g.addWidget(self.auto_box,0,1,1,3)
         self.calc_btn = QtWidgets.QPushButton('计算当前状态'); self.calc_btn.setProperty('kind','primary'); self.calc_btn.clicked.connect(self.calculate_current); g.addWidget(self.calc_btn,1,0)
         self.send_btn = QtWidgets.QPushButton('下发当前调度'); self.send_btn.setProperty('kind','success'); self.send_btn.clicked.connect(self.send_current); g.addWidget(self.send_btn,1,1)
-        self.safe_label = QtWidgets.QLabel('安全策略：C fault → 风机目标抑制；状态过期 → 不下发；ACK 未知 → 不换新 seq 重发。'); self.safe_label.setProperty('hint',True); g.addWidget(self.safe_label,2,0,1,4)
+        self.safe_label = QtWidgets.QLabel('安全策略：点击下发后先获取最新 A state；若已有 state_request，则自动等待；状态过期不下发；ACK 未知不盲目重发。'); self.safe_label.setProperty('hint',True); g.addWidget(self.safe_label,2,0,1,4)
         l.addWidget(c)
         out = self.make_card(); f = QtWidgets.QFormLayout(out); self.d_w = QtWidgets.QLabel('--'); self.d_d = QtWidgets.QLabel('--'); self.d_unserved = QtWidgets.QLabel('--'); self.d_surplus = QtWidgets.QLabel('--'); self.d_enable = QtWidgets.QLabel('--'); self.d_reason = QtWidgets.QLabel('--'); self.ack_label = QtWidgets.QLabel('--')
         for label, widget in [('风电目标',self.d_w),('柴油目标',self.d_d),('目标缺供',self.d_unserved),('目标过剩',self.d_surplus),('Enable',self.d_enable),('Reason',self.d_reason),('最近 ACK',self.ack_label)]: f.addRow(label,widget)
@@ -356,6 +356,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connect_btn.setText('断开 A 服务器' if connected else '连接 A 服务器')
         self.connect_btn.setProperty('kind','danger' if connected else 'success')
         self.connect_btn.style().unpolish(self.connect_btn); self.connect_btn.style().polish(self.connect_btn)
+        if not connected:
+            self._manual_dispatch_pending = False
+            self.send_btn.setEnabled(True)
+            self.send_btn.setText('下发当前调度')
         self.update_comm_diag()
 
     def toggle_connection(self) -> None:
@@ -383,13 +387,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if not c or not c.connected: return
         try:
             results = c.receive_once()
+            got_state = False
+            got_ack = False
             for result in results:
-                if isinstance(result, GridState): self.set_state_snapshot(result); self.log(f'收到 A state session={result.session_id} step={result.step}')
-                elif isinstance(result, Ack): self.last_ack=result; self.handle_ack(result)
+                if isinstance(result, GridState):
+                    got_state = True
+                    self.set_state_snapshot(result)
+                    self.log(f'收到 A state session={result.session_id} step={result.step}')
+                elif isinstance(result, Ack):
+                    got_ack = True
+                    self.last_ack=result
+                    self.handle_ack(result)
+            # The button request is intentionally completed only after A's fresh state
+            # has cleared the client's pending state_request flag.
+            if got_state and self._manual_dispatch_pending:
+                self._try_send_queued_dispatch()
+            elif got_ack and self._manual_dispatch_pending and c._pending_state_request_seq is None and c._pending_ack_seq is None:
+                self._try_send_queued_dispatch()
         except (TimeoutError, socket.timeout):
             return
         except Exception as exc:
-            self.log(f'TCP 接收异常：{exc}'); c.close(); self.set_connection_state(False)
+            self.log(f'TCP 接收异常：{exc}')
+            c.close(); self.set_connection_state(False)
 
     def set_state_snapshot(self, state: GridState) -> None:
         self.state = state; self.demo_mode=False if self.client and self.client.connected else True; self.refresh_state_views(); self.save_state_best_effort()
@@ -433,16 +452,97 @@ class MainWindow(QtWidgets.QMainWindow):
         self.refresh_state_views(); self.log('EMS decision 已计算')
 
     def send_current(self) -> None:
-        if self.last_decision is None: self.calculate_current()
-        if self.last_decision is None: return
+        """Queue a manual dispatch behind a fresh A state instead of rejecting it."""
         if not self.client or not self.client.connected:
             self.log('未连接 A：拒绝发送 TCP dispatch'); QtWidgets.QMessageBox.information(self,'当前为本地模式','先连接 A server 才会真正下发 dispatch。'); return
+        if self.client._uncertain_dispatch_seq is not None:
+            self.log(f'ACK 未知：seq={self.client._uncertain_dispatch_seq}，禁止盲目重发')
+            QtWidgets.QMessageBox.warning(self,'ACK 未知','指令可能已到达 A，但 ACK 无法确认。请先恢复连接并核对历史，不要直接重发。')
+            return
+        if self._manual_dispatch_pending:
+            return
+
+        self._manual_dispatch_pending = True
+        self.send_btn.setEnabled(False)
+        self.send_btn.setText('等待 A 当前状态...')
+        self.statusBar().showMessage('等待 A 返回最新 state，随后自动下发 EMS 调度')
+        self.log('手动下发已排队：等待 A 当前 state')
+
+        c = self.client
         try:
-            seq=self.client.send_dispatch(self.last_decision); self.log(f'发送 dispatch seq={seq}，等待 ACK')
-        except DispatchDeliveryUnknown as exc:
-            self.last_ack=None; self.log(f'ACK 未知：seq={exc.seq}，禁止盲目重发'); QtWidgets.QMessageBox.warning(self,'ACK 未知','指令可能已到达 A，但 ACK 无法确认。请先恢复连接并核对历史，不要直接重发。')
+            # Always obtain a fresh state for a manual send. If one is already
+            # outstanding, request_state simply returns its sequence.
+            c.request_state(full=c.needs_full_sync)
+        except ProtocolError as exc:
+            # A dispatch ACK may still be pending. Keep the request queued;
+            # poll_socket will retry once the ACK/state transaction is clear.
+            self.log(f'当前无法立即请求 state，保持排队：{exc}')
         except Exception as exc:
-            self.log(f'dispatch 失败：{exc}'); QtWidgets.QMessageBox.warning(self,'dispatch 失败',str(exc))
+            self._cancel_queued_dispatch(f'state_request 失败：{exc}', show_message=True)
+            return
+
+        if c._pending_state_request_seq is None and c._pending_ack_seq is None:
+            self._try_send_queued_dispatch()
+
+    def _try_send_queued_dispatch(self) -> None:
+        if not self._manual_dispatch_pending:
+            return
+        c = self.client
+        if not c or not c.connected:
+            self._cancel_queued_dispatch('A 已断开，取消排队的 dispatch', show_message=False)
+            return
+        if c._uncertain_dispatch_seq is not None:
+            self._cancel_queued_dispatch(f'ACK 未知 seq={c._uncertain_dispatch_seq}，不自动重发', show_message=False)
+            return
+        if c._pending_state_request_seq is not None or c._pending_ack_seq is not None:
+            return
+        if self.state is None:
+            self.log('最新 state 尚未进入 GUI，继续等待')
+            return
+
+        try:
+            # Recompute from the state that just arrived, never from the older
+            # decision that was on screen when the user clicked the button.
+            self.calculate_current()
+            if self.last_decision is None:
+                self._cancel_queued_dispatch('最新 state 无法生成有效 EMS decision', show_message=False)
+                return
+            seq = c.send_dispatch(self.last_decision)
+            ack = c.get_ack(seq)
+            if ack is not None:
+                self.last_ack = ack
+                self.handle_ack(ack)
+            self.log(f'发送 dispatch seq={seq}，等待 ACK')
+            self._manual_dispatch_pending = False
+            self.send_btn.setEnabled(True)
+            self.send_btn.setText('下发当前调度')
+            self.statusBar().showMessage(f'调度已下发 seq={seq}' + (f' / ACK={ack.accepted}' if ack else ''))
+        except DispatchDeliveryUnknown as exc:
+            self.last_ack=None
+            self._manual_dispatch_pending = False
+            self.send_btn.setEnabled(True)
+            self.send_btn.setText('下发当前调度')
+            self.log(f'ACK 未知：seq={exc.seq}，禁止盲目重发')
+            QtWidgets.QMessageBox.warning(self,'ACK 未知','指令可能已到达 A，但 ACK 无法确认。请先恢复连接并核对历史，不要直接重发。')
+        except ProtocolError as exc:
+            # A state may have become pending again between the GUI checks and
+            # the transport call. Keep the request queued rather than showing
+            # the old "cannot dispatch while a state request is pending" error.
+            if c._pending_state_request_seq is not None or c._pending_ack_seq is not None:
+                self.log(f'dispatch 等待中：{exc}')
+                return
+            self._cancel_queued_dispatch(f'dispatch 失败：{exc}', show_message=True)
+        except Exception as exc:
+            self._cancel_queued_dispatch(f'dispatch 失败：{exc}', show_message=True)
+
+    def _cancel_queued_dispatch(self, message: str, *, show_message: bool) -> None:
+        self._manual_dispatch_pending = False
+        self.send_btn.setEnabled(True)
+        self.send_btn.setText('下发当前调度')
+        self.log(message)
+        self.statusBar().showMessage(message)
+        if show_message:
+            QtWidgets.QMessageBox.warning(self,'dispatch 失败',message)
 
     def handle_ack(self, ack: Ack) -> None:
         self.ack_label.setText(f'seq={ack.ack_seq} / accepted={ack.accepted} / {ack.reason}')
@@ -457,8 +557,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def runtime_tick(self) -> None:
         if not self.auto_dispatch or not self.params['closed_loop']: return
+        if self._manual_dispatch_pending: return
         if not self.client or not self.client.connected: return
         if self.state is None: return
+        # Do not fight the transport's state-request / ACK transaction. The
+        # next timer tick will run once the connection is idle again.
+        if self.client._pending_state_request_seq is not None or self.client._pending_ack_seq is not None: return
         try:
             self.calculate_current(); self.send_current()
         except Exception as exc: self.log(f'自动调度异常：{exc}')
@@ -562,6 +666,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self.auto_dispatch=False
+        self._manual_dispatch_pending=False
         if self.client: self.client.close()
         event.accept()
 
