@@ -9,7 +9,7 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 - **运行监控**：A IP、TCP 端口、本机 IP、连接/断开；负荷、风电 available、operating limit、target、actual、柴油 actual、功率不平衡、风速、柴油能力余量、状态年龄、桨距 actual、session/step、`sampled_at_utc`。
 - **实时曲线**：负荷、风电 available/limit、wind target/actual、diesel actual 趋势；可清空并立即请求 A 状态。
 - **本地场景 / 手动调度**：不连接 A 也能构造 mock `GridState`，验证风优先、operating limit、柴油 10 kW reserve、柴油 OFF、C fault 优先、缺电/过剩等结果；明确标记为 mock，不冒充 A 场景。
-- **参数设置**：运行参数可配置；风机/柴油容量与 10 kW reserve 按小组统一基线写入 `ems.db`，不作为课程原文指定值。
+- **参数设置**：运行参数按统一基线展示；风机/柴油物理参数、B 调度限值和周期参数均由 `ems.db` 固定初始化，不允许 GUI 写成其他生产基线。
 - **EMS 调度**：手动计算并发送 dispatch；可开启自动闭环；显示 target unserved、target surplus、reason 和 ACK；保留 delivery-unknown 禁止盲目重发的安全边界。
 - **历史数据**：读取 `ems.db/state_history`，按 session 过滤并支持 CSV 导出。
 - **通信诊断**：TCP 状态、pending state request、full-sync、最近入站 seq、最近 ACK 和 GUI 事件日志。
@@ -25,21 +25,16 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 - 柴油调度保留 **10 kW** 备用容量；柴油目标为 0 时允许完全 OFF。
 - 统一物理/周期基线：风机 100 kW、3/12/25 m/s、0/90 deg、40/60 kW/s；柴油 20/120 kW、30/40 kW/s；A/B/C 周期分别按 1 s / 1 s、1 s / 5 s、1 s，C 超时 3 s。以上均为**小组统一配置**，不是课程原文指定数值。
 
-## ems.db 初始化
+## ems.db 结构与初始化
 
-`EMSRepository.initialize()` 会创建/迁移 `ems.db`，并将 B 使用的统一数据库基线初始化为：
+`EMSRepository.initialize()` 会创建/迁移 `ems.db`。当前 schema version 为 **4**，主要分为四类：
 
-| 参数 | 值 |
-|---|---:|
-| `wind_min_kw` | 0 kW |
-| `wind_max_kw` | 100 kW |
-| `diesel_max_kw` | 120 kW |
-| `reserve_kw` | 10 kW |
-| B 状态采集周期 `poll_period_s` | 1 s |
-| B 调度周期 `dispatch_period_s` | 5 s |
-| C 通信/命令超时基线 `command_timeout_s` | 3 s |
+1. `physical_parameters`：A/B 保留的只读物理参数副本；记录风机 100 kW、3/12/25 m/s、0/90 deg、40/60 kW/s，以及柴油 20/120 kW、30/40 kW/s。
+2. `dispatch_parameters`：B 自己使用的调度约束，固定为风电 0-100 kW、柴油最大 120 kW、reserve 10 kW。
+3. `ems_runtime_config`：B 采集 1 s、B 调度 5 s、closed loop、命令超时 3 s 的运行基线。
+4. `current_state / state_history / dispatch_commands / dispatch_evaluation / event_log`：状态、历史、dispatch、评价、通信/运行日志；A 的 `sampled_at_utc` 与 B 的 `received_at_utc` 分开保存。
 
-因此第一次启动 GUI 时，不再因为 `dispatch_parameters` 缺失而退回 GUI 临时默认值。对于已有的旧 `ems.db`，再次执行初始化会把上述 B 参数基线重新对齐；运行状态、历史、dispatch 和日志不会被清除。
+初始化时会把上述统一基线写入/重新对齐已有数据库，不需要连接 A；A 连接只负责后续实时状态、dispatch ACK 等运行数据。不会删除已有状态、历史、dispatch 或日志记录。
 
 **不要把真实 `data/runtime/ems.db` 提交到 GitHub。** 仓库只保存 schema 和初始化逻辑。
 
@@ -75,3 +70,4 @@ python -m unittest discover -s tests -v
 - A/B/C socket、STM32/Wi-Fi/串口实机联调仍需单独验收；GUI 能显示通信状态不等于实机联调完成。
 - 自动闭环默认关闭，只有连接 A 并明确开启后才会发送 dispatch。
 - B 只发送 `wind_target_kw / diesel_target_kw / wind_enable / diesel_enable`，不发送 `pitch_target_deg`。
+- 生产数据库基线不可由 GUI 随意改写；测试场景应在独立临时数据库中完成。
