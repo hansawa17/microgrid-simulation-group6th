@@ -9,7 +9,7 @@
 | 成员 | 模块 | 代码位置 | 核心交付 |
 |---|---|---|---|
 | A 刘雨杭 | 电网模拟器 | `A_simulator/` | 场景、风柴实际出力仿真、TCP 服务端、grid.db、Qt 界面 |
-| B 李佳霖 | EMS 主站 | `B_dispatch/` | 状态采集、调度、闭环、ems.db、Qt 界面 |
+| B 李佳霖 | EMS 主站 | `B_dispatch/` + `gui_b.py` | 状态采集、调度、闭环、ems.db、Qt 界面 |
 | C 陈信甫 | 风电子站 | `C_controller/` | STM32 控制、Wi-Fi TCP 客户端、串口上位机、wind.db |
 
 运行关系：`B → A ← STM32`；A 是 TCP 服务端，B 和 STM32/C 是客户端。C 对风机保护/控制具有优先权。
@@ -27,6 +27,8 @@ B_dispatch/
 ├── tcpB.py
 ├── serviceB.py
 └── README.md
+
+gui_b.py                 # B / EMS PyQt6 GUI（仿照 C gui.py 风格）
 
 tests/
 ├── test_b_dispatch.py
@@ -75,7 +77,24 @@ B 已更新 `models.py`、`tcpB.py`、`dispatch.py`、`repository.py`、`db_sche
 - `sampled_at_utc` 增加 RFC 3339 UTC 校验。
 - 更新 TCP、dispatch、repository、service 回归测试。
 
-> **重要状态说明：A 目前只是制定了最新协议，A 的 TCP/state 代码尚未完成对应更新。** 因此本阶段完成的是 B 侧提前对齐；不能据此宣称 A/B 联调已经完成。
+### 2026-09-08 · 先完成 B PyQt6 GUI，暂时跳过通信联调
+
+本阶段按开发安排，**暂时不进行 A/B/C socket 联调**，先把 B 的图形界面做出来，并参照 C 的 `gui.py` 使用统一的浅色卡片、蓝色主色、左侧导航、顶部状态胶囊和大数据卡片风格。
+
+新增：`gui_b.py`。
+
+GUI 当前覆盖：
+
+- EMS 运行监控：负荷、风电 available、operating limit、target、actual、柴油 actual、闭环状态和 C 优先权。
+- 实时趋势：功率与风速趋势。
+- 调度参数：风电/柴油容量、10 kW reserve、状态年龄、1 s / 5 s 周期等。
+- 本地调度演示：调用现有 B `calculate_dispatch()`，在不建立 TCP 的情况下验证风优先、operating limit、柴油 reserve、C fault 优先和安全兜底。
+- 历史数据与事件区：按 `ems.db` 的状态/dispatch/事件语义提供界面骨架。
+- 预留 `set_state_snapshot()` / `apply_dispatch_result()`，后续可接 `runtime.py`、`serviceB.py` 和 `repository.py`。
+
+> `gui_b.py` 当前是 **本地 GUI / 调度演示层**，不会假定 A 已完成最新协议，也不会在本阶段主动建立 TCP。
+
+> **重要状态说明：A 目前只是制定了最新协议，A 的 TCP/state 代码尚未完成对应更新。** 因此本阶段完成的是 B 侧 GUI 与调度展示，不代表 A/B 联调已经完成。
 
 ## 当前状态与下一步
 
@@ -87,23 +106,29 @@ B 已更新 `models.py`、`tcpB.py`、`dispatch.py`、`repository.py`、`db_sche
 - B-owned `tcpB.py` / `serviceB.py`。
 - JSON Lines、4096 bytes、seq/session/step、双时间字段、ACK 处理等协议基础。
 - 最新协议中的 `wind_available_kw` / `wind_operating_limit_kw` 已进入 B 模型、TCP parser、dispatch、数据库和测试。
+- B PyQt6 GUI `gui_b.py` 已建立，并与 C GUI 保持相同的整体视觉语言。
 
 ### 尚需完成
 
 1. **A 实施最新公共协议**：A state payload 补齐 `wind_available_kw`、`wind_operating_limit_kw`，并完成 A 侧校验和实际计算。
-2. **C 实施/确认 `wind_action`**：包括 STM32G431RBT6、风机启停、桨距/保护和 operating limit 的实际产生逻辑。
-3. **A/B socket 联调**：验证状态、dispatch、ACK、半帧/粘包、seq/session/step、timeout、断线重连。
+2. **A/B socket 联调**：验证状态、dispatch、ACK、半帧/粘包、seq/session/step、timeout、断线重连。
+3. **B GUI 接真实数据**：把 `gui_b.py` 的状态、趋势、历史和事件接到 `serviceB.py` / `runtime.py` / `repository.py`。
 4. **B 数据追溯验证**：验证 state → dispatch → ACK → 后续 actual state 能从 `ems.db` 复原。
 5. **A/B/C 组合闭环**：重点验证 C 保护优先、风机冷启动、operating limit 限制和柴油 10 kW reserve。
 6. **STM32 实机验证**：由 C 负责硬件/Wi-Fi/串口，B 配合验证目标闭环。
-7. **PyQt6 UI**：底层通信和数据追溯稳定后再接界面。
 
 ## 测试说明
 
-本次修改同步了 B 的测试代码，但当前环境没有执行项目 Python 测试，因此**不宣称测试已通过**。建议在 Python 3.11 环境执行：
+本次修改同步了 B 的测试代码和 GUI，但当前环境没有执行项目 Python 测试，因此**不宣称测试已通过**。建议在 Python 3.11 环境执行：
 
 ```bash
 python -m unittest discover -s tests -v
+```
+
+预览 B GUI：
+
+```bash
+python gui_b.py
 ```
 
 ## 环境
