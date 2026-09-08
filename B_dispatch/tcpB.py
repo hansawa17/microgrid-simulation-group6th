@@ -19,12 +19,32 @@ class ProtocolError(ValueError):
     """Raised when a TCP frame violates the common protocol."""
 
 
+class DispatchDeliveryUnknown(ConnectionError):
+    """Dispatch was sent but its ACK could not be established safely."""
+
+    def __init__(self, seq: int, message: str) -> None:
+        super().__init__(message)
+        self.seq = seq
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _reject_constant(value: str) -> None:
     raise ProtocolError(f"non-finite JSON number: {value}")
+
+
+def _validate_rfc3339_utc(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ProtocolError(f"{field_name} must be a non-empty RFC 3339 UTC string")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ProtocolError(f"{field_name} must be RFC 3339") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise ProtocolError(f"{field_name} must use UTC")
+    return value
 
 
 def encode_frame(message: dict[str, Any]) -> bytes:
@@ -114,7 +134,7 @@ class Ack:
 
 
 class EMSTcpClient:
-    """Blocking B client with explicit framing, timeout and reconnect support."""
+    """Blocking B client with framing, timeout, ACK and reconnect safeguards."""
 
     def __init__(
         self,
@@ -137,6 +157,7 @@ class EMSTcpClient:
         self._pending_state_request_seq: int | None = None
         self._pending_ack_seq: int | None = None
         self._received_acks: dict[int, Ack] = {}
+        self._uncertain_dispatch_seq: int | None = None
         self.session_id: str | None = None
         self.latest_state: GridState | None = None
         self.needs_full_sync = True
@@ -154,6 +175,7 @@ class EMSTcpClient:
         self._pending_state_request_seq = None
         self._pending_ack_seq = None
         self._received_acks.clear()
+        self._uncertain_dispatch_seq = None
         self.needs_full_sync = True
         self.request_state(full=True)
 
@@ -202,6 +224,8 @@ class EMSTcpClient:
     def request_state(self, *, full: bool) -> int:
         if self._pending_state_request_seq is not None:
             return self._pending_state_request_seq
+        if self._pending_ack_seq is not None:
+            raise ProtocolError("cannot request state while a dispatch ACK is pending")
         state = self.latest_state
         message = self._envelope(
             "state_request",
@@ -215,7 +239,7 @@ class EMSTcpClient:
         return int(message["seq"])
 
     def poll_state(self) -> GridState | None:
-        """Keep at most one outstanding state request and wait until a state arrives."""
+        """Keep one outstanding state request and consume frames until state arrives."""
         self.request_state(full=self.needs_full_sync)
         while self.latest_state is None or self._pending_state_request_seq is not None:
             results = self.receive_once()
@@ -224,8 +248,18 @@ class EMSTcpClient:
                     return result
         return self.latest_state
 
+    def get_ack(self, seq: int) -> Ack | None:
+        """Return a received ACK without inventing success from transport delivery."""
+        return self._received_acks.get(seq)
+
     def send_dispatch(self, decision: EMSDecision) -> int:
         state = decision.state
+        if self._pending_state_request_seq is not None:
+            raise ProtocolError("cannot dispatch while a state request is pending")
+        if self._uncertain_dispatch_seq is not None:
+            raise ProtocolError(
+                f"dispatch result for seq {self._uncertain_dispatch_seq} is unknown; reconcile before sending another dispatch"
+            )
         if self.session_id is not None and state.session_id != self.session_id:
             raise ProtocolError("dispatch state belongs to an old or different session")
         if self._pending_ack_seq is not None:
@@ -245,10 +279,15 @@ class EMSTcpClient:
         seq = int(message["seq"])
         self._send(message)
         self._pending_ack_seq = seq
-        while self._pending_ack_seq is not None:
-            results = self.receive_once()
-            if any(isinstance(result, Ack) and result.ack_seq == seq for result in results):
-                break
+        try:
+            while self._pending_ack_seq is not None:
+                results = self.receive_once()
+                if any(isinstance(result, Ack) and result.ack_seq == seq for result in results):
+                    break
+        except (socket.timeout, ConnectionError, OSError) as exc:
+            self._uncertain_dispatch_seq = seq
+            self._pending_ack_seq = None
+            raise DispatchDeliveryUnknown(seq, f"dispatch seq {seq} sent but ACK is unknown: {exc}") from exc
         return seq
 
     def receive_once(self) -> list[GridState | Ack]:
@@ -314,37 +353,45 @@ class EMSTcpClient:
     def _parse_state(self, message: dict[str, Any]) -> GridState:
         payload = message["payload"]
         required = (
-            "sampled_at_utc", "wind_speed_mps", "load_power_kw", "wind_actual_kw",
-            "diesel_actual_kw", "wind_target_kw", "pitch_actual_deg", "wind_running", "fault",
+            "sampled_at_utc", "wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw",
+            "load_power_kw", "wind_actual_kw", "diesel_actual_kw", "wind_target_kw",
+            "pitch_actual_deg", "wind_running", "fault",
         )
         missing = [key for key in required if key not in payload]
         if missing:
             raise ProtocolError(f"missing state payload fields: {', '.join(missing)}")
-        for key in ("wind_speed_mps", "load_power_kw", "wind_actual_kw", "diesel_actual_kw", "wind_target_kw"):
+        for key in (
+            "wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw", "load_power_kw",
+            "wind_actual_kw", "diesel_actual_kw", "wind_target_kw",
+        ):
             value = payload[key]
             if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
                 raise ProtocolError(f"invalid non-negative numeric field: {key}")
-        if not isinstance(payload["sampled_at_utc"], str) or not payload["sampled_at_utc"]:
-            raise ProtocolError("sampled_at_utc must be a non-empty RFC 3339 string")
+        if payload["wind_operating_limit_kw"] > payload["wind_available_kw"]:
+            raise ProtocolError("wind_operating_limit_kw must be <= wind_available_kw")
+        sampled_at_utc = _validate_rfc3339_utc(payload["sampled_at_utc"], "sampled_at_utc")
         if not isinstance(payload["wind_running"], bool) or not isinstance(payload["fault"], bool):
             raise ProtocolError("wind_running and fault must be JSON booleans")
         pitch = payload["pitch_actual_deg"]
-        if pitch is not None and (
-            not isinstance(pitch, (int, float)) or isinstance(pitch, bool) or not math.isfinite(pitch)
-        ):
-            raise ProtocolError("pitch_actual_deg must be finite or null")
+        if not isinstance(pitch, (int, float)) or isinstance(pitch, bool) or not math.isfinite(pitch):
+            raise ProtocolError("pitch_actual_deg must be a finite number")
+        session_id = message["session_id"]
+        if not isinstance(session_id, str) or not session_id:
+            raise ProtocolError("state session_id must be a non-empty string")
         return GridState(
-            session_id=message["session_id"],
+            session_id=session_id,
             step=message["step"],
             sim_time_s=float(message["sim_time_s"]),
             wind_speed_mps=float(payload["wind_speed_mps"]),
+            wind_available_kw=float(payload["wind_available_kw"]),
+            wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]),
             load_power_kw=float(payload["load_power_kw"]),
             wind_actual_kw=float(payload["wind_actual_kw"]),
             diesel_actual_kw=float(payload["diesel_actual_kw"]),
             wind_running=payload["wind_running"],
             fault=payload["fault"],
-            sampled_at_utc=payload["sampled_at_utc"],
+            sampled_at_utc=sampled_at_utc,
             received_at_utc=utc_now(),
             wind_target_kw=float(payload["wind_target_kw"]),
-            pitch_actual_deg=pitch,
+            pitch_actual_deg=float(pitch),
         )
