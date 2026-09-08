@@ -9,10 +9,9 @@ from dataclasses import dataclass
 class GridState:
     """Snapshot received from A according to the current common TCP protocol.
 
-    ``wind_available_kw`` describes wind-resource capability, while
-    ``wind_operating_limit_kw`` is the current steady-state operating limit
-    after C/device constraints. ``wind_actual_kw`` is the simulated result and
-    must never be used as the capability input for B dispatch.
+    C computes ``wind_available_kw`` and ``wind_operating_limit_kw``; A
+    validates, stores and relays them. ``wind_actual_kw`` is A's simulated
+    result and must never be used as the capability input for B dispatch.
     """
 
     session_id: str
@@ -37,8 +36,8 @@ class GridState:
 class DispatchConfig:
     """EMS constraints.
 
-    Physical ratings are required explicitly because the project has not
-    frozen the wind/diesel nameplate values. Diesel reserve is fixed at 10 kW.
+    Ratings remain explicit inputs even though the team baseline is now
+    wind=100 kW and diesel=120 kW. Diesel reserve is fixed at 10 kW.
     """
 
     wind_max_kw: float

@@ -52,7 +52,11 @@ def validate_envelope(message: dict[str, object]) -> None:
     required = {"version", "type", "source", "target", "session_id", "seq", "step", "sim_time_s", "payload"}
     if not required.issubset(message):
         raise ProtocolError("missing_envelope_field")
-    if message["version"] != 1:
+    if (
+        isinstance(message["version"], bool)
+        or not isinstance(message["version"], int)
+        or message["version"] != 1
+    ):
         raise ProtocolError("unsupported_version")
     if not isinstance(message["type"], str):
         raise ProtocolError("invalid_type")
@@ -72,6 +76,8 @@ def validate_envelope(message: dict[str, object]) -> None:
     session_id = message["session_id"]
     if session_id is not None and not isinstance(session_id, str):
         raise ProtocolError("invalid_session_id")
+    if session_id == "":
+        raise ProtocolError("invalid_session_id")
 
 
 class MessageProcessor:
@@ -85,7 +91,7 @@ class MessageProcessor:
         if message_type == "state_request":
             payload = message["payload"]
             assert isinstance(payload, dict)
-            if type(payload.get("full")) is not bool:
+            if set(payload) != {"full"} or type(payload["full"]) is not bool:
                 raise ProtocolError("invalid_full")
             state = self.repository.get_state()
             return {
@@ -146,7 +152,10 @@ class _RequestHandler(socketserver.StreamRequestHandler):
         peer: str | None = None
         try:
             while True:
-                frame = self.rfile.readline(self.server.max_frame_bytes + 1)
+                try:
+                    frame = self.rfile.readline(self.server.max_frame_bytes + 1)
+                except (ConnectionError, OSError):
+                    break
                 if not frame:
                     break
                 if len(frame) > self.server.max_frame_bytes:
@@ -168,8 +177,11 @@ class _RequestHandler(socketserver.StreamRequestHandler):
                     response = self.server.processor.error_ack(decoded, str(exc))
                     if response is None:
                         continue
-                self.wfile.write(encode_frame(response, self.server.max_frame_bytes))
-                self.wfile.flush()
+                try:
+                    self.wfile.write(encode_frame(response, self.server.max_frame_bytes))
+                    self.wfile.flush()
+                except (ConnectionError, OSError):
+                    break
         finally:
             if peer is not None:
                 self.server.repository.mark_connection(peer, False, "connection closed")

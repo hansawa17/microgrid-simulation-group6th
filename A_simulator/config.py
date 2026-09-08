@@ -61,7 +61,13 @@ def load_config(path: str | Path) -> SimulationConfig:
     for name in bool_names:
         if type(initial.get(name)) is not bool:
             raise ValueError(f"initial_control.{name} must be boolean")
-    for name in ("wind_target_kw", "diesel_target_kw", "pitch_target_deg"):
+    for name in (
+        "wind_target_kw",
+        "diesel_target_kw",
+        "pitch_target_deg",
+        "controller_wind_available_kw",
+        "controller_wind_operating_limit_kw",
+    ):
         _require_number(initial, name)
 
     wind = WindTurbineParameters(**{key: _require_number(wind_data, key) for key in (
@@ -74,12 +80,16 @@ def load_config(path: str | Path) -> SimulationConfig:
     wind_target = _require_number(initial, "wind_target_kw")
     diesel_target = _require_number(initial, "diesel_target_kw")
     pitch_target = _require_number(initial, "pitch_target_deg")
+    controller_available = _require_number(initial, "controller_wind_available_kw")
+    controller_limit = _require_number(initial, "controller_wind_operating_limit_kw")
     if not 0 <= wind_target <= wind.rated_power_kw:
         raise ValueError("initial wind_target_kw is outside the configured device range")
     if not 0 <= diesel_target <= diesel.max_power_kw:
         raise ValueError("initial diesel_target_kw is outside the configured device range")
     if not wind.pitch_full_output_deg <= pitch_target <= wind.pitch_feather_deg:
         raise ValueError("initial pitch_target_deg is outside the configured device range")
+    if not 0 <= controller_limit <= controller_available <= wind.rated_power_kw:
+        raise ValueError("initial C wind capability values are outside the configured device range")
     bind = network.get("server_bind")
     if not isinstance(bind, str) or not bind:
         raise ValueError("server_bind must be a non-empty string")

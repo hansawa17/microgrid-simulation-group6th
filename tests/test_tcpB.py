@@ -10,11 +10,11 @@ from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, JsonLine
 
 
 class FakeSocket:
-    def __init__(self, recv_data=b""):
+    def __init__(self, recv_data=None):
         self.sent = []
         self.timeout = None
         self.closed = False
-        self.recv_queue = [recv_data] if isinstance(recv_data, bytes) else list(recv_data)
+        self.recv_queue = [recv_data] if isinstance(recv_data, bytes) else list(recv_data or [])
 
     def settimeout(self, value):
         self.timeout = value

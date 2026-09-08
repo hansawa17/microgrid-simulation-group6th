@@ -285,6 +285,7 @@ class EMSTcpClient:
                 if any(isinstance(result, Ack) and result.ack_seq == seq for result in results):
                     break
         except (socket.timeout, ConnectionError, OSError) as exc:
+            self.close()
             self._uncertain_dispatch_seq = seq
             self._pending_ack_seq = None
             raise DispatchDeliveryUnknown(seq, f"dispatch seq {seq} sent but ACK is unknown: {exc}") from exc

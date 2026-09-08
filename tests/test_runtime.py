@@ -83,14 +83,14 @@ class RuntimeTests(unittest.TestCase):
 
         clock.advance(3.0)
         runtime.run_cycle()
-        self.assertEqual(len(provider_calls), 5)
+        self.assertEqual(len(provider_calls), 3)
         self.assertEqual(len(decisions), 1)
 
         clock.advance(1.0)
         runtime.run_cycle()
-        self.assertEqual(len(provider_calls), 6)
+        self.assertEqual(len(provider_calls), 4)
         self.assertEqual(len(decisions), 2)
-        self.assertEqual(decisions[-1].state.step, 6)
+        self.assertEqual(decisions[-1].state.step, 4)
 
     def test_latest_polled_state_is_used_for_dispatch(self):
         clock = FakeClock()

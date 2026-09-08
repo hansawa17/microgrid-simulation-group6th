@@ -2,7 +2,7 @@
 
 B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 操作界面；B 是 A 的 TCP 客户端，不充当 TCP 中心。
 
-> 本 README 按当前 `common/protocol.md` 更新。公共协议目前仍是草案；A 已先制定协议，但 A 的 TCP/state 代码尚未完成对应实施。因此本阶段只让 B 提前对齐协议，不把 A 当前旧代码当作最终接口。
+> 本 README 按当前 `common/protocol.md` 更新。计算职责与基础物理参数已确认；传输细节和实机行为仍须联调验证。
 
 ## 当前目录
 
@@ -73,8 +73,8 @@ B `GridState` 和 TCP parser 现在明确区分：
 
 | 字段 | B 的语义 |
 |---|---|
-| `wind_available_kw` | A 根据风速和配置功率曲线计算的资源可用功率 |
-| `wind_operating_limit_kw` | 考虑 C/STM32 许可、保护、当前桨距和设备限制后的稳态运行上限 |
+| `wind_available_kw` | C 根据 A 风速和风机参数计算，经 A 校验、存储并转发 |
+| `wind_operating_limit_kw` | C 考虑运行许可、保护和设备上限后计算，经 A 转发 |
 | `wind_target_kw` | B 发给 A 的风机目标 |
 | `wind_actual_kw` | A 仿真产生的实际风机出力 |
 
@@ -106,7 +106,7 @@ B **使用 `wind_operating_limit_kw` 约束目标，不再使用 `wind_actual_kw
 - `tests/test_repository.py`：schema v3、功率字段、双时间字段和 ACK 追踪。
 - `tests/test_serviceB.py`：ACK accepted/rejected 和 delivery_unknown 的数据库记录。
 
-**注意：这些测试已更新，但本次通过 GitHub 文件接口修改，当前环境没有执行项目 Python 测试，因此不能宣称测试已通过。**
+2026-09-08 已在 Python 3.11.14 环境执行仓库完整测试，共 76 项全部通过；尚未进行三机 TCP 和 STM32 实物联调。
 
 ### 2026-09-08 · 第五阶段：先做 B PyQt6 GUI，跳过通信联调
 
@@ -166,9 +166,9 @@ B 不负责把 target 变成 actual；A 根据双方启停条件、设备限制�
 
 ## 当前边界
 
-1. **A 尚未实施最新公共协议**：A 当前 TCP/state 代码仍需要把 `wind_available_kw`、`wind_operating_limit_kw` 等新字段真正输出并完成对应校验。
-2. **物理参数仍未冻结**：风机额定功率、柴油额定功率、风速—功率曲线、爬坡/启停等不能由 B 自行猜测。
-3. **C 侧仍需实现/确认**：`wind_action`、STM32G431RBT6、C 的保护/启停和运行上限产生逻辑。
+1. **三方尚未 socket 联调**：A 已具备新状态字段和 C 能力字段校验，但仍需验证 C → A → B 的真实数据路径。
+2. **参数已统一但需实机同步**：风机 100 kW、3/12/25 m/s、三次曲线、0-90 deg；B 不自行修改这些值。
+3. **C 侧仍需实现 Wi-Fi TCP**：真实 STM32 需发送含 available/operating limit 的 `wind_action`。
 4. **跨设备 ACK/重连行为仍需实机验证**：B 已实现“不盲目换 seq 重发”，但最终重连后的状态协调需要 A/B 联调确认。
 5. **GUI 已建立但暂未接真实通信/实时数据库**：当前 `gui_b.py` 是本地演示与接入骨架，通信联调按阶段计划后置。
 
@@ -209,3 +209,5 @@ python -m unittest discover -s tests -v
 ```
 
 `data/runtime/ems.db` 是本地运行数据，不提交 GitHub。
+
+完整计算职责和小组统一参数见 `docs/parameter-ownership.md`。

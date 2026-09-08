@@ -56,8 +56,8 @@ device_name = WT001
 cut_in_speed = 3
 rated_speed = 12
 cut_out_speed = 25
-rated_power = 1000
-deg_max = 20
+rated_power = 100
+deg_max = 90
 control_period = 1
 communication_timeout = 3
 control_mode = 1
@@ -289,14 +289,14 @@ result = 1
 
 ```text
 parameter_name = rated_power
-old_value = 1000
-new_value = 1200
+old_value = 100
+new_value = 110
 unit = kW
 ```
 
 这样以后你可以追踪：
 
-> 谁/什么时候把额定功率从1000改成了1200。
+> 谁/什么时候把额定功率从100改成了110。
 
 ---
 

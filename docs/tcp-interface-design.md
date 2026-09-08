@@ -111,7 +111,7 @@ STM32 将 `source` 改为 `C`。当前 A 对 `full=true/false` 都返回完整�
 
 ### 5.2 `state`：A -> B/STM32
 
-`state.payload` 在 B 当前字段基础上增加公共能力字段 `wind_available_kw` 和 `wind_operating_limit_kw`；它们不是 A 私有字段，A/B/C 需在组合联调前共同适配：
+`state.payload` 包含公共能力字段 `wind_available_kw` 和 `wind_operating_limit_kw`。二者由 C 计算，经 A 校验、存储和转发，A/B/C 均需适配：
 
 ```json
 {
@@ -143,10 +143,10 @@ A 根据请求来源把 `target` 设置为 `B` 或 `C`。
 
 能力字段分两层：
 
-- `wind_available_kw`：A 按当前风速和已配置风机功率曲线计算的资源可用功率，受额定功率限制，不考虑目标、启停、桨距或爬坡。
-- `wind_operating_limit_kw`：A 在资源可用功率基础上考虑 C/STM32 启停许可、保护/故障、当前桨距和设备运行上限得到的当前稳态上限，满足 `0 <= wind_operating_limit_kw <= wind_available_kw`；不考虑 B 当前目标、B 当前启停请求或实际爬坡。
+- `wind_available_kw`：C 按 A 的当前风速、C 保存的风机参数和统一三次功率曲线计算，受 100 kW 额定功率限制，不考虑目标、启停、桨距或爬坡。
+- `wind_operating_limit_kw`：C 在资源可用功率基础上考虑运行许可、保护/故障和设备上限，满足 `0 <= wind_operating_limit_kw <= wind_available_kw`；不考虑 B 目标、桨距目标或实际爬坡。
 
-B 使用 `wind_operating_limit_kw` 约束 `wind_target_kw`。A 再根据目标、双方启停条件和爬坡约束计算 `wind_actual_kw`。三个状态功率字段不得互相替代。
+B 使用 `wind_operating_limit_kw` 约束 `wind_target_kw`。A 再根据目标、双方启停条件、C 桨距、物理上限和爬坡约束计算 `wind_actual_kw`。三个状态功率字段不得互相替代。
 
 ### 5.3 `dispatch`：B -> A
 
@@ -185,12 +185,14 @@ B 的 payload 只能包含这 4 个字段，不能发送 `pitch_target_deg` 或�
   "sim_time_s": 5.0,
   "payload": {
     "wind_enable": true,
-    "pitch_target_deg": 3.5
+    "pitch_target_deg": 3.5,
+    "wind_available_kw": 68.0,
+    "wind_operating_limit_kw": 68.0
   }
 }
 ```
 
-STM32 不发送柴油机目标、负荷修改或 actual 字段。
+STM32 负责计算 payload 中的两个能力字段和桨距/启停动作；不发送柴油机目标、负荷修改或 actual 字段。
 
 ### 5.5 `ack`：A -> B/STM32
 
@@ -241,7 +243,7 @@ sequenceDiagram
 
 - A 默认每 1 s 推进一个仿真步。
 - B 默认每 1 s 请求状态、每 5 s 计算并发送调度。
-- STM32 状态请求、控制和 UART 周期尚未冻结。
+- STM32 状态请求与控制周期统一为 1 s；UART 帧细节仍待冻结。
 - 每条连接同一时刻最多保留一个未完成的应用层请求：`state_request -> state` 或 `command -> ack`。
 - B 的 socket 由网络工作线程独占，PyQt6 主线程不执行阻塞 `connect/recv/sendall`。
 - STM32 使用接收缓存按 LF 分帧，不在 UART/TCP 中断中执行长时间处理。
@@ -295,7 +297,7 @@ DISCONNECTED -> CONNECTING -> SYNCING -> ONLINE
 - B 已实现单未决状态请求、持续消费到新 `state`、发送 dispatch 后等待匹配 ACK，避免响应积压。
 - B 尚需把 ACK 最终结果完整回写命令记录，并用单调时钟维护状态新鲜度。
 - STM32 Wi-Fi TCP 客户端和 C UART 协议尚未完成，硬件结果必须明确标注实机或 mock。
-- 通信草案已增加 `wind_available_kw` 和 `wind_operating_limit_kw`，但 A 的状态/TCP、B 的状态模型/调度/数据库以及 STM32 解析仍待同步实现；在此之前不得宣称字段联调完成。
+- A/B 软件已适配 `wind_available_kw` 和 `wind_operating_limit_kw`；STM32 Wi-Fi 客户端仍待实现，在真实三方联调前不得宣称字段闭环完成。
 - A 对命令允许滞后的最大 step/秒数尚未冻结。
 
 ## 12. 联调步骤
@@ -313,9 +315,9 @@ DISCONNECTED -> CONNECTING -> SYNCING -> ONLINE
 
 - 内网穿透服务是否支持固定 raw TCP、公网长连接、访问控制以及 STM32 可用的 DNS/TLS能力。
 - STM32/Wi-Fi 模块型号、AT 固件和最大可用帧缓存。
-- STM32 状态请求、控制运算、动作上送和 UART 周期。
+- STM32 状态请求、控制运算与动作上送的 1 s 周期实机验证。
 - C UART 帧头、长度、消息号、校验、编码、字节序和最大帧长。
-- A/B/STM32 对 `wind_available_kw`、`wind_operating_limit_kw` 的实现与字段一致性测试。
+- A/B/STM32 对 `wind_available_kw`、`wind_operating_limit_kw` 的实机字段一致性测试。
 - 命令允许引用当前状态之前的最大步数/秒数。
 - TCP/UART 失联时 A、B、STM32/C 上位机的安全动作和恢复条件。
 - B 调度启停与 C 保护动作冲突时的最终优先级。

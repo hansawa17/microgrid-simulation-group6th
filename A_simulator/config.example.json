@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "parameter_status": "example_unconfirmed",
+  "parameter_status": "confirmed",
   "simulation": {
     "start_s": 0.0,
     "end_s": 600.0,
@@ -34,8 +34,9 @@
     "dispatch_wind_enable": true,
     "controller_wind_enable": true,
     "diesel_enable": true,
-    "pitch_target_deg": 0.0
+    "pitch_target_deg": 0.0,
+    "controller_wind_available_kw": 0.0,
+    "controller_wind_operating_limit_kw": 0.0
   },
-  "model_note": "All physical values are runnable examples, not confirmed course requirements. The basic pitch model linearly derates power. Wind operation currently requires both B and C enable permits."
+  "model_note": "Team baseline confirmed on 2026-09-08. The course document defines calculation ownership but not numeric ratings. C computes wind available power and pitch targets; A computes actual plant output and power imbalance."
 }
-

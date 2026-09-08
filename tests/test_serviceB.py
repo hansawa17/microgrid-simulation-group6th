@@ -21,6 +21,7 @@ class ServiceBTests(unittest.TestCase):
             load_power_kw=60.0, wind_actual_kw=0.0, diesel_actual_kw=0.0,
             wind_running=True, fault=False,
             sampled_at_utc="2026-09-07T08:03:25.417Z",
+            pitch_actual_deg=0.0,
         )
 
     def test_poll_state_persists_protocol_power_fields_and_times(self):

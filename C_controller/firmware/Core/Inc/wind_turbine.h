@@ -32,8 +32,8 @@ extern "C" {
 #define WT_DEFAULT_CUT_IN_SPEED    3.0f    /* 切入风速   m/s  */
 #define WT_DEFAULT_RATED_SPEED     12.0f   /* 额定风速   m/s  */
 #define WT_DEFAULT_CUT_OUT_SPEED   25.0f   /* 切出风速   m/s  */
-#define WT_DEFAULT_RATED_POWER     1000.0f /* 额定功率   kW   */
-#define WT_DEFAULT_DEG_MAX         20.0f   /* 最大桨距角 °    */
+#define WT_DEFAULT_RATED_POWER     100.0f  /* 额定功率   kW   */
+#define WT_DEFAULT_DEG_MAX         90.0f   /* 最大顺桨角 °    */
 #define WT_DEFAULT_CONTROL_PERIOD  1.0f    /* 控制周期   s    */
 #define WT_DEFAULT_COMM_TIMEOUT    3.0f    /* 通信超时   s    */
 

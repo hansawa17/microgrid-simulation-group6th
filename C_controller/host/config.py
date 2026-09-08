@@ -39,8 +39,8 @@ DEFAULT_PARAMS = {
     "cut_in_speed": 3.0,          # 切入风速   m/s
     "rated_speed": 12.0,          # 额定风速   m/s
     "cut_out_speed": 25.0,        # 切出风速   m/s
-    "rated_power": 1000.0,        # 额定功率   kW
-    "deg_max": 20.0,              # 最大桨距角 °
+    "rated_power": 100.0,         # 额定功率   kW（小组统一基准）
+    "deg_max": 90.0,              # 最大顺桨角 °（0° 满功率，90° 完全顺桨）
     "control_period": 1.0,        # 控制周期   s
     "communication_timeout": 3.0, # 通信超时   s
     "control_mode": 1,            # 控制模式 0开环/1闭环
@@ -78,7 +78,7 @@ WIND_FIELDS = [
 ]
 
 # 本地 mock 在串口 8 字段基础上额外计算的字段：wind_operating_limit_kw。
-# 该字段联调后由 A 的 state 提供，当前由本地仿真按运行逻辑补齐；真实 MCU 尚未上送。
+# 该字段由 C 根据可用功率与运行许可计算，再经 A 存储/转发给 B；真实 MCU 尚未上送。
 WIND_EXTRA_FIELDS = [
     "wind_operating_limit_kw",
 ]

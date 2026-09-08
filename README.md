@@ -2,7 +2,7 @@
 
 南极考察站微电网智能调控课程项目，第六组。
 
-> 当前采用三模块协作：A 电网模拟器、B EMS 主站、C 风电子站。未冻结的物理参数、通信细节和硬件行为不得由代码擅自假定。
+> 当前采用三模块协作：A 电网模拟器、B EMS 主站、C 风电子站。数据计算职责与基础物理参数已于 2026-09-08 按课程原文统一；仍未冻结的通信和硬件细节不得由代码擅自假定。
 
 ## 分工与入口
 
@@ -13,6 +13,17 @@
 | C 陈信甫 | 风电子站 | `C_controller/` | STM32 控制、Wi-Fi TCP 客户端、串口上位机、wind.db |
 
 运行关系：`B → A ← STM32`；A 是 TCP 服务端，B 和 STM32/C 是客户端。C 对风机保护/控制具有优先权。
+
+## 参数计算职责（课程原文）
+
+| 计算结果 | 责任模块 |
+|---|---|
+| 风速、负荷场景实时值 | A 从独立 CSV 曲线读取/插值 |
+| 风机/柴发功率目标 | B EMS 调度计算 |
+| 风机可用功率、运行许可、目标桨距角 | C 单片机计算 |
+| 风机/柴发实际出力、功率不平衡 | A 仿真计算 |
+
+统一风机基线：额定功率 **100 kW**，切入/额定/切出风速 **3/12/25 m/s**，切入到额定采用归一化三次功率曲线，桨距范围 **0-90 deg**。这些数值是小组统一配置，课程原文只规定职责、没有指定数值。完整字段写权限、公式和柴油机参数见 [`docs/parameter-ownership.md`](docs/parameter-ownership.md)。
 
 ## B EMS 当前结构
 
@@ -63,8 +74,8 @@ B 的 TCP/服务文件统一使用 `*B` 后缀，避免和其他成员冲突。
 
 当前 `common/protocol.md` 已定义状态中的：
 
-- `wind_available_kw`：A 根据风速和配置功率曲线得到的资源可用功率。
-- `wind_operating_limit_kw`：考虑 C/STM32 许可、保护、当前桨距和设备运行限制后的稳态上限。
+- `wind_available_kw`：C 根据 A 风速和统一功率曲线得到的资源可用功率，经 A 存储转发。
+- `wind_operating_limit_kw`：C 考虑运行许可、保护和设备限制后的稳态上限，经 A 存储转发。
 - `wind_target_kw`：B 的调度目标。
 - `wind_actual_kw`：A 的实际仿真出力。
 
@@ -110,7 +121,7 @@ GUI 当前覆盖：
 
 ### 尚需完成
 
-1. **A 实施最新公共协议**：A state payload 补齐 `wind_available_kw`、`wind_operating_limit_kw`，并完成 A 侧校验和实际计算。
+1. **A/B/C 联调最新公共协议**：A 已补齐能力字段并校验 C 报文，下一步验证 C 计算 → A 转发 → B 调度的完整闭环。
 2. **A/B socket 联调**：验证状态、dispatch、ACK、半帧/粘包、seq/session/step、timeout、断线重连。
 3. **B GUI 接真实数据**：把 `gui_b.py` 的状态、趋势、历史和事件接到 `serviceB.py` / `runtime.py` / `repository.py`。
 4. **B 数据追溯验证**：验证 state → dispatch → ACK → 后续 actual state 能从 `ems.db` 复原。
@@ -119,11 +130,13 @@ GUI 当前覆盖：
 
 ## 测试说明
 
-本次修改同步了 B 的测试代码和 GUI，但当前环境没有执行项目 Python 测试，因此**不宣称测试已通过**。建议在 Python 3.11 环境执行：
+2026-09-08 已在 Python 3.11.14 环境执行完整测试：
 
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+结果为 76 项全部通过。A 的 PyQt6 主窗口已完成离屏构造检查，C 的主机侧 mock 已完成默认参数和功率曲线检查；尚未进行 STM32 实物、串口及三机联合验证。
 
 预览 B GUI：
 

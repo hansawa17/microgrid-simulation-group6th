@@ -49,9 +49,9 @@ class EMSServiceB:
         """Run the periodic closed loop; exceptions are handled by EMSRuntime."""
         self.runtime.run(max_cycles=max_cycles)
 
-    def run_cycle(self) -> EMSDecision | None:
+    def run_cycle(self, now: float | None = None) -> EMSDecision | None:
         """Run one runtime cycle and return the decision emitted by EMSRuntime."""
-        return self.runtime.run_cycle()
+        return self.runtime.run_cycle(now)
 
     def _poll_state(self):
         state = self.client.poll_state()

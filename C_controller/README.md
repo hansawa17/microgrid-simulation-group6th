@@ -45,8 +45,8 @@ C_controller/
 
 - 遥测字段名对齐仓库 `common/protocol.md`：`wind_speed_mps / wind_available_kw /
   wind_target_kw / wind_actual_kw / wind_running(bool) / pitch_target_deg`。
-- 新增 `wind_operating_limit_kw`：在 `wind_available_kw` 基础上扣启停许可/保护/当前桨距/
-  设备上限得到的稳态运行上限，不考虑 B 目标、B 使能或实际爬坡（与 A/B 约定一致）。
+- 新增 `wind_operating_limit_kw`：在 `wind_available_kw` 基础上考虑启停许可、保护和
+  设备上限，不扣 B 目标、桨距目标或实际爬坡，避免能力反馈自锁。
 - 约束 `0 <= wind_operating_limit_kw <= wind_available_kw <= wind_rated_kw` 已落地。
 - `wind.db` 相应列改名并新增 `wind_operating_limit_kw`，旧库首次启动自动迁移。
 
@@ -57,8 +57,8 @@ C_controller/
 - **实际功率仍由本地计算**：联调后 `wind_actual_kw` 改由 A 计算（含爬坡），C 不再自算。
 - **串口协议未冻结**：`$WIND/$PARAM/$CMD/$ACK` 为自拟方案，需与团队确认并扩展以承载
   A 状态（`session_id/step/sim_time_s/sampled_at_utc/wind_operating_limit_kw` 等）。
-- 物理参数未冻结：额定功率（本地 1000 kW vs A 示例 100 kW）、功率曲线（线性 vs 三次方）、
-  桨距模型（本地 20° vs A 的 0~90° 顺桨）。
+- 物理参数已统一：额定功率 100 kW，切入/额定/切出风速 3/12/25 m/s，三次功率曲线，
+  桨距 0-90 deg；这些是小组配置，不是课程原文指定数值。
 - 未接真实 STM32；当前结果均属软件 mock，不等同于真实硬件联调。
 
 ## 快速运行（上位机）
@@ -81,9 +81,10 @@ python main.py
 
 ## 下一步（与 A/B 联调）
 
-1. 与 A/B 冻结物理参数与桨距/功率曲线模型。
-2. 把 TCP 客户端迁入 STM32 固件（JSON Lines：`state_request(full=true)` / 收 `state` /
-   发 `wind_action{wind_enable,pitch_target_deg}` / 处理 `ack` 去重与重连）。
-3. 冻结并扩展 C 串口协议。
-4. 联调顺序：A/B 先跑通 socket → STM32→A → C 上位机 UART。
-5. 环境统一 Python 3.11 + `PyQt6==6.11.0`；连 A 端口 5000。
+1. 把 TCP 客户端迁入 STM32 固件（JSON Lines：`state_request(full=true)` / 收 `state` /
+   发含 `wind_enable/pitch_target_deg/wind_available_kw/wind_operating_limit_kw` 的 `wind_action`）。
+2. 冻结并扩展 C 串口协议。
+3. 联调顺序：A/B 先跑通 socket → STM32→A → C 上位机 UART。
+4. 环境统一 Python 3.11 + `PyQt6==6.11.0`；连 A 端口 5000。
+
+完整计算职责和统一公式见 `docs/parameter-ownership.md`。

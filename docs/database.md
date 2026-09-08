@@ -14,7 +14,6 @@ A 仅直接访问 grid.db；B 仅直接访问 ems.db；C 上位机仅直接访�
 多个进程分别建立连接，事务保持短小；配置合理的锁等待策略。一轮状态更新尽量放在同一事务，避免界面读到半轮结果。
 历史记录必须区分 `sim_time_s`、A 授时产生的 `sampled_at_utc` 和本机实际写入/接收时间；指令包含来源、seq、状态与处理结果。完整字段语义见 `docs/time-interface.md`。
 
-A 的 `grid.db` schema v2 已采用 `_utc` 后缀区分采样、接收、创建和更新时间。同一个仿真步的状态、SCADA 当前值及其历史记录应复用同一个 `sampled_at_utc`，不得在逐点写库时重复取时钟。
+A 的 `grid.db` schema v4 已采用 `_utc` 后缀区分采样、接收、创建和更新时间，并在 `control_state` 保存 C 发送的 available/operating limit。A 只校验、存储并转发这两个能力值；同一个仿真步的状态、SCADA 当前值及其历史记录复用同一个 `sampled_at_utc`。
 
 表结构尚未冻结，本文件不是 SQL 迁移。具体表及四遥点表由各模块负责人共同确认。数据库保存在 data/runtime/，不提交 Git。
-

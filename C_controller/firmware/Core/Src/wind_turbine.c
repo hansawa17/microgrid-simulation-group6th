@@ -4,16 +4,16 @@
   * @brief   风力发电机控制器 —— 控制计算与串口协议实现
   ******************************************************************************
   * 控制规则：
-  *   1) 可用功率 power_available 由风速按分段线性映射得到：
+ *   1) 可用功率 power_available 由风速按分段三次曲线得到：
   *        [0, cut_in)              -> 0（停机）
-  *        [cut_in, rated)          -> 0 ~ rated_power 线性增加
-  *        [rated, cut_out]         -> rated_power 恒定
-  *        (cut_out, +inf)          -> 0（停机）
+ *        [cut_in, rated)          -> 0 ~ rated_power 三次增加
+ *        [rated, cut_out)         -> rated_power 恒定
+ *        [cut_out, +inf)          -> 0（停机）
   *   2) 启停状态 status：
   *        run_enable 且 cut_in <= wind <= cut_out -> 运行(1)，否则停止(0)
   *   3) 桨距角 deg（闭环）：power_set < power_available 时线性变桨限功率，
   *      deg = deg_max * (1 - power_set / power_available)；
-  *      power_set >= power_available 或开环/停机时 deg = 0。
+ *      power_set >= power_available 或开环运行时 deg = 0；停机时顺桨至 deg_max。
   *   4) 实际功率 power_actual：
   *        停机 -> 0；开环 -> power_available；闭环 -> min(power_available, power_set)
   *
@@ -143,10 +143,11 @@ static float wt_power_available(void)
     }
     else if (w < wt.rated_speed)
     {
-        /* 切入~额定：线性增加 */
-        return wt.rated_power * (w - wt.cut_in_speed) / (wt.rated_speed - wt.cut_in_speed);
+        /* 切入~额定：按归一化风速的三次方增加 */
+        float fraction = (w - wt.cut_in_speed) / (wt.rated_speed - wt.cut_in_speed);
+        return wt.rated_power * fraction * fraction * fraction;
     }
-    else if (w <= wt.cut_out_speed)
+    else if (w < wt.cut_out_speed)
     {
         return wt.rated_power;              /* 额定~切出：恒为额定功率 */
     }
@@ -163,7 +164,7 @@ static void wt_compute(void)
     /* 启停状态 */
     if (wt.run_enable &&
         wt.wind_speed >= wt.cut_in_speed &&
-        wt.wind_speed <= wt.cut_out_speed)
+        wt.wind_speed < wt.cut_out_speed)
     {
         wt.status = WT_STATUS_RUN;
     }
@@ -175,7 +176,7 @@ static void wt_compute(void)
     /* 桨距角与实际功率 */
     if (wt.status == WT_STATUS_STOP)
     {
-        wt.deg = 0.0f;
+        wt.deg = wt.deg_max;
         wt.power_actual = 0.0f;
     }
     else if (wt.control_mode == WT_MODE_OPEN_LOOP)
@@ -208,7 +209,7 @@ static void wt_simulate_inputs(void)
     if (wt.wind_speed > 30.0f) wt.wind_speed = 30.0f;
 
     /* 有功设定：随机游走，范围 [0, rated_power] kW */
-    wt.power_set += wt_randf(-80.0f, 80.0f);
+    wt.power_set += wt_randf(-8.0f, 8.0f);
     if (wt.power_set < 0.0f)              wt.power_set = 0.0f;
     if (wt.power_set > wt.rated_power)    wt.power_set = wt.rated_power;
 }
@@ -219,7 +220,7 @@ static void wt_simulate_inputs(void)
 static void wt_reset_defaults(void)
 {
     wt.wind_speed      = 9.0f;
-    wt.power_set       = 500.0f;
+    wt.power_set       = 50.0f;
     wt.control_mode    = WT_MODE_CLOSED_LOOP;
     wt.cut_in_speed    = WT_DEFAULT_CUT_IN_SPEED;
     wt.rated_speed     = WT_DEFAULT_RATED_SPEED;

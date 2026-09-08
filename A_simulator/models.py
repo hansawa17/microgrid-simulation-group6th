@@ -94,6 +94,8 @@ class ControlInputs:
     controller_wind_enable: bool
     diesel_enable: bool
     pitch_target_deg: float
+    controller_wind_available_kw: float
+    controller_wind_operating_limit_kw: float
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,7 @@ class SimulationState:
     wind_speed_mps: float
     load_power_kw: float
     wind_available_kw: float
+    wind_operating_limit_kw: float
     wind_target_kw: float
     wind_actual_kw: float
     diesel_target_kw: float
@@ -116,13 +119,36 @@ class SimulationState:
     power_imbalance_kw: float
 
     def __post_init__(self) -> None:
+        if not self.session_id:
+            raise ValueError("session_id must not be empty")
+        if isinstance(self.step, bool) or not isinstance(self.step, int) or self.step < 0:
+            raise ValueError("step must be a non-negative integer")
         _validate_utc_timestamp(self.sampled_at_utc)
+        for name in (
+            "sim_time_s",
+            "wind_speed_mps",
+            "load_power_kw",
+            "wind_available_kw",
+            "wind_operating_limit_kw",
+            "wind_target_kw",
+            "wind_actual_kw",
+            "diesel_target_kw",
+            "diesel_actual_kw",
+            "pitch_actual_deg",
+        ):
+            _finite_non_negative(name, getattr(self, name))
+        if self.wind_operating_limit_kw > self.wind_available_kw:
+            raise ValueError("wind_operating_limit_kw must not exceed wind_available_kw")
+        if not math.isfinite(self.power_imbalance_kw):
+            raise ValueError("power_imbalance_kw must be finite")
 
     def protocol_payload(self) -> dict[str, object]:
         """Return fields currently listed in common/protocol.md."""
         return {
             "sampled_at_utc": self.sampled_at_utc,
             "wind_speed_mps": self.wind_speed_mps,
+            "wind_available_kw": self.wind_available_kw,
+            "wind_operating_limit_kw": self.wind_operating_limit_kw,
             "load_power_kw": self.load_power_kw,
             "wind_actual_kw": self.wind_actual_kw,
             "diesel_actual_kw": self.diesel_actual_kw,
@@ -134,7 +160,12 @@ class SimulationState:
 
 
 def wind_available_power(wind_speed_mps: float, params: WindTurbineParameters) -> float:
-    """Use a configurable cubic ramp followed by a rated-power plateau."""
+    """Return A's internal physical ceiling for actual-output simulation.
+
+    The public ``wind_available_kw`` value is owned by C. A evaluates the same
+    agreed curve independently so that an invalid C action cannot make the
+    simulated plant exceed its physical wind-speed ceiling.
+    """
     _finite_non_negative("wind_speed_mps", wind_speed_mps)
     if wind_speed_mps < params.cut_in_speed_mps or wind_speed_mps >= params.cut_out_speed_mps:
         return 0.0
@@ -179,15 +210,26 @@ def simulate_step(
     _finite_non_negative("load_power_kw", load_power_kw)
     _finite_non_negative("wind_target_kw", controls.wind_target_kw)
     _finite_non_negative("diesel_target_kw", controls.diesel_target_kw)
+    _finite_non_negative("controller_wind_available_kw", controls.controller_wind_available_kw)
+    _finite_non_negative(
+        "controller_wind_operating_limit_kw",
+        controls.controller_wind_operating_limit_kw,
+    )
+    if controls.controller_wind_available_kw > wind.rated_power_kw:
+        raise ValueError("controller_wind_available_kw exceeds rated power")
+    if controls.controller_wind_operating_limit_kw > controls.controller_wind_available_kw:
+        raise ValueError("controller_wind_operating_limit_kw exceeds available power")
 
-    available = wind_available_power(wind_speed_mps, wind)
+    physical_ceiling = wind_available_power(wind_speed_mps, wind)
+    available = controls.controller_wind_available_kw
+    operating_limit = controls.controller_wind_operating_limit_kw
     wind_enabled = controls.dispatch_wind_enable and controls.controller_wind_enable
     wind_demand = 0.0
     if wind_enabled:
         wind_demand = min(
             controls.wind_target_kw,
-            available * pitch_power_factor(controls.pitch_target_deg, wind),
-            wind.rated_power_kw,
+            operating_limit,
+            physical_ceiling * pitch_power_factor(controls.pitch_target_deg, wind),
         )
     wind_actual = _bounded_move(
         previous.wind_actual_kw,
@@ -221,6 +263,7 @@ def simulate_step(
         wind_speed_mps=wind_speed_mps,
         load_power_kw=load_power_kw,
         wind_available_kw=available,
+        wind_operating_limit_kw=operating_limit,
         wind_target_kw=controls.wind_target_kw,
         wind_actual_kw=wind_actual,
         diesel_target_kw=controls.diesel_target_kw,
@@ -231,4 +274,3 @@ def simulate_step(
         fault=False,
         power_imbalance_kw=imbalance,
     )
-

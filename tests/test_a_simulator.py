@@ -20,7 +20,12 @@ from A_simulator.models import (
     wind_available_power,
 )
 from A_simulator.repository import Repository
-from A_simulator.scenario import ScenarioCurve, ScenarioPoint, load_scenario_csv
+from A_simulator.scenario import (
+    ScenarioCurve,
+    ScenarioPoint,
+    load_scenario_csv,
+    save_scenario_csv,
+)
 from A_simulator.server import ProtocolError, SimulatorTCPServer, decode_frame
 
 
@@ -39,6 +44,7 @@ def base_state() -> SimulationState:
         wind_speed_mps=0.0,
         load_power_kw=0.0,
         wind_available_kw=0.0,
+        wind_operating_limit_kw=0.0,
         wind_target_kw=0.0,
         wind_actual_kw=0.0,
         diesel_target_kw=0.0,
@@ -56,7 +62,7 @@ class ModelTests(unittest.TestCase):
         config = load_config(CONFIG_PATH)
         self.wind = config.wind
         self.diesel = config.diesel
-        self.controls = ControlInputs(100, 120, True, True, True, 0)
+        self.controls = ControlInputs(100, 120, True, True, True, 0, 100, 100)
 
     def test_wind_curve_covers_no_wind_normal_and_cut_out(self):
         self.assertEqual(wind_available_power(0, self.wind), 0)
@@ -107,6 +113,24 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(state.wind_actual_kw, 0)
         self.assertEqual(state.load_power_kw, 77)
 
+    def test_operating_limit_excludes_b_target_and_enable(self):
+        controls = replace(
+            self.controls,
+            wind_target_kw=0.0,
+            dispatch_wind_enable=False,
+            controller_wind_enable=True,
+            pitch_target_deg=45.0,
+        )
+        state = simulate_step(
+            previous=base_state(), next_step=1, next_sim_time_s=1, step_s=1,
+            sampled_at_utc="2026-09-07T00:00:01.000Z",
+            wind_speed_mps=12, load_power_kw=77, controls=controls,
+            wind=self.wind, diesel=self.diesel,
+        )
+        self.assertEqual(state.wind_available_kw, 100.0)
+        self.assertEqual(state.wind_operating_limit_kw, 100.0)
+        self.assertEqual(state.wind_actual_kw, 0.0)
+
     def test_sample_timestamp_requires_fixed_utc_format(self):
         with self.assertRaisesRegex(ValueError, "sampled_at_utc"):
             replace(base_state(), sampled_at_utc="2026-09-07 08:03:25")
@@ -139,6 +163,13 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(curve.points[0].sim_time_s, 0.0)
         self.assertEqual(curve.points[-1].sim_time_s, 600.0)
 
+    def test_scenario_csv_round_trip_uses_protocol_column_names(self):
+        original = load_scenario_csv(SCENARIO_PATH)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "roundtrip.csv"
+            save_scenario_csv(path, original)
+            self.assertEqual(load_scenario_csv(path), original)
+
 
 class RepositoryTests(unittest.TestCase):
     def setUp(self):
@@ -163,7 +194,7 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(self.repo.get_state().step, 1)
         import sqlite3
         with closing(sqlite3.connect(self.db)) as connection:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 4)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM state_history").fetchone()[0], 2)
             self.assertGreater(connection.execute("SELECT COUNT(*) FROM scada_history").fetchone()[0], 11)
             current_time = connection.execute(
@@ -198,6 +229,12 @@ class RepositoryTests(unittest.TestCase):
         self.assertTrue(duplicate.duplicate)
         self.assertFalse(older.accepted)
         self.assertEqual(older.reason, "out_of_order")
+
+    def test_gui_connection_snapshot_starts_with_b_and_c_offline(self):
+        statuses = self.repo.connection_statuses()
+        self.assertEqual(set(statuses), {"B", "C"})
+        self.assertFalse(statuses["B"]["connected"])
+        self.assertFalse(statuses["C"]["connected"])
 
 
 class ProtocolTests(unittest.TestCase):
@@ -243,7 +280,144 @@ class ProtocolTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
+    def test_tcp_matches_b_state_dispatch_ack_and_reconnect_flow(self):
+        """Exercise the exact envelope and payload shape used by B/tcpB.py."""
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            server = SimulatorTCPServer(("127.0.0.1", 0), repo, 4096)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                state_request = {
+                    "version": 1, "type": "state_request", "source": "B", "target": "A",
+                    "session_id": None, "seq": 0, "step": 0, "sim_time_s": 0.0,
+                    "payload": {"full": True},
+                }
+                with socket.create_connection(server.server_address, timeout=2) as client:
+                    with client.makefile("rwb") as stream:
+                        stream.write((json.dumps(state_request) + "\n").encode("utf-8"))
+                        stream.flush()
+                        state = json.loads(stream.readline())
+                        self.assertEqual(state["type"], "state")
+                        self.assertEqual(state["session_id"], session_id)
+                        self.assertEqual(
+                            set(state["payload"]),
+                            {
+                                "sampled_at_utc", "wind_speed_mps", "load_power_kw",
+                                "wind_available_kw", "wind_operating_limit_kw",
+                                "wind_actual_kw", "diesel_actual_kw", "wind_target_kw",
+                                "pitch_actual_deg", "wind_running", "fault",
+                            },
+                        )
+
+                        dispatch = {
+                            "version": 1, "type": "dispatch", "source": "B", "target": "A",
+                            "session_id": session_id, "seq": 1,
+                            "step": state["step"], "sim_time_s": state["sim_time_s"],
+                            "payload": {
+                                "wind_target_kw": 50.0, "diesel_target_kw": 70.0,
+                                "wind_enable": True, "diesel_enable": True,
+                            },
+                        }
+                        stream.write((json.dumps(dispatch) + "\n").encode("utf-8"))
+                        stream.flush()
+                        ack = json.loads(stream.readline())
+                        self.assertEqual(ack["type"], "ack")
+                        self.assertEqual(ack["payload"], {
+                            "ack_seq": 1, "accepted": True, "reason": "accepted",
+                        })
+
+                        stream.write((json.dumps(dispatch) + "\n").encode("utf-8"))
+                        stream.flush()
+                        duplicate_ack = json.loads(stream.readline())
+                        self.assertEqual(duplicate_ack["payload"], {
+                            "ack_seq": 1, "accepted": True,
+                            "reason": "duplicate_accepted",
+                        })
+
+                        old_dispatch = {**dispatch, "seq": 0}
+                        stream.write((json.dumps(old_dispatch) + "\n").encode("utf-8"))
+                        stream.flush()
+                        old_ack = json.loads(stream.readline())
+                        self.assertEqual(old_ack["payload"], {
+                            "ack_seq": 0, "accepted": False,
+                            "reason": "out_of_order",
+                        })
+
+                reconnect_request = {**state_request, "session_id": session_id, "seq": 2}
+                with socket.create_connection(server.server_address, timeout=2) as client:
+                    client.sendall((json.dumps(reconnect_request) + "\n").encode("utf-8"))
+                    with client.makefile("rb") as stream:
+                        state_after_reconnect = json.loads(stream.readline())
+                self.assertEqual(state_after_reconnect["type"], "state")
+                self.assertEqual(state_after_reconnect["session_id"], session_id)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_dispatch_rejects_fields_outside_b_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            message = {
+                "version": 1, "type": "dispatch", "source": "B", "target": "A",
+                "session_id": session_id, "seq": 1, "step": 0, "sim_time_s": 0.0,
+                "payload": {
+                    "wind_target_kw": 50.0, "diesel_target_kw": 70.0,
+                    "wind_enable": True, "diesel_enable": True,
+                    "pitch_target_deg": 0.0,
+                },
+            }
+            result = repo.apply_command(message)
+            self.assertFalse(result.accepted)
+            self.assertEqual(result.reason, "invalid_dispatch_fields")
+
+    def test_c_wind_action_owns_capability_and_pitch_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "grid.db"
+            repo = Repository(db)
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            message = {
+                "version": 1,
+                "type": "wind_action",
+                "source": "C",
+                "target": "A",
+                "session_id": session_id,
+                "seq": 1,
+                "step": 0,
+                "sim_time_s": 0.0,
+                "payload": {
+                    "wind_enable": True,
+                    "pitch_target_deg": 12.0,
+                    "wind_available_kw": 40.0,
+                    "wind_operating_limit_kw": 40.0,
+                },
+            }
+            result = repo.apply_command(message)
+            self.assertTrue(result.accepted)
+
+            import sqlite3
+            with closing(sqlite3.connect(db)) as connection:
+                row = connection.execute(
+                    "SELECT pitch_target_deg, controller_wind_available_kw, "
+                    "controller_wind_operating_limit_kw FROM control_state WHERE singleton_id=1"
+                ).fetchone()
+            self.assertEqual(row, (12.0, 40.0, 40.0))
+
+            invalid = {
+                **message,
+                "seq": 2,
+                "payload": {"wind_enable": True, "pitch_target_deg": 12.0},
+            }
+            rejected = repo.apply_command(invalid)
+            self.assertFalse(rejected.accepted)
+            self.assertEqual(rejected.reason, "invalid_wind_action_fields")
+
 
 if __name__ == "__main__":
     unittest.main()
-

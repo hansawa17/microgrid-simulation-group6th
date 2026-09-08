@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
@@ -161,6 +162,8 @@ class EMSRepository:
         return row
 
     def save_state(self, state: Mapping[str, object]) -> None:
+        if is_dataclass(state):
+            state = asdict(state)
         required = (
             "session_id", "step", "sim_time_s", "wind_speed_mps", "wind_available_kw",
             "wind_operating_limit_kw", "load_power_kw", "wind_actual_kw", "diesel_actual_kw",

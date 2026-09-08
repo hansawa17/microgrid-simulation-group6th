@@ -53,6 +53,11 @@ def _parser() -> argparse.ArgumentParser:
 
     show = sub.add_parser("show", help="print current runtime and state")
     show.add_argument("--db", type=Path, default=DEFAULT_DB)
+
+    gui = sub.add_parser("gui", help="run the PyQt6 CSV curve and simulator console")
+    gui.add_argument("--db", type=Path, default=DEFAULT_DB)
+    gui.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    gui.add_argument("--scenario", type=Path, default=DEFAULT_SCENARIO)
     return parser
 
 
@@ -76,6 +81,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "show":
         _print_json({"runtime": repository.runtime(), "state": asdict(repository.get_state())})
         return 0
+    if args.command == "gui":
+        from .gui import run_gui
+
+        return run_gui(db_path=args.db, config_path=args.config, scenario_path=args.scenario)
     if args.command == "serve":
         config = load_config(args.config)
         serve(
@@ -95,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             if wait_s > 0:
                 time.sleep(wait_s)
             runtime = repository.runtime()
-            if runtime["status"] == "completed":
+            if runtime["status"] in {"completed", "stopped"}:
                 break
             poll_interval_s = float(runtime["poll_interval_s"])
             next_poll = max(next_poll + poll_interval_s, time.monotonic())
@@ -112,4 +121,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

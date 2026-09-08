@@ -85,3 +85,15 @@ def load_scenario_csv(path: str | Path) -> ScenarioCurve:
                 raise ValueError(f"invalid scenario value on line {line_number}") from exc
     return ScenarioCurve(tuple(points))
 
+
+def save_scenario_csv(path: str | Path, scenario: ScenarioCurve) -> None:
+    """Write the canonical A scenario CSV using UTF-8 BOM for Excel."""
+
+    path = Path(path)
+    with path.open("w", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(("step", "sim_time_s", "wind_speed_mps", "load_power_kw"))
+        for step, point in enumerate(scenario.points):
+            writer.writerow(
+                (step, point.sim_time_s, point.wind_speed_mps, point.load_power_kw)
+            )

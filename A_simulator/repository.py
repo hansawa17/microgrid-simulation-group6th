@@ -18,13 +18,12 @@ from .models import (
     SimulationState,
     WindTurbineParameters,
     simulate_step,
-    wind_available_power,
 )
 from .scenario import ScenarioCurve, ScenarioPoint
 
 
 SCHEMA = """
-PRAGMA user_version = 2;
+PRAGMA user_version = 4;
 
 CREATE TABLE IF NOT EXISTS simulation_control (
     singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
@@ -63,6 +62,8 @@ CREATE TABLE IF NOT EXISTS control_state (
     controller_wind_enable INTEGER NOT NULL CHECK (controller_wind_enable IN (0, 1)),
     diesel_enable INTEGER NOT NULL CHECK (diesel_enable IN (0, 1)),
     pitch_target_deg REAL NOT NULL,
+    controller_wind_available_kw REAL NOT NULL,
+    controller_wind_operating_limit_kw REAL NOT NULL,
     updated_at_utc TEXT NOT NULL
 );
 
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS current_state (
     wind_speed_mps REAL NOT NULL,
     load_power_kw REAL NOT NULL,
     wind_available_kw REAL NOT NULL,
+    wind_operating_limit_kw REAL NOT NULL,
     wind_target_kw REAL NOT NULL,
     wind_actual_kw REAL NOT NULL,
     diesel_target_kw REAL NOT NULL,
@@ -96,6 +98,7 @@ CREATE TABLE IF NOT EXISTS state_history (
     wind_speed_mps REAL NOT NULL,
     load_power_kw REAL NOT NULL,
     wind_available_kw REAL NOT NULL,
+    wind_operating_limit_kw REAL NOT NULL,
     wind_target_kw REAL NOT NULL,
     wind_actual_kw REAL NOT NULL,
     diesel_target_kw REAL NOT NULL,
@@ -198,6 +201,7 @@ def _state_from_row(row: sqlite3.Row) -> SimulationState:
         wind_speed_mps=row["wind_speed_mps"],
         load_power_kw=row["load_power_kw"],
         wind_available_kw=row["wind_available_kw"],
+        wind_operating_limit_kw=row["wind_operating_limit_kw"],
         wind_target_kw=row["wind_target_kw"],
         wind_actual_kw=row["wind_actual_kw"],
         diesel_target_kw=row["diesel_target_kw"],
@@ -219,6 +223,7 @@ def _state_values(state: SimulationState, recorded_at_utc: str) -> tuple[object,
         state.wind_speed_mps,
         state.load_power_kw,
         state.wind_available_kw,
+        state.wind_operating_limit_kw,
         state.wind_target_kw,
         state.wind_actual_kw,
         state.diesel_target_kw,
@@ -233,7 +238,7 @@ def _state_values(state: SimulationState, recorded_at_utc: str) -> tuple[object,
 
 
 STATE_COLUMNS = """session_id, step, sim_time_s, sampled_at_utc, wind_speed_mps, load_power_kw,
-wind_available_kw, wind_target_kw, wind_actual_kw, diesel_target_kw,
+wind_available_kw, wind_operating_limit_kw, wind_target_kw, wind_actual_kw, diesel_target_kw,
 diesel_actual_kw, pitch_actual_deg, wind_running, diesel_running, fault,
 power_imbalance_kw"""
 
@@ -280,7 +285,8 @@ class Repository:
             sampled_at_utc=timestamp,
             wind_speed_mps=first.wind_speed_mps,
             load_power_kw=first.load_power_kw,
-            wind_available_kw=wind_available_power(first.wind_speed_mps, config.wind),
+            wind_available_kw=float(initial["controller_wind_available_kw"]),
+            wind_operating_limit_kw=float(initial["controller_wind_operating_limit_kw"]),
             wind_target_kw=float(initial["wind_target_kw"]),
             wind_actual_kw=0.0,
             diesel_target_kw=float(initial["diesel_target_kw"]),
@@ -314,7 +320,7 @@ class Repository:
                 "INSERT INTO device_parameters VALUES (?, ?, ?, ?)", parameter_rows
             )
             connection.execute(
-                """INSERT INTO control_state VALUES (1, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO control_state VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     float(initial["wind_target_kw"]),
                     float(initial["diesel_target_kw"]),
@@ -322,12 +328,14 @@ class Repository:
                     int(initial["controller_wind_enable"]),
                     int(initial["diesel_enable"]),
                     float(initial["pitch_target_deg"]),
+                    float(initial["controller_wind_available_kw"]),
+                    float(initial["controller_wind_operating_limit_kw"]),
                     timestamp,
                 ),
             )
             connection.execute(
                 f"INSERT INTO current_state (singleton_id, {STATE_COLUMNS}, updated_at_utc) "
-                "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 _state_values(state, timestamp),
             )
             self._append_history(connection, state, timestamp)
@@ -361,6 +369,56 @@ class Repository:
             if row is None:
                 raise RuntimeError("current_state row is missing")
             return _state_from_row(row)
+
+    def get_scenario(self) -> ScenarioCurve:
+        """Return the scenario snapshot stored for the active simulation."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            points = tuple(
+                ScenarioPoint(row[0], row[1], row[2])
+                for row in connection.execute(
+                    "SELECT sim_time_s, wind_speed_mps, load_power_kw "
+                    "FROM scenario_points ORDER BY sim_time_s"
+                )
+            )
+            return ScenarioCurve(points)
+
+    def connection_statuses(self) -> dict[str, dict[str, object]]:
+        """Return B/C TCP connection indicators for the GUI."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                "SELECT peer, connected, last_seen_at_utc, detail "
+                "FROM connection_status ORDER BY peer"
+            ).fetchall()
+        return {
+            str(row["peer"]): {
+                "connected": bool(row["connected"]),
+                "last_seen_at_utc": row["last_seen_at_utc"],
+                "detail": row["detail"],
+            }
+            for row in rows
+        }
+
+    def connection_status(self) -> dict[str, dict[str, object]]:
+        """Return B/C link status for GUI display without sharing a connection."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                "SELECT peer, connected, last_seen_at_utc, detail "
+                "FROM connection_status ORDER BY peer"
+            ).fetchall()
+        return {
+            str(row["peer"]): {
+                "connected": bool(row["connected"]),
+                "last_seen_at_utc": row["last_seen_at_utc"],
+                "detail": row["detail"],
+            }
+            for row in rows
+        }
 
     def set_status(self, action: str) -> str:
         self._ensure_exists()
@@ -442,6 +500,10 @@ class Repository:
                 controller_wind_enable=bool(control_row["controller_wind_enable"]),
                 diesel_enable=bool(control_row["diesel_enable"]),
                 pitch_target_deg=control_row["pitch_target_deg"],
+                controller_wind_available_kw=control_row["controller_wind_available_kw"],
+                controller_wind_operating_limit_kw=control_row[
+                    "controller_wind_operating_limit_kw"
+                ],
             )
             previous_state = _state_from_row(previous_row)
             timestamp = _utc_now()
@@ -467,7 +529,7 @@ class Repository:
             connection.execute(
                 f"""UPDATE current_state SET
                     session_id=?, step=?, sim_time_s=?, sampled_at_utc=?, wind_speed_mps=?, load_power_kw=?,
-                    wind_available_kw=?, wind_target_kw=?, wind_actual_kw=?, diesel_target_kw=?,
+                    wind_available_kw=?, wind_operating_limit_kw=?, wind_target_kw=?, wind_actual_kw=?, diesel_target_kw=?,
                     diesel_actual_kw=?, pitch_actual_deg=?, wind_running=?, diesel_running=?, fault=?,
                     power_imbalance_kw=?, updated_at_utc=? WHERE singleton_id=1""",
                 values,
@@ -485,7 +547,7 @@ class Repository:
     def _append_history(connection: sqlite3.Connection, state: SimulationState, timestamp: str) -> None:
         connection.execute(
             f"INSERT INTO state_history ({STATE_COLUMNS}, recorded_at_utc) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             _state_values(state, timestamp),
         )
 
@@ -494,6 +556,8 @@ class Repository:
         points = (
             ("WT01.wind_speed_mps", "WT01", "telemetry", state.wind_speed_mps, "m/s"),
             ("LOAD01.load_power_kw", "LOAD01", "telemetry", state.load_power_kw, "kW"),
+            ("WT01.wind_available_kw", "WT01", "telemetry", state.wind_available_kw, "kW"),
+            ("WT01.wind_operating_limit_kw", "WT01", "telemetry", state.wind_operating_limit_kw, "kW"),
             ("WT01.wind_actual_kw", "WT01", "telemetry", state.wind_actual_kw, "kW"),
             ("DG01.diesel_actual_kw", "DG01", "telemetry", state.diesel_actual_kw, "kW"),
             ("GRID.power_imbalance_kw", "GRID", "telemetry", state.power_imbalance_kw, "kW"),
@@ -618,6 +682,9 @@ class Repository:
         return result
 
     def _apply_dispatch(self, connection: sqlite3.Connection, payload: dict[str, object]) -> None:
+        expected = {"wind_target_kw", "diesel_target_kw", "wind_enable", "diesel_enable"}
+        if set(payload) != expected:
+            raise ValueError("invalid_dispatch_fields")
         wind_target = self._strict_number(payload, "wind_target_kw")
         diesel_target = self._strict_number(payload, "diesel_target_kw")
         wind_enable = self._strict_bool(payload, "wind_enable")
@@ -639,17 +706,35 @@ class Repository:
         )
 
     def _apply_wind_action(self, connection: sqlite3.Connection, payload: dict[str, object]) -> None:
+        expected = {
+            "wind_enable",
+            "pitch_target_deg",
+            "wind_available_kw",
+            "wind_operating_limit_kw",
+        }
+        if set(payload) != expected:
+            raise ValueError("invalid_wind_action_fields")
         wind_enable = self._strict_bool(payload, "wind_enable")
         pitch = self._strict_number(payload, "pitch_target_deg")
+        available = self._strict_number(payload, "wind_available_kw")
+        operating_limit = self._strict_number(payload, "wind_operating_limit_kw")
         row = connection.execute(
             "SELECT value FROM device_parameters WHERE device_id='WT01' AND name='pitch_feather_deg'"
         ).fetchone()
         if row is None or pitch > row["value"]:
             raise ValueError("pitch_target_out_of_range")
+        rated_row = connection.execute(
+            "SELECT value FROM device_parameters WHERE device_id='WT01' AND name='rated_power_kw'"
+        ).fetchone()
+        if rated_row is None or available > rated_row["value"]:
+            raise ValueError("wind_available_out_of_range")
+        if operating_limit > available:
+            raise ValueError("wind_operating_limit_out_of_range")
         connection.execute(
             """UPDATE control_state SET controller_wind_enable=?, pitch_target_deg=?,
+               controller_wind_available_kw=?, controller_wind_operating_limit_kw=?,
                updated_at_utc=? WHERE singleton_id=1""",
-            (int(wind_enable), pitch, _utc_now()),
+            (int(wind_enable), pitch, available, operating_limit, _utc_now()),
         )
 
     def mark_connection(self, peer: str, connected: bool, detail: str) -> None:
@@ -669,4 +754,3 @@ class Repository:
                 "INSERT INTO logs VALUES (NULL, ?, ?, ?, ?, ?, ?)",
                 (level, event, message, runtime["session_id"], runtime["step"], _utc_now()),
             )
-
