@@ -9,6 +9,7 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 ```text
 B_dispatch/
 ├── __init__.py
+├── __main__.py        # B 统一启动入口：python -m B_dispatch
 ├── models.py          # 协议状态、调度参数、调度结果模型
 ├── dispatch.py        # B 核心约束调度逻辑
 ├── operator_core.py   # 闭环决策核心：state -> dispatch target
@@ -17,10 +18,8 @@ B_dispatch/
 ├── db_schema.sql      # ems.db 结构
 ├── tcpB.py            # B-owned A-facing TCP JSON-line 客户端
 ├── serviceB.py        # B-owned TCP + SQLite + runtime 服务桥接
-└── README.md
-
-根目录：
 ├── gui_b.py           # B / EMS PyQt6 GUI（仿照 C gui.py 风格）
+└── README.md
 
 tests/
 ├── test_scaffold.py
@@ -113,8 +112,6 @@ B **使用 `wind_operating_limit_kw` 约束目标，不再使用 `wind_actual_kw
 
 按照当前项目安排，本节点**暂时跳过 A/B/C socket 联调**，先完成 B 的 GUI，与 C 已提交的 `gui.py` 保持同一套视觉语言。
 
-新增根目录文件：`gui_b.py`。
-
 GUI 当前提供：
 
 - **运行监控**：负荷、风电 available、operating limit、target、actual、柴油 actual、EMS 闭环状态、C 优先权、状态新鲜度。
@@ -125,6 +122,13 @@ GUI 当前提供：
 - **报警与事件**：记录 GUI 本地调度、参数和当前集成边界事件。
 
 GUI **不会**在当前阶段创建 TCP 连接，也不会假定 A 已经完成最新协议实施。预留了 `set_state_snapshot()` 和 `apply_dispatch_result()` 作为后续接入 `runtime.py / serviceB.py` 的统一入口。
+
+### 2026-09-08 · 第六阶段：统一 B GUI 启动入口
+
+- 新增 `B_dispatch/__main__.py`。
+- 默认执行 `python -m B_dispatch` 即启动 `gui_b.py` 的 PyQt6 GUI。
+- 同时支持显式命令 `python -m B_dispatch gui`。
+- `__main__.py` 只负责启动入口，不重复 GUI 实现；实际窗口仍由 `gui_b.py` 的 `main()` 创建。
 
 ## 当前 B 的闭环路径
 
@@ -168,19 +172,29 @@ B 不负责把 target 变成 actual；A 根据双方启停条件、设备限制�
 4. **跨设备 ACK/重连行为仍需实机验证**：B 已实现“不盲目换 seq 重发”，但最终重连后的状态协调需要 A/B 联调确认。
 5. **GUI 已建立但暂未接真实通信/实时数据库**：当前 `gui_b.py` 是本地演示与接入骨架，通信联调按阶段计划后置。
 
-## 下一步工作
-
-1. **A 实施最新公共协议**：A 的 state payload 补齐 `wind_available_kw`、`wind_operating_limit_kw`，并完成 A 侧协议校验。
-2. **A/B 实际 socket 联调**：验证 JSON Lines、4096 bytes、半帧/粘包、state_request、dispatch、ACK、seq/session/step、timeout、断线重连。
-3. **闭环功能验证**：重点验证“停机 actual=0 但 operating_limit>0 时，B 能主动下发启动目标”，以及 operating limit 限制和 C fault 优先。
-4. **数据库追溯验证**：验证 state → dispatch → ACK → 后续 actual state 能在 `ems.db` 复原，并保持 sim time / sampled time / received time 语义独立。
-5. **A/B/C 组合调试**：确认 C 的保护/控制始终优先于 B 正常调度。
-6. **STM32G431RBT6 实机验证**：由 C 完成硬件/Wi-Fi/串口部分，B 配合验证目标闭环。
-7. **GUI 接入**：把 `gui_b.py` 的状态入口、历史表和事件区分别接到 `serviceB.py` / `runtime.py` / `repository.py`。
-
 ## 本地运行
 
 Python 统一为 **3.11.x**。
+
+### 一条命令启动 B GUI
+
+在项目根目录执行：
+
+```bash
+python -m B_dispatch
+```
+
+也可以显式写成：
+
+```bash
+python -m B_dispatch gui
+```
+
+直接运行 GUI 文件仍然支持：
+
+```bash
+python B_dispatch/gui_b.py
+```
 
 初始化数据库：
 
@@ -192,12 +206,6 @@ python scripts/init_ems_db.py
 
 ```bash
 python -m unittest discover -s tests -v
-```
-
-预览 B GUI：
-
-```bash
-python gui_b.py
 ```
 
 `data/runtime/ems.db` 是本地运行数据，不提交 GitHub。
