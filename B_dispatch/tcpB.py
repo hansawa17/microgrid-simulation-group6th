@@ -15,17 +15,14 @@ from .operator_core import EMSDecision
 
 MAX_FRAME_BYTES = 4096
 PROTOCOL_VERSION = 1
+B_STATE_POLL_PERIOD_S = 1.0
 
 _SEQUENCE_LOCK = threading.Lock()
 _LAST_DEFAULT_SEQUENCE = -1
 
 
 def _allocate_default_sequence(minimum: int = 0) -> int:
-    """Return a process-wide sequence that also survives normal B restarts.
-
-    The UTC epoch-millisecond floor avoids restarting at zero while the lock and
-    high-water mark keep multiple clients in one process strictly increasing.
-    """
+    """Return a process-wide sequence that also survives normal B restarts."""
     global _LAST_DEFAULT_SEQUENCE
     epoch_ms = time.time_ns() // 1_000_000
     with _SEQUENCE_LOCK:
@@ -107,13 +104,7 @@ class JsonLineFramer:
         return messages
 
 
-def validate_envelope(
-    message: dict[str, Any],
-    *,
-    expected_type: str | None = None,
-    expected_source: str | None = None,
-    expected_target: str | None = None,
-) -> dict[str, Any]:
+def validate_envelope(message: dict[str, Any], *, expected_type: str | None = None, expected_source: str | None = None, expected_target: str | None = None) -> dict[str, Any]:
     required = ("version", "type", "source", "target", "session_id", "seq", "step", "sim_time_s", "payload")
     missing = [key for key in required if key not in message]
     if missing:
@@ -153,27 +144,20 @@ class Ack:
 
 
 class EMSTcpClient:
-    """Blocking B client with framing, timeout, ACK and reconnect safeguards."""
+    """Blocking B client with framing, periodic state polling, timeout and ACK safeguards."""
 
-    def __init__(
-        self,
-        host: str,
-        port: int = 5000,
-        *,
-        timeout_s: float = 2.0,
-        socket_factory: Callable[..., socket.socket] = socket.create_connection,
-        initial_seq: int | None = None,
-    ) -> None:
+    def __init__(self, host: str, port: int = 5000, *, timeout_s: float = 2.0, socket_factory: Callable[..., socket.socket] = socket.create_connection, initial_seq: int | None = None, state_poll_period_s: float = B_STATE_POLL_PERIOD_S) -> None:
         if not host or host == "0.0.0.0":
             raise ValueError("client host must be A's reachable address, not 0.0.0.0")
         if not 1 <= port <= 65535 or timeout_s <= 0:
             raise ValueError("invalid TCP endpoint or timeout")
-        if initial_seq is not None and (
-            not isinstance(initial_seq, int) or isinstance(initial_seq, bool) or initial_seq < 0
-        ):
+        if initial_seq is not None and (not isinstance(initial_seq, int) or isinstance(initial_seq, bool) or initial_seq < 0):
             raise ValueError("initial_seq must be a non-negative integer or None")
+        if not math.isfinite(state_poll_period_s) or state_poll_period_s <= 0:
+            raise ValueError("state_poll_period_s must be a positive finite number")
         self.host, self.port, self.timeout_s = host, port, timeout_s
         self.socket_factory = socket_factory
+        self.state_poll_period_s = float(state_poll_period_s)
         self.sock: socket.socket | None = None
         self.framer = JsonLineFramer()
         self._uses_default_sequence = initial_seq is None
@@ -183,6 +167,7 @@ class EMSTcpClient:
         self._pending_ack_seq: int | None = None
         self._received_acks: dict[int, Ack] = {}
         self._uncertain_dispatch_seq: int | None = None
+        self._last_state_request_monotonic = 0.0
         self.session_id: str | None = None
         self.latest_state: GridState | None = None
         self.needs_full_sync = True
@@ -201,6 +186,7 @@ class EMSTcpClient:
         self._pending_ack_seq = None
         self._received_acks.clear()
         self._uncertain_dispatch_seq = None
+        self._last_state_request_monotonic = 0.0
         self.needs_full_sync = True
         self.request_state(full=True)
 
@@ -223,32 +209,14 @@ class EMSTcpClient:
             self.close()
             raise
 
-    def _envelope(
-        self,
-        msg_type: str,
-        *,
-        session_id: str | None,
-        step: int,
-        sim_time_s: float,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
+    def _envelope(self, msg_type: str, *, session_id: str | None, step: int, sim_time_s: float, payload: dict[str, Any]) -> dict[str, Any]:
         if self._uses_default_sequence:
             seq = _allocate_default_sequence(self._next_seq)
             self._next_seq = seq + 1
         else:
             seq = self._next_seq
             self._next_seq += 1
-        return {
-            "version": PROTOCOL_VERSION,
-            "type": msg_type,
-            "source": "B",
-            "target": "A",
-            "session_id": session_id,
-            "seq": seq,
-            "step": step,
-            "sim_time_s": sim_time_s,
-            "payload": payload,
-        }
+        return {"version": PROTOCOL_VERSION, "type": msg_type, "source": "B", "target": "A", "session_id": session_id, "seq": seq, "step": step, "sim_time_s": sim_time_s, "payload": payload}
 
     def request_state(self, *, full: bool) -> int:
         if self._pending_state_request_seq is not None:
@@ -256,16 +224,17 @@ class EMSTcpClient:
         if self._pending_ack_seq is not None:
             raise ProtocolError("cannot request state while a dispatch ACK is pending")
         state = self.latest_state
-        message = self._envelope(
-            "state_request",
-            session_id=self.session_id,
-            step=state.step if state else 0,
-            sim_time_s=state.sim_time_s if state else 0.0,
-            payload={"full": full},
-        )
+        message = self._envelope("state_request", session_id=self.session_id, step=state.step if state else 0, sim_time_s=state.sim_time_s if state else 0.0, payload={"full": full})
         self._send(message)
         self._pending_state_request_seq = int(message["seq"])
+        self._last_state_request_monotonic = time.monotonic()
         return int(message["seq"])
+
+    def _maybe_poll_state(self) -> None:
+        if self.sock is None or self._pending_state_request_seq is not None or self._pending_ack_seq is not None:
+            return
+        if time.monotonic() - self._last_state_request_monotonic >= self.state_poll_period_s:
+            self.request_state(full=self.needs_full_sync)
 
     def poll_state(self) -> GridState | None:
         """Keep one outstanding state request and consume frames until state arrives."""
@@ -278,7 +247,6 @@ class EMSTcpClient:
         return self.latest_state
 
     def get_ack(self, seq: int) -> Ack | None:
-        """Return a received ACK without inventing success from transport delivery."""
         return self._received_acks.get(seq)
 
     def send_dispatch(self, decision: EMSDecision) -> int:
@@ -286,25 +254,12 @@ class EMSTcpClient:
         if self._pending_state_request_seq is not None:
             raise ProtocolError("cannot dispatch while a state request is pending")
         if self._uncertain_dispatch_seq is not None:
-            raise ProtocolError(
-                f"dispatch result for seq {self._uncertain_dispatch_seq} is unknown; reconcile before sending another dispatch"
-            )
+            raise ProtocolError(f"dispatch result for seq {self._uncertain_dispatch_seq} is unknown; reconcile before sending another dispatch")
         if self.session_id is not None and state.session_id != self.session_id:
             raise ProtocolError("dispatch state belongs to an old or different session")
         if self._pending_ack_seq is not None:
             raise ProtocolError("another dispatch ACK is still pending")
-        message = self._envelope(
-            "dispatch",
-            session_id=state.session_id,
-            step=state.step,
-            sim_time_s=state.sim_time_s,
-            payload={
-                "wind_target_kw": decision.result.wind_target_kw,
-                "diesel_target_kw": decision.result.diesel_target_kw,
-                "wind_enable": decision.result.wind_enable,
-                "diesel_enable": decision.result.diesel_enable,
-            },
-        )
+        message = self._envelope("dispatch", session_id=state.session_id, step=state.step, sim_time_s=state.sim_time_s, payload={"wind_target_kw": decision.result.wind_target_kw, "diesel_target_kw": decision.result.diesel_target_kw, "wind_enable": decision.result.wind_enable, "diesel_enable": decision.result.diesel_enable})
         seq = int(message["seq"])
         self._send(message)
         self._pending_ack_seq = seq
@@ -323,6 +278,7 @@ class EMSTcpClient:
     def receive_once(self) -> list[GridState | Ack]:
         if self.sock is None:
             raise ConnectionError("B is not connected to A")
+        self._maybe_poll_state()
         try:
             data = self.sock.recv(4096)
         except socket.timeout:
@@ -382,46 +338,25 @@ class EMSTcpClient:
 
     def _parse_state(self, message: dict[str, Any]) -> GridState:
         payload = message["payload"]
-        required = (
-            "sampled_at_utc", "wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw",
-            "load_power_kw", "wind_actual_kw", "diesel_actual_kw", "wind_target_kw",
-            "pitch_actual_deg", "wind_running", "fault",
-        )
+        required = ("sampled_at_utc", "wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw", "load_power_kw", "wind_actual_kw", "diesel_actual_kw", "wind_target_kw", "pitch_actual_deg", "wind_running", "fault")
         missing = [key for key in required if key not in payload]
         if missing:
             raise ProtocolError(f"missing state payload fields: {', '.join(missing)}")
-        for key in (
-            "wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw", "load_power_kw",
-            "wind_actual_kw", "diesel_actual_kw", "wind_target_kw",
-        ):
+        for key in ("wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw", "load_power_kw", "wind_actual_kw", "diesel_actual_kw", "wind_target_kw"):
             value = payload[key]
             if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
                 raise ProtocolError(f"invalid non-negative numeric field: {key}")
         if payload["wind_operating_limit_kw"] > payload["wind_available_kw"]:
             raise ProtocolError("wind_operating_limit_kw must be <= wind_available_kw")
+        if payload["wind_target_kw"] > payload["wind_operating_limit_kw"]:
+            raise ProtocolError("wind_target_kw must be <= wind_operating_limit_kw")
         sampled_at_utc = _validate_rfc3339_utc(payload["sampled_at_utc"], "sampled_at_utc")
         if not isinstance(payload["wind_running"], bool) or not isinstance(payload["fault"], bool):
             raise ProtocolError("wind_running and fault must be JSON booleans")
         pitch = payload["pitch_actual_deg"]
-        if not isinstance(pitch, (int, float)) or isinstance(pitch, bool) or not math.isfinite(pitch):
-            raise ProtocolError("pitch_actual_deg must be a finite number")
+        if not isinstance(pitch, (int, float)) or isinstance(pitch, bool) or not math.isfinite(pitch) or not 0 <= pitch <= 90:
+            raise ProtocolError("pitch_actual_deg must be a finite number in [0,90]")
         session_id = message["session_id"]
         if not isinstance(session_id, str) or not session_id:
             raise ProtocolError("state session_id must be a non-empty string")
-        return GridState(
-            session_id=session_id,
-            step=message["step"],
-            sim_time_s=float(message["sim_time_s"]),
-            wind_speed_mps=float(payload["wind_speed_mps"]),
-            wind_available_kw=float(payload["wind_available_kw"]),
-            wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]),
-            load_power_kw=float(payload["load_power_kw"]),
-            wind_actual_kw=float(payload["wind_actual_kw"]),
-            diesel_actual_kw=float(payload["diesel_actual_kw"]),
-            wind_running=payload["wind_running"],
-            fault=payload["fault"],
-            sampled_at_utc=sampled_at_utc,
-            received_at_utc=utc_now(),
-            wind_target_kw=float(payload["wind_target_kw"]),
-            pitch_actual_deg=float(pitch),
-        )
+        return GridState(session_id=session_id, step=message["step"], sim_time_s=float(message["sim_time_s"]), wind_speed_mps=float(payload["wind_speed_mps"]), wind_available_kw=float(payload["wind_available_kw"]), wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]), load_power_kw=float(payload["load_power_kw"]), wind_actual_kw=float(payload["wind_actual_kw"]), diesel_actual_kw=float(payload["diesel_actual_kw"]), wind_running=payload["wind_running"], fault=payload["fault"], sampled_at_utc=sampled_at_utc, received_at_utc=utc_now(), wind_target_kw=float(payload["wind_target_kw"]), pitch_actual_deg=float(pitch))
