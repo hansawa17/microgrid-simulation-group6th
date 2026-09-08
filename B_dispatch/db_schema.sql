@@ -2,6 +2,23 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
+CREATE TABLE IF NOT EXISTS physical_parameters (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    wind_rated_kw REAL NOT NULL DEFAULT 100.0 CHECK (wind_rated_kw > 0),
+    wind_cut_in_mps REAL NOT NULL DEFAULT 3.0 CHECK (wind_cut_in_mps >= 0),
+    wind_rated_speed_mps REAL NOT NULL DEFAULT 12.0 CHECK (wind_rated_speed_mps > wind_cut_in_mps),
+    wind_cut_out_mps REAL NOT NULL DEFAULT 25.0 CHECK (wind_cut_out_mps > wind_rated_speed_mps),
+    pitch_min_deg REAL NOT NULL DEFAULT 0.0 CHECK (pitch_min_deg >= 0),
+    pitch_max_deg REAL NOT NULL DEFAULT 90.0 CHECK (pitch_max_deg >= pitch_min_deg),
+    wind_ramp_up_kw_s REAL NOT NULL DEFAULT 40.0 CHECK (wind_ramp_up_kw_s > 0),
+    wind_ramp_down_kw_s REAL NOT NULL DEFAULT 60.0 CHECK (wind_ramp_down_kw_s > 0),
+    diesel_min_kw REAL NOT NULL DEFAULT 20.0 CHECK (diesel_min_kw >= 0),
+    diesel_max_kw REAL NOT NULL DEFAULT 120.0 CHECK (diesel_max_kw >= diesel_min_kw),
+    diesel_ramp_up_kw_s REAL NOT NULL DEFAULT 30.0 CHECK (diesel_ramp_up_kw_s > 0),
+    diesel_ramp_down_kw_s REAL NOT NULL DEFAULT 40.0 CHECK (diesel_ramp_down_kw_s > 0),
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS dispatch_parameters (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     wind_min_kw REAL NOT NULL DEFAULT 0.0 CHECK (wind_min_kw >= 0),
@@ -28,7 +45,8 @@ CREATE TABLE IF NOT EXISTS current_state (
     wind_operating_limit_kw REAL NOT NULL CHECK (wind_operating_limit_kw >= 0 AND wind_operating_limit_kw <= wind_available_kw),
     load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
     diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
-    pitch_actual_deg REAL NOT NULL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
+    pitch_actual_deg REAL NOT NULL CHECK (pitch_actual_deg >= 0 AND pitch_actual_deg <= 90),
+    wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
     sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 
@@ -40,7 +58,8 @@ CREATE TABLE IF NOT EXISTS state_history (
     wind_operating_limit_kw REAL NOT NULL CHECK (wind_operating_limit_kw >= 0 AND wind_operating_limit_kw <= wind_available_kw),
     load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
     diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
-    pitch_actual_deg REAL NOT NULL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
+    pitch_actual_deg REAL NOT NULL CHECK (pitch_actual_deg >= 0 AND pitch_actual_deg <= 90),
+    wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
     sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 
