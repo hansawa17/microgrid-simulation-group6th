@@ -43,17 +43,17 @@ CREATE TABLE IF NOT EXISTS device (
 );
 
 CREATE TABLE IF NOT EXISTS parameter (
-    param_id              INTEGER PRIMARY KEY,
-    device_id             INTEGER NOT NULL,
-    cut_in_speed          REAL NOT NULL,
-    rated_speed           REAL NOT NULL,
-    cut_out_speed         REAL NOT NULL,
-    rated_power           REAL NOT NULL,
-    deg_max               REAL NOT NULL,
-    control_period        REAL NOT NULL,
-    communication_timeout REAL NOT NULL,
-    control_mode          INTEGER NOT NULL,
-    update_time           TEXT NOT NULL
+    param_id            INTEGER PRIMARY KEY,
+    device_id           INTEGER NOT NULL,
+    cut_in_speed_mps    REAL NOT NULL,
+    rated_speed_mps     REAL NOT NULL,
+    cut_out_speed_mps   REAL NOT NULL,
+    wind_rated_power_kw REAL NOT NULL,
+    pitch_feather_deg   REAL NOT NULL,
+    c_control_s         REAL NOT NULL,
+    c_timeout_s         REAL NOT NULL,
+    control_mode        INTEGER NOT NULL,
+    update_time         TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS telemetry (
@@ -165,13 +165,15 @@ class Database:
     # ------------------------------------------------------------------ #
     def _init_schema(self):
         with self._lock:
-            # 迁移：旧 schema 使用 wind_speed / power_available / power_set / power_actual / status / deg，
-            # 已改为对齐仓库的 wind_*_kw / *_mps / wind_running / pitch_target_deg 并新增
-            # wind_operating_limit_kw。检测到旧列时重建两张数据表（本地 mock 历史不保留）。
+            # 迁移：telemetry/control_history 旧列 wind_speed 时重建两张数据表
             old_cols = [r[1] for r in self._conn.execute("PRAGMA table_info(telemetry)").fetchall()]
             if "wind_speed" in old_cols:
                 self._conn.execute("DROP TABLE IF EXISTS telemetry")
                 self._conn.execute("DROP TABLE IF EXISTS control_history")
+            # 迁移：parameter 旧列 cut_in_speed 时重建（列名已对齐 A canonical 名）
+            param_cols = [r[1] for r in self._conn.execute("PRAGMA table_info(parameter)").fetchall()]
+            if "cut_in_speed" in param_cols:
+                self._conn.execute("DROP TABLE IF EXISTS parameter")
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
 
@@ -191,11 +193,11 @@ class Database:
             if cur.fetchone()[0] == 0:
                 p = config.DEFAULT_PARAMS
                 cur.execute(
-                    "INSERT INTO parameter (param_id, device_id, cut_in_speed, rated_speed, cut_out_speed, rated_power, deg_max, control_period, communication_timeout, control_mode, update_time) "
+                    "INSERT INTO parameter (param_id, device_id, cut_in_speed_mps, rated_speed_mps, cut_out_speed_mps, wind_rated_power_kw, pitch_feather_deg, c_control_s, c_timeout_s, control_mode, update_time) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (1, 1, p["cut_in_speed"], p["rated_speed"], p["cut_out_speed"],
-                     p["rated_power"], p["deg_max"], p["control_period"],
-                     p["communication_timeout"], p["control_mode"], now_ms()),
+                    (1, 1, p["cut_in_speed_mps"], p["rated_speed_mps"], p["cut_out_speed_mps"],
+                     p["wind_rated_power_kw"], p["pitch_feather_deg"], p["c_control_s"],
+                     p["c_timeout_s"], p["control_mode"], now_ms()),
                 )
             self._conn.commit()
 
@@ -217,12 +219,12 @@ class Database:
             old = self.get_params()
             cur = self._conn.cursor()
             cur.execute(
-                "UPDATE parameter SET cut_in_speed=?, rated_speed=?, cut_out_speed=?, rated_power=?, "
-                "deg_max=?, control_period=?, communication_timeout=?, control_mode=?, update_time=? WHERE device_id=1",
+                "UPDATE parameter SET cut_in_speed_mps=?, rated_speed_mps=?, cut_out_speed_mps=?, wind_rated_power_kw=?, "
+                "pitch_feather_deg=?, c_control_s=?, c_timeout_s=?, control_mode=?, update_time=? WHERE device_id=1",
                 (
-                    new_params["cut_in_speed"], new_params["rated_speed"], new_params["cut_out_speed"],
-                    new_params["rated_power"], new_params["deg_max"], new_params["control_period"],
-                    new_params["communication_timeout"], int(new_params["control_mode"]), now_ms(),
+                    new_params["cut_in_speed_mps"], new_params["rated_speed_mps"], new_params["cut_out_speed_mps"],
+                    new_params["wind_rated_power_kw"], new_params["pitch_feather_deg"], new_params["c_control_s"],
+                    new_params["c_timeout_s"], int(new_params["control_mode"]), now_ms(),
                 ),
             )
             changes = []

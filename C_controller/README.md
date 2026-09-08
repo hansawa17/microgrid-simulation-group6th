@@ -88,7 +88,8 @@ python main.py
 
 ## 下一步（与 A/B 联调）
 
-1. **端口统一**：C `wifi_config.h` 当前 `5005`，A/common 默认 `5000` —— 联调前改一端统一。
+1. **端口已统一到 5000**（C 固件已改，与 A/common 一致）；C 参数名已对齐 A 的 canonical 名
+   （`cut_in_speed_mps/rated_speed_mps/cut_out_speed_mps/wind_rated_power_kw/pitch_feather_deg/c_control_s/c_timeout_s`）。
 2. STM32→A 实机联调：A 已解析 `wind_action` 四字段并据此算 `wind_actual_kw`（代码就绪），
    C 侧也已按冻结职责计算并上报；跑通 state_request/state/wind_action/ack 全链路即可。
 3. C 补 `parameter_update` 转发：A 已支持 `parameter_update`（C 参数回写），C 固件/上位机需把

@@ -6,13 +6,13 @@
   * 控制规则（与 A/B 冻结参数一致，见 docs/parameter-ownership.md）：
   *   1) 可用功率 power_available 由风速按三次方曲线得到：
   *        [0, cut_in)              -> 0（停机）
-  *        [cut_in, rated)          -> rated_power * fraction^3
-  *        [rated, cut_out)         -> rated_power 恒定
+  *        [cut_in, rated)          -> wind_rated_power_kw * fraction^3
+  *        [rated, cut_out)         -> wind_rated_power_kw 恒定
   *        [cut_out, +inf)          -> 0（停机）
   *   2) 启停状态 status：
   *        run_enable 且 cut_in <= wind < cut_out -> 运行(1)，否则停止(0)
   *   3) 桨距角 deg（0-90° 顺桨）：停机/无可用功率 -> 90°；开环 -> 0°；
-  *      闭环 -> deg_max * (1 - power_set / power_available)，deg_max=90。
+  *      闭环 -> pitch_feather_deg * (1 - power_set / power_available)，pitch_feather_deg=90。
   *   4) 稳态运行上限 power_operating_limit：运行 -> power_available；停机/保护 -> 0。
   *   5) 实际功率 power_actual：联调后由 A 计算；本地兜底 min(available, set)。
   *
@@ -40,13 +40,13 @@ typedef struct
     uint8_t  control_mode;    /* 控制模式 0开环/1闭环 */
 
     /* 参数（上位机可下发修改） */
-    float    cut_in_speed;
-    float    rated_speed;
-    float    cut_out_speed;
-    float    rated_power;
-    float    deg_max;
-    float    control_period;  /* 控制周期 s */
-    float    comm_timeout;    /* 通信超时 s */
+    float    cut_in_speed_mps;
+    float    rated_speed_mps;
+    float    cut_out_speed_mps;
+    float    wind_rated_power_kw;
+    float    pitch_feather_deg;
+    float    c_control_s;  /* 控制周期 s */
+    float    c_timeout_s;    /* 通信超时 s */
 
     /* 计算输出 */
     float    power_available;        /* 可用功率 kW */
@@ -148,19 +148,19 @@ static void wt_send_telemetry(void)
 static float wt_power_available(void)
 {
     float w = wt.wind_speed;
-    if (w < wt.cut_in_speed)
+    if (w < wt.cut_in_speed_mps)
     {
         return 0.0f;
     }
-    else if (w < wt.rated_speed)
+    else if (w < wt.rated_speed_mps)
     {
         /* 切入~额定：按归一化风速的三次方增加（与 A 一致） */
-        float fraction = (w - wt.cut_in_speed) / (wt.rated_speed - wt.cut_in_speed);
-        return wt.rated_power * fraction * fraction * fraction;
+        float fraction = (w - wt.cut_in_speed_mps) / (wt.rated_speed_mps - wt.cut_in_speed_mps);
+        return wt.wind_rated_power_kw * fraction * fraction * fraction;
     }
-    else if (w < wt.cut_out_speed)
+    else if (w < wt.cut_out_speed_mps)
     {
-        return wt.rated_power;              /* 额定~切出：恒为额定功率 */
+        return wt.wind_rated_power_kw;              /* 额定~切出：恒为额定功率 */
     }
     else
     {
@@ -172,8 +172,8 @@ static float wt_power_available(void)
 static void wt_compute_status_pitch(void)
 {
     if (wt.run_enable &&
-        wt.wind_speed >= wt.cut_in_speed &&
-        wt.wind_speed <= wt.cut_out_speed)
+        wt.wind_speed >= wt.cut_in_speed_mps &&
+        wt.wind_speed <= wt.cut_out_speed_mps)
     {
         wt.status = WT_STATUS_RUN;
     }
@@ -184,7 +184,7 @@ static void wt_compute_status_pitch(void)
 
     if (wt.status == WT_STATUS_STOP || wt.power_available <= 0.0f)
     {
-        wt.deg = wt.deg_max;                 /* 停机/无可用功率：顺桨 */
+        wt.deg = wt.pitch_feather_deg;                 /* 停机/无可用功率：顺桨 */
     }
     else if (wt.control_mode == WT_MODE_OPEN_LOOP)
     {
@@ -198,7 +198,7 @@ static void wt_compute_status_pitch(void)
         }
         else
         {
-            wt.deg = wt.deg_max * (1.0f - wt.power_set / wt.power_available);
+            wt.deg = wt.pitch_feather_deg * (1.0f - wt.power_set / wt.power_available);
         }
     }
 }
@@ -247,10 +247,10 @@ static void wt_simulate_inputs(void)
     if (wt.wind_speed < 0.0f)  wt.wind_speed = 0.0f;
     if (wt.wind_speed > 30.0f) wt.wind_speed = 30.0f;
 
-    /* 有功设定：随机游走，范围 [0, rated_power] kW */
+    /* 有功设定：随机游走，范围 [0, wind_rated_power_kw] kW */
     wt.power_set += wt_randf(-20.0f, 20.0f);
     if (wt.power_set < 0.0f)              wt.power_set = 0.0f;
-    if (wt.power_set > wt.rated_power)    wt.power_set = wt.rated_power;
+    if (wt.power_set > wt.wind_rated_power_kw)    wt.power_set = wt.wind_rated_power_kw;
 }
 
 /* ------------------------------------------------------------------ */
@@ -261,13 +261,13 @@ static void wt_reset_defaults(void)
     wt.wind_speed      = 9.0f;
     wt.power_set       = 60.0f;
     wt.control_mode    = WT_MODE_CLOSED_LOOP;
-    wt.cut_in_speed    = WT_DEFAULT_CUT_IN_SPEED;
-    wt.rated_speed     = WT_DEFAULT_RATED_SPEED;
-    wt.cut_out_speed   = WT_DEFAULT_CUT_OUT_SPEED;
-    wt.rated_power     = WT_DEFAULT_RATED_POWER;
-    wt.deg_max         = WT_DEFAULT_DEG_MAX;
-    wt.control_period  = WT_DEFAULT_CONTROL_PERIOD;
-    wt.comm_timeout    = WT_DEFAULT_COMM_TIMEOUT;
+    wt.cut_in_speed_mps    = WT_DEFAULT_CUT_IN_SPEED_MPS;
+    wt.rated_speed_mps     = WT_DEFAULT_RATED_SPEED_MPS;
+    wt.cut_out_speed_mps   = WT_DEFAULT_CUT_OUT_SPEED_MPS;
+    wt.wind_rated_power_kw     = WT_DEFAULT_WIND_RATED_POWER_KW;
+    wt.pitch_feather_deg         = WT_DEFAULT_PITCH_FEATHER_DEG;
+    wt.c_control_s  = WT_DEFAULT_C_CONTROL_S;
+    wt.c_timeout_s    = WT_DEFAULT_C_TIMEOUT_S;
     wt.run_enable      = 1u;
     wt.cycle           = 0u;
     wt.power_available       = 0.0f;
@@ -292,17 +292,17 @@ static void wt_parse_line(char *line)
     if (strcmp(p, "$PARAM") == 0)
     {
         char *s;
-        s = strtok(NULL, ","); if (s != NULL) wt.cut_in_speed    = (float)atof(s);
-        s = strtok(NULL, ","); if (s != NULL) wt.rated_speed     = (float)atof(s);
-        s = strtok(NULL, ","); if (s != NULL) wt.cut_out_speed   = (float)atof(s);
-        s = strtok(NULL, ","); if (s != NULL) wt.rated_power     = (float)atof(s);
-        s = strtok(NULL, ","); if (s != NULL) wt.deg_max         = (float)atof(s);
-        s = strtok(NULL, ","); if (s != NULL) wt.control_period  = (float)atof(s);
-        s = strtok(NULL, ","); if (s != NULL) wt.comm_timeout    = (float)atof(s);
+        s = strtok(NULL, ","); if (s != NULL) wt.cut_in_speed_mps    = (float)atof(s);
+        s = strtok(NULL, ","); if (s != NULL) wt.rated_speed_mps     = (float)atof(s);
+        s = strtok(NULL, ","); if (s != NULL) wt.cut_out_speed_mps   = (float)atof(s);
+        s = strtok(NULL, ","); if (s != NULL) wt.wind_rated_power_kw     = (float)atof(s);
+        s = strtok(NULL, ","); if (s != NULL) wt.pitch_feather_deg         = (float)atof(s);
+        s = strtok(NULL, ","); if (s != NULL) wt.c_control_s  = (float)atof(s);
+        s = strtok(NULL, ","); if (s != NULL) wt.c_timeout_s    = (float)atof(s);
         s = strtok(NULL, ","); if (s != NULL) wt.control_mode    = (uint8_t)atoi(s);
 
         /* 参数合法性保护：防止分母为 0 */
-        if (wt.rated_speed <= wt.cut_in_speed) wt.rated_speed = wt.cut_in_speed + 1.0f;
+        if (wt.rated_speed_mps <= wt.cut_in_speed_mps) wt.rated_speed_mps = wt.cut_in_speed_mps + 1.0f;
 
         wt_send_ack("PARAM", 1u);
     }
@@ -338,7 +338,7 @@ void WindTurbine_StartRx(void)
 
 uint32_t WindTurbine_GetPeriodMs(void)
 {
-    uint32_t ms = (uint32_t)(wt.control_period * 1000.0f);
+    uint32_t ms = (uint32_t)(wt.c_control_s * 1000.0f);
     if (ms < 50u)    ms = 50u;      /* 最小 50ms */
     if (ms > 10000u) ms = 10000u;   /* 最大 10s   */
     return ms;

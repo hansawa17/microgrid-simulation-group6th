@@ -4,7 +4,7 @@
 
 帧格式（ASCII，\\r\\n 结尾，字段以 , 分隔，无校验）：
   MCU -> PC 遥测 :  $WIND,<cycle>,<wind_speed>,<power_available>,<power_set>,<power_actual>,<status>,<deg>,<control_mode>
-  PC  -> MCU 参数:  $PARAM,<cut_in>,<rated>,<cut_out>,<rated_power>,<deg_max>,<control_period>,<comm_timeout>,<control_mode>
+  PC  -> MCU 参数:  $PARAM,<cut_in_speed_mps>,<rated_speed_mps>,<cut_out_speed_mps>,<wind_rated_power_kw>,<pitch_feather_deg>,<c_control_s>,<c_timeout_s>,<control_mode>
   PC  -> MCU 命令:  $CMD,START|STOP|RESET|AUTO|MANUAL
   MCU -> PC  应答:  $ACK,<PARAM|CMD>,<0|1>
 
@@ -12,8 +12,7 @@
 
 线格式 8 字段顺序不变（与固件一致），Python 侧按 WIND_FIELDS 的位置映射为对齐 A/B 仓库的字段名：
   wind_speed_mps / wind_available_kw / wind_target_kw / wind_actual_kw / wind_running / pitch_target_deg。
-wind_operating_limit_kw 不在线格式中，当前由本地 mock（simulator.py）补齐；正式联调时应由
-MCU 计算并随 wind_action 发给 A，再由 A 在 state 中转发。串口帧仍需扩展该字段。
+wind_operating_limit_kw 不在线格式中，由本地 mock（simulator.py）额外补齐，联调后由 A 的 state 提供。
 """
 
 from config import PARAM_FIELDS, WIND_FIELDS

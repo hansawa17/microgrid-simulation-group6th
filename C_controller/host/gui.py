@@ -571,13 +571,13 @@ class MainWindow(QtWidgets.QMainWindow):
         grid.setVerticalSpacing(14)
 
         fields = [
-            ("切入风速",  "cut_in_speed",           "3.0",    "m/s"),
-            ("额定风速",  "rated_speed",            "12.0",   "m/s"),
-            ("切出风速",  "cut_out_speed",          "25.0",   "m/s"),
-            ("额定功率",  "rated_power",            "100.0",  "kW"),
-            ("最大顺桨角", "deg_max",                "90.0",   "°"),
-            ("控制周期",  "control_period",         "1.0",    "s"),
-            ("通信超时",  "communication_timeout",  "3.0",    "s"),
+            ("切入风速",  "cut_in_speed_mps",       "3.0",    "m/s"),
+            ("额定风速",  "rated_speed_mps",        "12.0",   "m/s"),
+            ("切出风速",  "cut_out_speed_mps",      "25.0",   "m/s"),
+            ("额定功率",  "wind_rated_power_kw",    "100.0",  "kW"),
+            ("最大顺桨角", "pitch_feather_deg",      "90.0",   "°"),
+            ("控制周期",  "c_control_s",            "1.0",    "s"),
+            ("通信超时",  "c_timeout_s",            "3.0",    "s"),
         ]
         self.paramEdits = {}
         for row, (label, key, default, unit) in enumerate(fields):
@@ -815,16 +815,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(msg)
 
     def load_params_form(self, params):
-        for key in ("cut_in_speed", "rated_speed", "cut_out_speed", "rated_power",
-                    "deg_max", "control_period", "communication_timeout"):
+        for key in ("cut_in_speed_mps", "rated_speed_mps", "cut_out_speed_mps", "wind_rated_power_kw",
+                    "pitch_feather_deg", "c_control_s", "c_timeout_s"):
             self.paramEdits[key].setText(f"{float(params.get(key, 0)):.2f}")
         mode = int(params.get("control_mode", 1))
         self.controlModeCombo.setCurrentIndex(0 if mode == 1 else 1)
 
     def read_params_form(self):
         params = {}
-        for key in ("cut_in_speed", "rated_speed", "cut_out_speed", "rated_power",
-                    "deg_max", "control_period", "communication_timeout"):
+        for key in ("cut_in_speed_mps", "rated_speed_mps", "cut_out_speed_mps", "wind_rated_power_kw",
+                    "pitch_feather_deg", "c_control_s", "c_timeout_s"):
             text = self.paramEdits[key].text().strip()
             try:
                 params[key] = float(text)

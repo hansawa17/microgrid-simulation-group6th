@@ -36,25 +36,33 @@ TCP_RECONNECT_INTERVAL = 3.0  # 秒
 #  默认风机参数（与 wind_turbine.h 的 WT_DEFAULT_* 保持一致）
 # --------------------------------------------------------------------------- #
 DEFAULT_PARAMS = {
-    "cut_in_speed": 3.0,          # 切入风速   m/s
-    "rated_speed": 12.0,          # 额定风速   m/s
-    "cut_out_speed": 25.0,        # 切出风速   m/s
-    "rated_power": 100.0,         # 额定功率   kW（小组统一基准）
-    "deg_max": 90.0,              # 最大顺桨角 °
-    "control_period": 1.0,        # 控制周期   s
-    "communication_timeout": 3.0, # 通信超时   s
+    "cut_in_speed_mps": 3.0,      # 切入风速   m/s
+    "rated_speed_mps": 12.0,      # 额定风速   m/s
+    "cut_out_speed_mps": 25.0,    # 切出风速   m/s
+    "wind_rated_power_kw": 100.0, # 额定功率   kW（小组统一基准）
+    "pitch_feather_deg": 90.0,    # 最大顺桨角 °
+    "c_control_s": 1.0,           # 控制周期   s
+    "c_timeout_s": 3.0,           # 通信超时   s
     "control_mode": 1,            # 控制模式 0开环/1闭环
 }
 
-# 参数下发帧（$PARAM）中的字段顺序（必须与 MCU 解析顺序一致）
+# 参数下发帧（$PARAM）中的字段顺序（必须与 MCU 解析顺序一致）。
+# 参数名已对齐 A 的 canonical 名（见 docs/parameter-ownership.md）：
+#   cut_in_speed  -> cut_in_speed_mps
+#   rated_speed   -> rated_speed_mps
+#   cut_out_speed -> cut_out_speed_mps
+#   rated_power   -> wind_rated_power_kw
+#   deg_max       -> pitch_feather_deg
+#   control_period -> c_control_s
+#   communication_timeout -> c_timeout_s
 PARAM_FIELDS = [
-    "cut_in_speed",
-    "rated_speed",
-    "cut_out_speed",
-    "rated_power",
-    "deg_max",
-    "control_period",
-    "communication_timeout",
+    "cut_in_speed_mps",
+    "rated_speed_mps",
+    "cut_out_speed_mps",
+    "wind_rated_power_kw",
+    "pitch_feather_deg",
+    "c_control_s",
+    "c_timeout_s",
     "control_mode",
 ]
 
@@ -81,13 +89,13 @@ WIND_FIELDS = [
 
 # 参数标签 / 单位（GUI 表单与历史显示用）
 PARAM_LABELS = {
-    "cut_in_speed": ("切入风速", "m/s"),
-    "rated_speed": ("额定风速", "m/s"),
-    "cut_out_speed": ("切出风速", "m/s"),
-    "rated_power": ("额定功率", "kW"),
-    "deg_max": ("最大桨距角", "°"),
-    "control_period": ("控制周期", "s"),
-    "communication_timeout": ("通信超时", "s"),
+    "cut_in_speed_mps": ("切入风速", "m/s"),
+    "rated_speed_mps": ("额定风速", "m/s"),
+    "cut_out_speed_mps": ("切出风速", "m/s"),
+    "wind_rated_power_kw": ("额定功率", "kW"),
+    "pitch_feather_deg": ("最大顺桨角", "°"),
+    "c_control_s": ("控制周期", "s"),
+    "c_timeout_s": ("通信超时", "s"),
     "control_mode": ("控制模式", ""),
 }
 

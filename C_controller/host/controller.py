@@ -253,7 +253,7 @@ class Controller(QObject):
     def _check_timeout(self):
         if self._last_data_time == 0.0:
             return
-        timeout = float(self.db.get_params().get("communication_timeout", 3.0))
+        timeout = float(self.db.get_params().get("c_timeout_s", 3.0))
         if time.monotonic() - self._last_data_time > timeout:
             # 仅在有数据源运行且超时时告警一次
             if self._sim_on or (self.serial is not None and self.serial.is_open()):
@@ -272,10 +272,10 @@ class Controller(QObject):
             return
 
         # 合法性检查
-        if params["rated_speed"] <= params["cut_in_speed"]:
+        if params["rated_speed_mps"] <= params["cut_in_speed_mps"]:
             QMessageBox.warning(self.ui, "参数错误", "额定风速必须大于切入风速。")
             return
-        if params["cut_out_speed"] <= params["rated_speed"]:
+        if params["cut_out_speed_mps"] <= params["rated_speed_mps"]:
             QMessageBox.warning(self.ui, "参数错误", "切出风速必须大于额定风速。")
             return
 

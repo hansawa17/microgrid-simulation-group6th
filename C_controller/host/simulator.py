@@ -61,7 +61,7 @@ class Simulator(QThread):
         self._running = True
         while self._running:
             self._step()
-            period = max(0.05, min(10.0, float(self.params.get("control_period", 1.0))))
+            period = max(0.05, min(10.0, float(self.params.get("c_control_s", 1.0))))
             self.msleep(int(period * 1000))
 
     def stop(self):
@@ -73,10 +73,10 @@ class Simulator(QThread):
     def _wind_available_kw(self):
         """风速 -> 资源可用功率（三次方曲线，与 A 一致）。"""
         w = self.wind_speed_mps
-        cut_in = self.params["cut_in_speed"]
-        rated = self.params["rated_speed"]
-        cut_out = self.params["cut_out_speed"]
-        rated_power = self.params["rated_power"]
+        cut_in = self.params["cut_in_speed_mps"]
+        rated = self.params["rated_speed_mps"]
+        cut_out = self.params["cut_out_speed_mps"]
+        rated_power = self.params["wind_rated_power_kw"]
         if w < cut_in:
             return 0.0
         if w < rated:
@@ -91,10 +91,10 @@ class Simulator(QThread):
         self.wind_speed_mps += random.uniform(-1.5, 1.5)
         self.wind_speed_mps = max(0.0, min(30.0, self.wind_speed_mps))
         self.wind_target_kw += random.uniform(-20.0, 20.0)
-        self.wind_target_kw = max(0.0, min(self.params["rated_power"], self.wind_target_kw))
+        self.wind_target_kw = max(0.0, min(self.params["wind_rated_power_kw"], self.wind_target_kw))
 
-        cut_in = self.params["cut_in_speed"]
-        cut_out = self.params["cut_out_speed"]
+        cut_in = self.params["cut_in_speed_mps"]
+        cut_out = self.params["cut_out_speed_mps"]
         mode = int(self.params["control_mode"])
 
         # 1) 资源可用功率
@@ -105,14 +105,14 @@ class Simulator(QThread):
 
         # 3) 桨距目标（0-90°：停机/无可用功率→顺桨 90°，开环→0°，闭环按目标限功率）
         if not wind_running or wind_available_kw <= 0.0:
-            pitch_target_deg = self.params["deg_max"]   # 顺桨
+            pitch_target_deg = self.params["pitch_feather_deg"]   # 顺桨
         elif mode == 0:  # 开环：最大功率捕获
             pitch_target_deg = 0.0
         else:  # 闭环
             if self.wind_target_kw >= wind_available_kw:
                 pitch_target_deg = 0.0
             else:
-                pitch_target_deg = self.params["deg_max"] * (1.0 - self.wind_target_kw / wind_available_kw)
+                pitch_target_deg = self.params["pitch_feather_deg"] * (1.0 - self.wind_target_kw / wind_available_kw)
 
         # 4) 稳态运行上限 wind_operating_limit_kw：运行许可且无保护时 = 可用功率，否则 0
         #    （不扣桨距/目标，避免 B 限功率自锁）

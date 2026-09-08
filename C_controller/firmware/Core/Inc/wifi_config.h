@@ -17,6 +17,6 @@
 
 /* ------------------ A 电网模拟器 TCP 服务端 -------------------------- */
 #define WIFI_SERVER_IP     "172.20.10.2"   /* 待 A 确定后填写 */
-#define WIFI_SERVER_PORT   5005
+#define WIFI_SERVER_PORT   5000
 
 #endif /* __WIFI_CONFIG_H */

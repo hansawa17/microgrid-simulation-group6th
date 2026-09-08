@@ -11,7 +11,7 @@
   *
   *  串口帧格式（ASCII，\r\n 结尾，字段以 , 分隔）：
   *     MCU -> PC 遥测:  $WIND,<cycle>,<wind_speed>,<power_available>,<power_set>,<power_actual>,<status>,<deg>,<control_mode>\r\n
-  *     PC  -> MCU 参数: $PARAM,<cut_in>,<rated>,<cut_out>,<rated_power>,<deg_max>,<control_period>,<comm_timeout>,<control_mode>\r\n
+  *     PC  -> MCU 参数: $PARAM,<cut_in_speed_mps>,<rated_speed_mps>,<cut_out_speed_mps>,<wind_rated_power_kw>,<pitch_feather_deg>,<c_control_s>,<c_timeout_s>,<control_mode>\r\n
   *     PC  -> MCU 命令: $CMD,START|STOP|RESET|AUTO|MANUAL\r\n
   *     MCU -> PC  应答: $ACK,<PARAM|CMD>,<0|1>\r\n
   ******************************************************************************
@@ -29,13 +29,13 @@ extern "C" {
 /* ------------------------------------------------------------------ */
 /*  默认风机参数（与上位机 wind.db 默认值保持一致）                     */
 /* ------------------------------------------------------------------ */
-#define WT_DEFAULT_CUT_IN_SPEED    3.0f    /* 切入风速   m/s  */
-#define WT_DEFAULT_RATED_SPEED     12.0f   /* 额定风速   m/s  */
-#define WT_DEFAULT_CUT_OUT_SPEED   25.0f   /* 切出风速   m/s  */
-#define WT_DEFAULT_RATED_POWER     100.0f  /* 额定功率   kW   */
-#define WT_DEFAULT_DEG_MAX         90.0f   /* 最大顺桨角 °    */
-#define WT_DEFAULT_CONTROL_PERIOD  1.0f    /* 控制周期   s    */
-#define WT_DEFAULT_COMM_TIMEOUT    3.0f    /* 通信超时   s    */
+#define WT_DEFAULT_CUT_IN_SPEED_MPS    3.0f    /* 切入风速   m/s  */
+#define WT_DEFAULT_RATED_SPEED_MPS     12.0f   /* 额定风速   m/s  */
+#define WT_DEFAULT_CUT_OUT_SPEED_MPS   25.0f   /* 切出风速   m/s  */
+#define WT_DEFAULT_WIND_RATED_POWER_KW 100.0f  /* 额定功率   kW   */
+#define WT_DEFAULT_PITCH_FEATHER_DEG   90.0f   /* 最大顺桨角 °    */
+#define WT_DEFAULT_C_CONTROL_S         1.0f    /* 控制周期   s    */
+#define WT_DEFAULT_C_TIMEOUT_S         3.0f    /* 通信超时   s    */
 
 /* 控制模式 */
 #define WT_MODE_OPEN_LOOP     0u  /* 开环 */
