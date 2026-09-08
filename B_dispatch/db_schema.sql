@@ -23,20 +23,24 @@ CREATE TABLE IF NOT EXISTS ems_runtime_config (
 CREATE TABLE IF NOT EXISTS current_state (
     id INTEGER PRIMARY KEY CHECK (id = 1), session_id TEXT NOT NULL,
     step INTEGER NOT NULL CHECK (step >= 0), sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0),
-    wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0), load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0),
-    wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0), diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0),
-    wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0), pitch_actual_deg REAL,
-    wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
+    wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0),
+    wind_available_kw REAL NOT NULL CHECK (wind_available_kw >= 0),
+    wind_operating_limit_kw REAL NOT NULL CHECK (wind_operating_limit_kw >= 0 AND wind_operating_limit_kw <= wind_available_kw),
+    load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
+    diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
+    pitch_actual_deg REAL NOT NULL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
     sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS state_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
     step INTEGER NOT NULL CHECK (step >= 0), sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0),
-    wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0), load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0),
-    wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0), diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0),
-    wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0), pitch_actual_deg REAL,
-    wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
+    wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0),
+    wind_available_kw REAL NOT NULL CHECK (wind_available_kw >= 0),
+    wind_operating_limit_kw REAL NOT NULL CHECK (wind_operating_limit_kw >= 0 AND wind_operating_limit_kw <= wind_available_kw),
+    load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
+    diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
+    pitch_actual_deg REAL NOT NULL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
     sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 
@@ -46,7 +50,9 @@ CREATE TABLE IF NOT EXISTS dispatch_commands (
     source TEXT NOT NULL, seq INTEGER NOT NULL CHECK (seq >= 0),
     wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0), diesel_target_kw REAL NOT NULL CHECK (diesel_target_kw >= 0),
     wind_enable INTEGER NOT NULL CHECK (wind_enable IN (0,1)), diesel_enable INTEGER NOT NULL CHECK (diesel_enable IN (0,1)),
-    status TEXT NOT NULL, reason TEXT NOT NULL, created_at_utc TEXT NOT NULL,
+    status TEXT NOT NULL, reason TEXT NOT NULL,
+    ack_accepted INTEGER CHECK (ack_accepted IN (0,1)), ack_reason TEXT, ack_received_at_utc TEXT,
+    created_at_utc TEXT NOT NULL,
     UNIQUE(session_id, source, seq)
 );
 
