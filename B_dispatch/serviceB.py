@@ -6,7 +6,7 @@ from typing import Callable
 from .operator_core import EMSCore, EMSDecision
 from .repository import EMSRepository
 from .runtime import EMSRuntime, RuntimeConfig
-from .tcpB import EMSTcpClient
+from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient
 
 
 class EMSServiceB:
@@ -61,7 +61,29 @@ class EMSServiceB:
         return state
 
     def _send_decision(self, decision: EMSDecision) -> None:
-        seq = self.client.send_dispatch(decision)
+        try:
+            seq = self.client.send_dispatch(decision)
+        except DispatchDeliveryUnknown as exc:
+            self.repository.record_command({
+                "session_id": decision.state.session_id,
+                "step": decision.state.step,
+                "sim_time_s": decision.state.sim_time_s,
+                "source": "B",
+                "seq": exc.seq,
+                "wind_target_kw": decision.result.wind_target_kw,
+                "diesel_target_kw": decision.result.diesel_target_kw,
+                "wind_enable": decision.result.wind_enable,
+                "diesel_enable": decision.result.diesel_enable,
+                "status": "delivery_unknown",
+                "reason": str(exc),
+            })
+            raise
+
+        ack: Ack | None = self.client.get_ack(seq)
+        if ack is None:
+            raise RuntimeError(f"dispatch seq {seq} completed without a recorded ACK")
+
+        status = "accepted" if ack.accepted else "rejected"
         command_id = self.repository.record_command({
             "session_id": decision.state.session_id,
             "step": decision.state.step,
@@ -72,8 +94,10 @@ class EMSServiceB:
             "diesel_target_kw": decision.result.diesel_target_kw,
             "wind_enable": decision.result.wind_enable,
             "diesel_enable": decision.result.diesel_enable,
-            "status": "sent",
+            "status": status,
             "reason": decision.result.reason,
+            "ack_accepted": ack.accepted,
+            "ack_reason": ack.reason,
         })
         self.repository.record_evaluation(
             command_id=command_id,
