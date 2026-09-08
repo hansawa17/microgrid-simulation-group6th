@@ -1,6 +1,6 @@
 # STM32 固件 · 风电子站
 
-STM32CubeIDE 工程，目标芯片 **STM32G431RBT3**（LQFP64），主频 16 MHz（HSI，未开 PLL）。
+STM32CubeIDE 工程，目标芯片 **STM32G431RBT3**（LQFP64）(目前claude code按照RBT3生成，后续会改为RBT6），主频 16 MHz（HSI，未开 PLL）。
 
 - `Core/Src/wind_turbine.c` / `Core/Inc/wind_turbine.h`：风机控制计算 + 串口协议 + USART2 收发。
 - `Core/Src/main.c`：主循环按控制周期调用 `WindTurbine_PeriodicTask()`。
