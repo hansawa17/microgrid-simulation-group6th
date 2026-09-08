@@ -25,6 +25,35 @@
 
 统一风机基线：额定功率 **100 kW**，切入/额定/切出风速 **3/12/25 m/s**，切入到额定采用归一化三次功率曲线，桨距范围 **0-90 deg**。这些数值是小组统一配置，课程原文只规定职责、没有指定数值。完整字段写权限、公式和柴油机参数见 [`docs/parameter-ownership.md`](docs/parameter-ownership.md)。
 
+## 启动 A 综合监控界面
+
+Windows 在仓库根目录双击 `启动A程序.bat`，或执行：
+
+```powershell
+.\scripts\start_a.ps1
+```
+
+一键脚本会从脚本位置定位仓库，在缺少环境时调用 `scripts/bootstrap.ps1`，并且只在目标数据库不存在时初始化。已有 `grid.db` 不会被覆盖，本地数据库和 `config.local.json` 不提交 Git。
+
+可从命令行指定数据库、配置、场景及 GUI 初始监听设置：
+
+```powershell
+.\scripts\start_a.ps1 -BindAddress 0.0.0.0 -Port 5005 `
+  -Db .\data\runtime\grid.db `
+  -Config .\A_simulator\config.example.json `
+  -Scenario .\A_simulator\scenarios\antarctic_10min.csv
+```
+
+A UI 当前分为“运行监控、参数设置、历史数据、报警与通信”：
+
+- 运行监控将场景编辑、仿真控制、通信设置、实时 KPI、状态卡片、风速和功率曲线集中在同一页。
+- 参数按 `owner/source/updated_at_utc` 展示；A 只能编辑自身所有权参数，B/C 参数经 `parameter_update` 同步为只读副本。
+- 历史页将 `state_history` 和日志文本转换为可筛选表格与曲线。
+- 顶部时钟及运行/历史曲线以 `sampled_at_utc` 显示真实 UTC；CSV 的 `sim_time_s` 继续用于场景插值和确定性重放，协议排序仍以 `session_id + step + seq` 为准。
+- 通信页显示本机 IPv4；监听地址和端口仅能在 TCP 停止后修改，并作用于下一次启动的 TCP 子进程。
+
+FRP 示例：公网 `frp-box.com:38243` 可映射到 A 本机 `127.0.0.1:5005`。A 设置本地端口 `5005`；B/C 客户端的主机与端口应分开填写为 `frp-box.com` 和 `38243`。公网端点、令牌和密码不能硬编码或提交；协议 v1 尚无认证和加密。
+
 ## B EMS 当前结构
 
 ```text
@@ -53,6 +82,14 @@ tests/
 B 的 TCP/服务文件统一使用 `*B` 后缀，避免和其他成员冲突。
 
 ## 开发时间节点 / 功能增量
+
+### 2026-09-08 · A 综合监控 UI 与一键启动
+
+- 合并场景曲线和运行监控，新增参数、历史、日志/通信页面。
+- 实时/历史横轴显示 A 的 UTC 采样时间，同时保留 CSV 相对仿真时间语义。
+- 增加 B/C 参数副本同步、来源与所有权显示；不改变 A/B/C 原有计算职责。
+- 增加本机 IPv4、可配置监听地址/端口和一键启动入口。
+- 当前为 PC 端软件实现，STM32、UART、三机公网闭环和授时异常仍需实机验证。
 
 ### 2026-09-07 · B EMS 调度、闭环与数据库基础
 
@@ -130,7 +167,7 @@ python -m B_dispatch gui
 
 ## 测试说明
 
-当前会话中没有在用户本机执行测试，也没有可用于证明最新修改已经通过的 CI 结果，因此 **不宣称测试通过**。
+本次 A 综合监控改造在变基前已于 Python 3.11.14 环境完成 94 项测试并全部通过。提交前又合入了队友最新的 B `ems.db` schema v4 更新；按用户要求未重复执行合并后工作树的完整测试，因此这里不把变基前结果冒充为最终三模块联合验证。
 
 建议在 Python 3.11 环境执行：
 

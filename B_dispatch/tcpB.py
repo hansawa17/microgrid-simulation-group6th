@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import json
 import math
 import socket
+import threading
+import time
 from typing import Any, Callable
 
 from .models import GridState
@@ -13,6 +15,23 @@ from .operator_core import EMSDecision
 
 MAX_FRAME_BYTES = 4096
 PROTOCOL_VERSION = 1
+
+_SEQUENCE_LOCK = threading.Lock()
+_LAST_DEFAULT_SEQUENCE = -1
+
+
+def _allocate_default_sequence(minimum: int = 0) -> int:
+    """Return a process-wide sequence that also survives normal B restarts.
+
+    The UTC epoch-millisecond floor avoids restarting at zero while the lock and
+    high-water mark keep multiple clients in one process strictly increasing.
+    """
+    global _LAST_DEFAULT_SEQUENCE
+    epoch_ms = time.time_ns() // 1_000_000
+    with _SEQUENCE_LOCK:
+        sequence = max(epoch_ms, minimum, _LAST_DEFAULT_SEQUENCE + 1)
+        _LAST_DEFAULT_SEQUENCE = sequence
+        return sequence
 
 
 class ProtocolError(ValueError):
@@ -143,16 +162,22 @@ class EMSTcpClient:
         *,
         timeout_s: float = 2.0,
         socket_factory: Callable[..., socket.socket] = socket.create_connection,
+        initial_seq: int | None = None,
     ) -> None:
         if not host or host == "0.0.0.0":
             raise ValueError("client host must be A's reachable address, not 0.0.0.0")
         if not 1 <= port <= 65535 or timeout_s <= 0:
             raise ValueError("invalid TCP endpoint or timeout")
+        if initial_seq is not None and (
+            not isinstance(initial_seq, int) or isinstance(initial_seq, bool) or initial_seq < 0
+        ):
+            raise ValueError("initial_seq must be a non-negative integer or None")
         self.host, self.port, self.timeout_s = host, port, timeout_s
         self.socket_factory = socket_factory
         self.sock: socket.socket | None = None
         self.framer = JsonLineFramer()
-        self._next_seq = 0
+        self._uses_default_sequence = initial_seq is None
+        self._next_seq = time.time_ns() // 1_000_000 if initial_seq is None else initial_seq
         self._last_incoming_seq: int | None = None
         self._pending_state_request_seq: int | None = None
         self._pending_ack_seq: int | None = None
@@ -207,8 +232,12 @@ class EMSTcpClient:
         sim_time_s: float,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        seq = self._next_seq
-        self._next_seq += 1
+        if self._uses_default_sequence:
+            seq = _allocate_default_sequence(self._next_seq)
+            self._next_seq = seq + 1
+        else:
+            seq = self._next_seq
+            self._next_seq += 1
         return {
             "version": PROTOCOL_VERSION,
             "type": msg_type,

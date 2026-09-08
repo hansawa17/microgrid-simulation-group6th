@@ -78,3 +78,24 @@
 - 柴发基线：20-120 kW，爬坡 30/40 kW/s；B 保留 10 kW 备用。C 控制周期 1 s、通信超时 3 s。
 - 课程原文规定职责但未指定上述数值；文档必须称其为“小组统一配置”。
 - 受影响：`docs/parameter-ownership.md`、`common/protocol.md`、A/B/C README、A 配置/协议校验、C 固件与 host mock。
+
+## 2026-09-08：A 综合监控 UI、UTC 显示与参数副本同步
+
+- 参与：A/B/C 共享仓库；本次实现由 A 主导，公共参数同步接口需 B/C 后续接入并联调。
+- A 的“场景曲线”和“运行监控”合并为综合运行页：通信与仿真控制、场景编辑、实时 KPI、连接/设备状态、风速曲线和功率曲线在同一工作区完成。
+- A 新增参数设置、历史数据、报警与通信视图。历史表和曲线读取 A 自己的 `grid.db`；不通过共享 SQLite 文件跨电脑同步。
+- 参数行记录 `name/value/unit/owner/source/updated_at_utc/editable`。A UI 只允许编辑 owner=A 且 editable 的条目；B/C 所有权参数在 A 侧只读，通过 TCP `parameter_update` 更新副本。
+- `parameter_update` 保持协议 version 1 与公共 envelope，不改变计算职责。B 只能同步 `reserve_kw/b_poll_s/b_dispatch_s`；C 只能同步风机额定/风速/桨距参数及 C 周期/超时。A 校验整条更新并写参数历史，越权或部分非法时不落库。
+- C 的物理参数变化后，A 立即作废缓存的 C action，设置为停机、完全顺桨、available/operating limit 为 0；必须等待 C 基于新参数重新发送合法 `wind_action`。A 不代替 C 计算新动作。
+- 顶栏和曲线“实时”语义统一为操作系统 UTC 授时：运行/历史横轴直接使用 `sampled_at_utc`；CSV 预览可使用打开时 UTC 加 `sim_time_s` 的派生标签，但不写回 CSV、不冒充真实采样时间。
+- 模型仍用 CSV 的 `sim_time_s` 插值；协议与控制顺序仍严格使用 `session_id + step + seq`。系统校时、不同电脑墙钟偏差或 UI 刷新不会改变命令排序。
+- A 通信设置显示本机 IPv4，并允许在 TCP 子进程停止时修改 bind/port；运行中锁定，修改仅在下一次启动生效。客户端连接 A 的实际 IP/域名，不能连接 `0.0.0.0`。
+- FRP 联调可将公网 `frp-box.com:38243` 映射到 A 本机自定义端口（例如 `127.0.0.1:5005`）。B/C 的 host 与 port 分开填写；A UI 只配置本地监听，不管理 FRP 隧道。
+- 新增 `scripts/start_a.ps1` 与根目录 `启动A程序.bat`。入口只在数据库缺失时初始化，已有 `grid.db` 不覆盖；本地数据库、`config.local.json` 和穿透凭据仍不提交。
+- 安全边界：协议 v1 的 source/type 白名单不是身份认证；公网联调仍需受控隧道或来源限制。当前未完成 STM32 实机、UART、三机公网闭环及授时异常联调，不得据本次 PC 软件结果宣称硬件已验证。
+- B 的新 TCP 客户端不再从 0 重置发送序号，而以 epoch 毫秒作为进程启动基线并在进程内维护高水位；这是避免同一 A session 内 GUI 断开重连后被判为旧序号的兼容措施，最终跨设备序号持久化仍需在协议冻结前联调确认。
+- A 在 TCP 服务启动、停止或 GUI 子进程结束时统一将 B/C 标记离线；已识别连接连续 10 s 没有报文即按空闲超时关闭并记日志。10 s 仅是当前 PC 端连接探活实现值，不等同于尚未冻结的控制指令有效期。
+- 停止或完成的仿真可创建新会话：生成新的 `session_id`，从场景起点恢复为 ready，清零目标与实际出力、停止设备并完全顺桨；旧会话状态历史、场景和已确认参数保留，A 的服务端响应序号不倒退。
+- 同值 `parameter_update` 视为幂等同步并返回成功，但不改写参数来源/更新时间、不追加 `parameter_history`。损坏或不可迁移的 `grid.db` 不自动覆盖，A GUI 显示异常状态，由操作员备份后另建数据库。
+- 状态历史以数据库写入顺序读取，实时曲线只画当前 `session_id`，历史页通过会话选择器查看旧会话，禁止跨会话连线。计算子进程意外退出且数据库仍为 running 时，A GUI 自动转为 paused 并记录告警，允许人工检查后继续。
+- 受影响：A GUI/数据库/TCP、`common/protocol.md`、`docs/time-interface.md`、A 与根 README、启动脚本。

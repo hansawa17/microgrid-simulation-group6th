@@ -1,6 +1,6 @@
-# ABC 统一时间轴与授时接口规范 v0.1
+# ABC 统一时间轴与授时接口规范 v0.2
 
-状态：三方基础开发接口基线。A 已完成状态、数据库和 TCP 输出适配；B/C 按各自开发进度适配。本文补充 `common/protocol.md`，不改变 A/B/C 的控制权划分。
+状态：三方基础开发接口基线。A 已完成状态、数据库和 TCP 输出适配，并在综合监控 UI 中使用 UTC 实时时间轴；B/C 按各自开发进度适配。本文补充 `common/protocol.md`，不改变 A/B/C 的控制权划分。
 
 ## 1. 目标与数据流
 
@@ -18,6 +18,8 @@ CSV 风速/负荷曲线 + A 仿真时刻 + 系统 UTC 授时
 
 A 是唯一的仿真时间和状态采样时间权威。B/C 不自行推算 A 的采样时间，只保存和引用 A 发布的 `session_id`、`step`、`sim_time_s` 与 `sampled_at_utc`。
 
+这里“实时对齐”是显示和历史关联规则，不是删除相对仿真时间：A 的实时/历史图横轴显示 `sampled_at_utc`，模型仍使用 `sim_time_s` 读取确定性的 CSV 场景。两者必须同时保留。
+
 ## 2. 四类时间不得混用
 
 | 字段 | 类型与格式 | 产生者 | 含义 | 主要用途 |
@@ -31,9 +33,11 @@ A 是唯一的仿真时间和状态采样时间权威。B/C 不自行推算 A �
 
 控制顺序只依据 `session_id + step + seq`，不得依据不同电脑的墙钟时间排序。`sampled_at_utc` 和 `received_at_utc` 的差值可辅助分析通信延迟，但只有三台电脑均已可靠授时时才可视作近似单向延迟。
 
+A UI 顶部时钟显示当前 UTC；实时曲线和历史曲线直接解析 `state_history.sampled_at_utc`，以 `HH:mm:ss` 等 UTC 标签显示。UI 不得用刷新时刻、数据库查询时刻或本机收到 B/C 报文的时刻覆盖状态采样时间。
+
 ## 3. A 的授时规则
 
-- A 使用带时区的系统 UTC 时钟；由 Windows/Linux 系统时间服务负责 NTP 校时，仿真循环不直接逐秒访问公网 NTP 服务器。
+- A 使用带时区的系统 UTC 时钟；由 Windows/Linux 系统时间服务负责 NTP 校时，仿真循环和 GUI 不直接逐秒访问公网 NTP 服务器。“监听 UTC 授时”指持续读取并展示操作系统维护的 UTC，同时按每步一次的规则固化采样时间。
 - 每个 `step` 只读取一次 UTC 时间；同一步的风速、负荷、设备状态、SCADA 点和历史记录共用同一个 `sampled_at_utc`。
 - A 同时使用单调时钟控制“每隔 1 秒执行”，避免系统校时导致循环等待异常；UTC 时钟只用于生成时间戳。
 - 如果检测到 UTC 时间相对上一状态倒退，A 记录 `clock_adjusted_backwards` 告警，但仍使用 `session_id + step + seq` 保证顺序。
@@ -62,6 +66,8 @@ step,sim_time_s,wind_speed_mps,load_power_kw
 
 若后续导入真实气象历史数据，可以另加 `source_time_utc` 表示原始数据集时间；它不能替代本次仿真的 `sampled_at_utc`。
 
+A UI 在尚未生成真实状态的场景预览中，以本次打开或初始化场景时的 UTC 作为显示起点，再加每个点的 `sim_time_s` 形成日期时间标签。该派生时间仅用于让预览与实时图的视觉形式一致，不写回 CSV，也不得冒充运行后的 `sampled_at_utc`。
+
 ## 5. TCP 状态时间接口
 
 `state` 报文继续使用公共信封中的 `session_id`、`step` 和 `sim_time_s`，并在 `payload` 中增加必填的 `sampled_at_utc`。当前协议仍处于草案阶段，因此线协议 `version` 暂保持为 1；三方应在组合联调前完成该字段，不保留缺字段的正式联调模式。
@@ -79,15 +85,18 @@ step,sim_time_s,wind_speed_mps,load_power_kw
   "payload": {
     "sampled_at_utc": "2026-09-07T08:03:25.417Z",
     "wind_speed_mps": 8.2,
-    "wind_available_kw": 68.0,
-    "wind_operating_limit_kw": 64.0,
+    "wind_available_kw": 19.29,
+    "wind_operating_limit_kw": 19.29,
     "load_power_kw": 76.0,
-    "wind_actual_kw": 42.0,
-    "diesel_actual_kw": 34.0,
-    "wind_target_kw": 45.0,
+    "wind_actual_kw": 19.29,
+    "diesel_actual_kw": 56.71,
+    "wind_target_kw": 19.29,
+    "diesel_target_kw": 56.71,
     "pitch_actual_deg": 0.0,
     "wind_running": true,
-    "fault": false
+    "diesel_running": true,
+    "fault": false,
+    "power_imbalance_kw": 0.0
   }
 }
 ```
@@ -126,6 +135,8 @@ B 和 C 接收状态后：
 - 暂停：A 不推进 `step` 和 `sim_time_s`，也不生成新的状态采样时间。
 - 恢复：从下一步继续推进；新状态使用恢复后的真实 UTC，因此 `sampled_at_utc` 会体现暂停造成的时间间隔。
 - 停止后重新开始：生成新的 `session_id`，从 CSV 第 0 步重新运行并重新授时。
+- A 界面的“新建会话”只在 stopped/completed 时可用；它保留旧会话历史和当前参数，安全复位控制/出力后回到 ready。
+- 实时曲线只连接当前 `session_id` 的状态点；历史页按会话选择后绘图，不跨会话连接相同 `sim_time_s` 的点。
 - 同一场景重放：复用 CSV，但每次运行的 `sampled_at_utc` 不同；依靠 `session_id` 区分。
 - 调速仿真：墙钟执行间隔可以改变，`sim_time_s` 按场景步长推进，`sampled_at_utc` 始终记录真实生成时刻。
 
@@ -145,9 +156,18 @@ GUI 刷新周期不属于控制周期，可以独立设置，但不得阻塞计�
 
 ## 9. 各模块实现清单
 
-- A：`grid.db`、状态模型和 TCP state 已包含两个能力字段；字段值由 C 计算，A 校验、存储并转发。授时、`sampled_at_utc` 和 CSV 相对时间曲线已完成。
+- A：`grid.db`、状态模型和 TCP state 已包含两个能力字段；字段值由 C 计算，A 校验、存储并转发。授时、`sampled_at_utc` 和 CSV 相对时间曲线已完成；综合监控与历史图使用 UTC 横轴，场景预览保留派生时间标识。
 - B：扩展本地状态模型、`ems.db` 状态/调度历史字段与 RFC 3339 时间格式校验。
 - C：确认 MCU 时间戳透传方式，扩展 `wind.db`，并在串口协议中记录映射。
 - 三方：组合联调前验证同一状态的四个关联字段完全一致，并测试暂停、恢复、系统校时、断线重连和场景重放。
 
 本规范不要求三台电脑共享 SQLite 文件；每个模块只操作自己的数据库，通过协议同步业务状态。
+
+## 10. A 界面显示与验收规则
+
+- 顶栏 UTC 每秒刷新；显示的是时区明确的 UTC，不标成本地时间。
+- 运行监控的风速和功率曲线使用同一批 `state_history` 断面和同一条 `sampled_at_utc` 横轴，不能因两个控件各自取时而错位。
+- 历史表保留完整 RFC 3339 UTC；图表可缩写标签，但悬停或明细仍应能追溯完整时间。
+- 暂停期间不伪造新采样点；恢复后的横轴真实体现暂停产生的 UTC 间隔。
+- 场景重放时 `sim_time_s` 序列可重复，但每个会话的 UTC 采样时间和 `session_id` 不同。
+- 系统时间倒退、跨机墙钟偏差与网络延迟不改变命令顺序；组合联调必须以 `session_id + step + seq` 验证顺序。

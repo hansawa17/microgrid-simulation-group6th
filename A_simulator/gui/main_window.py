@@ -1,26 +1,39 @@
-"""CSV-driven PyQt6 interface for A, styled to match the C host UI."""
+"""Integrated PyQt6 SCADA interface for the A microgrid simulator."""
 
 from __future__ import annotations
 
-from bisect import bisect_left
-from datetime import datetime
+from dataclasses import asdict, is_dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import math
+import socket
+import sqlite3
 import sys
+import time
+from typing import Any, Iterable, Mapping
 
 from PyQt6.QtCore import QProcess, QTimer, Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QButtonGroup,
+    QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSlider,
+    QSpinBox,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -30,19 +43,12 @@ from PyQt6.QtWidgets import (
 
 from ..config import SimulationConfig, load_config
 from ..repository import Repository
-from ..scenario import (
-    ScenarioCurve,
-    ScenarioPoint,
-    load_scenario_csv,
-    save_scenario_csv,
-)
-from .curve_widget import CurveEditor, format_sim_time
+from ..scenario import ScenarioCurve, ScenarioPoint, load_scenario_csv, save_scenario_csv
+from .curve_widget import CurveEditor, TimeSeriesChart, format_sim_time, format_utc_time
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
-# Kept deliberately identical to C_controller/host/gui.py on the remote main
-# branch so A and C read as parts of one SCADA suite.
 COLORS = {
     "bg": "#e9eff6",
     "surface": "#ffffff",
@@ -58,15 +64,19 @@ COLORS = {
     "warn": "#e19a1a",
     "bad": "#d64545",
     "wind": "#2f6fd6",
+    "load": "#d78f19",
     "avail": "#1fa15a",
-    "target": "#e19a1a",
+    "target": "#d5a31a",
     "actual": "#6b4fd8",
+    "diesel": "#00a1a7",
+    "imbalance": "#d64545",
 }
 
 
 _QSS = f"""
 QMainWindow {{ background: {COLORS['bg']}; }}
 QWidget {{ font-family: "Microsoft YaHei", "Microsoft YaHei UI", "Segoe UI"; color: {COLORS['text']}; }}
+QToolTip {{ background: #ffffff; color: #274056; border: 1px solid #cad8e5; }}
 
 #headerBar {{ background: {COLORS['header_bg']}; border-bottom: 1px solid {COLORS['border']}; }}
 #logoBadge {{ background: {COLORS['primary']}; border-radius: 6px; }}
@@ -91,22 +101,28 @@ QLabel[role="siteLabel"] {{ color: #9aabba; font-size: 11px; padding: 8px 18px; 
 QLabel[role="sectionTitle"] {{ color: {COLORS['primary_dark']}; font-size: 19px; font-weight: 700; }}
 QFrame[role="card"] {{ background: {COLORS['surface']}; border: 1px solid {COLORS['border']}; border-radius: 8px; }}
 QLabel[role="cardTitle"] {{ color: {COLORS['text_soft']}; font-size: 13px; font-weight: 600; }}
-QLabel[role="bigValue"] {{ color: #123a5f; font-size: 30px; font-weight: 700; }}
+QLabel[role="bigValue"] {{ color: #123a5f; font-size: 28px; font-weight: 700; }}
 QLabel[role="unit"] {{ color: #5c758c; font-size: 13px; font-weight: 600; }}
 QLabel[role="source"] {{ color: {COLORS['text_muted']}; font-size: 11px; }}
-QLabel[state="good"] {{ color: {COLORS['good']}; font-size: 16px; font-weight: 700; }}
-QLabel[state="warn"] {{ color: {COLORS['warn']}; font-size: 16px; font-weight: 700; }}
-QLabel[state="bad"] {{ color: {COLORS['bad']}; font-size: 16px; font-weight: 700; }}
+QLabel[state="good"] {{ color: {COLORS['good']}; font-size: 15px; font-weight: 700; }}
+QLabel[state="warn"] {{ color: {COLORS['warn']}; font-size: 15px; font-weight: 700; }}
+QLabel[state="bad"] {{ color: {COLORS['bad']}; font-size: 15px; font-weight: 700; }}
 
-QPushButton[role="primary"] {{ background: {COLORS['primary']}; color: #ffffff; border: none; border-radius: 6px; padding: 9px 20px; font-weight: 600; }}
+QPushButton[role="primary"] {{ background: {COLORS['primary']}; color: #ffffff; border: none; border-radius: 6px; padding: 8px 18px; font-weight: 600; }}
 QPushButton[role="primary"]:hover {{ background: #285fb8; }}
-QPushButton[role="success"] {{ background: {COLORS['good']}; color: #ffffff; border: none; border-radius: 6px; padding: 9px 20px; font-weight: 600; }}
+QPushButton[role="success"] {{ background: {COLORS['good']}; color: #ffffff; border: none; border-radius: 6px; padding: 8px 18px; font-weight: 600; }}
 QPushButton[role="success"]:hover {{ background: #1a8a4d; }}
-QPushButton[role="danger"] {{ background: {COLORS['bad']}; color: #ffffff; border: none; border-radius: 6px; padding: 9px 20px; font-weight: 600; }}
+QPushButton[role="danger"] {{ background: {COLORS['bad']}; color: #ffffff; border: none; border-radius: 6px; padding: 8px 18px; font-weight: 600; }}
 QPushButton[role="danger"]:hover {{ background: #bd3a3a; }}
-QPushButton[role="secondary"] {{ background: #eef3f8; color: #33516d; border: 1px solid #d2dfea; border-radius: 6px; padding: 9px 20px; font-weight: 600; }}
+QPushButton[role="secondary"] {{ background: #eef3f8; color: #33516d; border: 1px solid #d2dfea; border-radius: 6px; padding: 8px 18px; font-weight: 600; }}
 QPushButton[role="secondary"]:hover {{ background: #e2ebf3; }}
+QPushButton[role="segment"] {{ background: #eef3f8; color: #45607a; border: 1px solid #d2dfea; padding: 6px 14px; font-weight: 600; }}
+QPushButton[role="segment"]:checked {{ background: {COLORS['primary']}; color: #ffffff; }}
 QPushButton:disabled {{ background: #dfe6ed; color: #9aabba; }}
+
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{ background: #ffffff; border: 1px solid #cbd9e6; border-radius: 5px; padding: 6px 8px; selection-background-color: {COLORS['primary']}; }}
+QLineEdit:read-only {{ background: #f4f7fa; color: #5c758c; }}
+QComboBox:disabled, QSpinBox:disabled {{ background: #edf1f5; color: #8b9caf; }}
 
 QSlider::groove:horizontal {{ height: 6px; background: #dce6f0; border-radius: 3px; }}
 QSlider::sub-page:horizontal {{ background: {COLORS['primary']}; border-radius: 3px; }}
@@ -114,29 +130,142 @@ QSlider::handle:horizontal {{ width: 16px; margin: -5px 0; background: #ffffff; 
 
 QTableWidget {{ background: #ffffff; border: 1px solid #d5e2ed; gridline-color: #e4ecf3; color: #2c4359; alternate-background-color: #f7fafd; }}
 QTableWidget::item {{ padding: 5px; }}
-QHeaderView::section {{ background: #edf3f9; color: #33516d; font-weight: 700; border: none; border-bottom: 1px solid #d5e2ed; padding: 8px; }}
+QHeaderView::section {{ background: #edf3f9; color: #33516d; font-weight: 700; border: none; border-bottom: 1px solid #d5e2ed; padding: 7px; }}
 QTableCornerButton::section {{ background: #edf3f9; border: none; }}
+QScrollArea {{ border: none; background: {COLORS['bg']}; }}
 QStatusBar {{ background: #e6edf5; color: #5e7891; border-top: 1px solid #d4e1ed; }}
 """
 
 
 PROTOCOL_ROWS = (
-    ("sampled_at_utc", "A çŠ¶æ€æ–­é¢é‡‡æ ·æ—¶é—´", "UTC"),
-    ("wind_speed_mps", "CSV é£Žé€Ÿè¾“å…¥", "m/s"),
-    ("wind_available_kw", "é£Žèµ„æºèƒ½åŠ›ï¼Œä¸å« B/C æŽ§åˆ¶", "kW"),
-    ("wind_operating_limit_kw", "è€ƒè™‘ C è®¸å¯ä¸Žæ¡¨è·åŽçš„ç¨³æ€ä¸Šé™", "kW"),
-    ("load_power_kw", "CSV è´Ÿè·è¾“å…¥", "kW"),
-    ("wind_actual_kw", "A æ¨¡åž‹è®¡ç®—çš„é£Žç”µå®žé™…å‡ºåŠ›", "kW"),
-    ("diesel_actual_kw", "A æ¨¡åž‹è®¡ç®—çš„æŸ´å‘å®žé™…å‡ºåŠ›", "kW"),
-    ("wind_target_kw", "B è°ƒåº¦ç›®æ ‡ï¼Œä¸æ˜¯å®žé™…å‡ºåŠ›", "kW"),
-    ("pitch_actual_deg", "C é£ŽæœºåŠ¨ä½œ", "deg"),
-    ("wind_running", "é£Žæœºè¿è¡Œé¥ä¿¡", "bool"),
-    ("fault", "æ•…éšœé¥ä¿¡", "bool"),
+    ("sampled_at_utc", "A çŠ¶æ€æ–­é¢ UTC æŽˆæ—¶", "UTC"),
+    ("wind_speed_mps", "A CSV é£Žé€Ÿè¾“å…¥", "m/s"),
+    ("load_power_kw", "A CSV è´Ÿè·è¾“å…¥", "kW"),
+    ("wind_available_kw", "C è®¡ç®—ã€A æ ¡éªŒå¹¶è½¬å‘", "kW"),
+    ("wind_operating_limit_kw", "C è®¡ç®—ã€A æ ¡éªŒå¹¶è½¬å‘", "kW"),
+    ("wind_target_kw", "B è°ƒåº¦ç›®æ ‡", "kW"),
+    ("wind_actual_kw", "A ç‰©ç†æ¨¡åž‹å®žé™…å‡ºåŠ›", "kW"),
+    ("diesel_target_kw", "B è°ƒåº¦ç›®æ ‡", "kW"),
+    ("diesel_actual_kw", "A ç‰©ç†æ¨¡åž‹å®žé™…å‡ºåŠ›", "kW"),
+    ("pitch_actual_deg", "C åŠ¨ä½œç» A ä»¿çœŸåŽçš„æ¡¨è·", "deg"),
+    ("wind_running", "A ä»¿çœŸåŽçš„é£Žæœºè¿è¡ŒçŠ¶æ€", "bool"),
+    ("diesel_running", "A ä»¿çœŸåŽçš„æŸ´å‘è¿è¡ŒçŠ¶æ€", "bool"),
+    ("fault", "A çŠ¶æ€æ–­é¢æ•…éšœæ ‡å¿—", "bool"),
+    ("power_imbalance_kw", "A: load - wind actual - diesel actual", "kW"),
 )
 
 
+HISTORY_FIELDS = (
+    ("wind_speed_mps", "é£Žé€Ÿ", "m/s", COLORS["wind"]),
+    ("load_power_kw", "è´Ÿè·", "kW", COLORS["load"]),
+    ("wind_available_kw", "é£Žç”µå¯ç”¨", "kW", COLORS["avail"]),
+    ("wind_target_kw", "é£Žç”µç›®æ ‡", "kW", COLORS["target"]),
+    ("wind_actual_kw", "é£Žç”µå®žé™…", "kW", COLORS["actual"]),
+    ("diesel_target_kw", "æŸ´å‘ç›®æ ‡", "kW", COLORS["warn"]),
+    ("diesel_actual_kw", "æŸ´å‘å®žé™…", "kW", COLORS["diesel"]),
+    ("power_imbalance_kw", "åŠŸçŽ‡ä¸å¹³è¡¡", "kW", COLORS["imbalance"]),
+)
+
+
+PARAMETER_NAMES = {
+    "a_step_s": "A ä»¿çœŸæ­¥é•¿",
+    "a_poll_s": "A æ‰§è¡Œå‘¨æœŸ",
+    "wind_ramp_up_kw_per_s": "é£Žæœºå‡åŠŸçŽ‡çˆ¬å¡",
+    "wind_ramp_down_kw_per_s": "é£Žæœºé™åŠŸçŽ‡çˆ¬å¡",
+    "diesel_min_power_kw": "æŸ´å‘æœ€å°åŠŸçŽ‡",
+    "diesel_max_power_kw": "æŸ´å‘æœ€å¤§åŠŸçŽ‡",
+    "diesel_ramp_up_kw_per_s": "æŸ´å‘å‡åŠŸçŽ‡çˆ¬å¡",
+    "diesel_ramp_down_kw_per_s": "æŸ´å‘é™åŠŸçŽ‡çˆ¬å¡",
+    "reserve_kw": "æŸ´å‘å¤‡ç”¨å®¹é‡",
+    "b_poll_s": "B çŠ¶æ€é‡‡é›†å‘¨æœŸ",
+    "b_dispatch_s": "B è°ƒåº¦å‘¨æœŸ",
+    "wind_rated_power_kw": "é£Žæœºé¢å®šåŠŸçŽ‡",
+    "cut_in_speed_mps": "åˆ‡å…¥é£Žé€Ÿ",
+    "rated_speed_mps": "é¢å®šé£Žé€Ÿ",
+    "cut_out_speed_mps": "åˆ‡å‡ºé£Žé€Ÿ",
+    "pitch_full_output_deg": "æ»¡åŠŸçŽ‡æ¡¨è·è§’",
+    "pitch_feather_deg": "å®Œå…¨é¡ºæ¡¨è§’",
+    "c_control_s": "C æŽ§åˆ¶å‘¨æœŸ",
+    "c_timeout_s": "C é€šä¿¡è¶…æ—¶",
+    "simulation.step_s": "ä»¿çœŸæ­¥é•¿",
+    "simulation.poll_interval_s": "æ‰§è¡Œå‘¨æœŸ",
+    "WT01.rated_power_kw": "é£Žæœºé¢å®šåŠŸçŽ‡",
+    "WT01.cut_in_speed_mps": "åˆ‡å…¥é£Žé€Ÿ",
+    "WT01.rated_speed_mps": "é¢å®šé£Žé€Ÿ",
+    "WT01.cut_out_speed_mps": "åˆ‡å‡ºé£Žé€Ÿ",
+    "WT01.pitch_full_output_deg": "æ»¡åŠŸçŽ‡æ¡¨è·è§’",
+    "WT01.pitch_feather_deg": "å®Œå…¨é¡ºæ¡¨è§’",
+    "WT01.ramp_up_kw_per_s": "é£Žæœºå‡åŠŸçŽ‡çˆ¬å¡",
+    "WT01.ramp_down_kw_per_s": "é£Žæœºé™åŠŸçŽ‡çˆ¬å¡",
+    "DG01.min_power_kw": "æŸ´å‘æœ€å°åŠŸçŽ‡",
+    "DG01.max_power_kw": "æŸ´å‘æœ€å¤§åŠŸçŽ‡",
+    "DG01.ramp_up_kw_per_s": "æŸ´å‘å‡åŠŸçŽ‡çˆ¬å¡",
+    "DG01.ramp_down_kw_per_s": "æŸ´å‘é™åŠŸçŽ‡çˆ¬å¡",
+    "B.wind_target_kw": "é£Žç”µè°ƒåº¦ç›®æ ‡",
+    "B.diesel_target_kw": "æŸ´å‘è°ƒåº¦ç›®æ ‡",
+    "B.wind_enable": "B é£Žæœºå¯ç”¨è¯·æ±‚",
+    "B.diesel_enable": "B æŸ´å‘å¯ç”¨è¯·æ±‚",
+    "C.wind_available_kw": "C é£Žç”µå¯ç”¨åŠŸçŽ‡",
+    "C.wind_operating_limit_kw": "C é£Žæœºè¿è¡Œä¸Šé™",
+    "C.pitch_target_deg": "C ç›®æ ‡æ¡¨è·è§’",
+    "C.wind_enable": "C é£Žæœºè¿è¡Œè®¸å¯",
+}
+
+
+def _row_mapping(value: object) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if is_dataclass(value):
+        return asdict(value)
+    keys = getattr(value, "keys", None)
+    if callable(keys):
+        return {str(key): value[key] for key in keys()}
+    result: dict[str, Any] = {}
+    for name in (
+        "key", "name", "parameter", "parameter_key", "device_id", "value", "unit",
+        "owner", "source", "updated_at_utc", "editable", "old_value", "new_value",
+        "changed_at_utc", "created_at_utc", "level", "event", "message", "step",
+        "session_id", "sim_time_s", "sampled_at_utc", "wind_speed_mps",
+        "load_power_kw", "wind_available_kw", "wind_operating_limit_kw",
+        "wind_target_kw", "wind_actual_kw", "diesel_target_kw", "diesel_actual_kw",
+        "pitch_actual_deg", "wind_running", "diesel_running", "fault",
+        "power_imbalance_kw",
+    ):
+        if hasattr(value, name):
+            result[name] = getattr(value, name)
+    return result
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _rfc3339(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _local_ipv4_addresses() -> list[str]:
+    values = {"127.0.0.1"}
+    try:
+        for result in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            address = result[4][0]
+            if address:
+                values.add(address)
+    except OSError:
+        pass
+    return sorted(values, key=lambda item: (item.startswith("127."), item))
+
+
 class SimulatorWindow(QMainWindow):
-    def __init__(self, *, db_path: Path, config_path: Path, scenario_path: Path) -> None:
+    def __init__(
+        self,
+        *,
+        db_path: Path,
+        config_path: Path,
+        scenario_path: Path,
+        bind_address: str | None = None,
+        port: int | None = None,
+    ) -> None:
         super().__init__()
         self.db_path = db_path.resolve()
         self.config_path = config_path.resolve()
@@ -145,19 +274,28 @@ class SimulatorWindow(QMainWindow):
         self.scenario_path = scenario_path.resolve()
         self._scenario_from_database = False
         self.scenario = self._initial_scenario(self.scenario_path)
+        self._scenario_origin_utc = _utc_now()
         self._runner = QProcess(self)
         self._tcp_server = QProcess(self)
+        self._last_live_refresh = 0.0
+        self._last_parameter_refresh = 0.0
+        self._ui_events: list[dict[str, object]] = []
+        self._parameter_editors: dict[str, QDoubleSpinBox] = {}
+        self._parameter_originals: dict[str, float] = {}
+        self._parameter_rows: list[dict[str, object]] = []
+        self._database_health = "å¾…æ£€æµ‹" if self.db_path.is_file() else "æœªåˆå§‹åŒ–"
+        self._bind_address = bind_address or self.config.server_bind
+        self._port = self.config.server_port if port is None else int(port)
+        if not 1 <= self._port <= 65535:
+            raise ValueError("port must be from 1 to 65535")
 
-        self.setWindowTitle("å—æžå­¤ç«‹å¾®ç”µç½‘ç”µç½‘æ¨¡æ‹Ÿå™¨ã€€ç›‘æŽ§ä¸Žåœºæ™¯ç³»ç»Ÿ")
-        self.resize(1500, 900)
-        self.setMinimumSize(1200, 760)
+        self.setWindowTitle("å—æžå­¤ç«‹å¾®ç”µç½‘æ¨¡æ‹Ÿå™¨ã€€ç›‘æŽ§ä¸ŽæŽ§åˆ¶ç³»ç»Ÿ")
+        self.resize(1580, 940)
+        self.setMinimumSize(1220, 760)
         self._build_ui()
         self.setStyleSheet(_QSS)
         self._connect_signals()
-        self._set_scenario(
-            self.scenario,
-            None if self._scenario_from_database else self.scenario_path,
-        )
+        self._set_scenario(self.scenario, None if self._scenario_from_database else self.scenario_path)
         self._start_timers()
         self.refresh_state()
 
@@ -167,7 +305,7 @@ class SimulatorWindow(QMainWindow):
                 scenario = self.repository.get_scenario()
                 self._scenario_from_database = True
                 return scenario
-            except (OSError, RuntimeError, ValueError):
+            except (OSError, RuntimeError, ValueError, sqlite3.Error):
                 pass
         return load_scenario_csv(requested_path)
 
@@ -184,9 +322,10 @@ class SimulatorWindow(QMainWindow):
         body.setSpacing(0)
         body.addWidget(self._build_nav())
         self.pageStack = QStackedWidget()
-        self.pageStack.addWidget(self._build_scenario_page())
         self.pageStack.addWidget(self._build_monitor_page())
-        self.pageStack.addWidget(self._build_protocol_page())
+        self.pageStack.addWidget(self._build_parameters_page())
+        self.pageStack.addWidget(self._build_history_page())
+        self.pageStack.addWidget(self._build_alarm_page())
         body.addWidget(self.pageStack, 1)
         root.addLayout(body, 1)
 
@@ -194,711 +333,17 @@ class SimulatorWindow(QMainWindow):
         self.navGroup.setExclusive(True)
         for index, button in enumerate(self.navButtons):
             self.navGroup.addButton(button, index)
-            button.clicked.connect(
-                lambda _checked, page=index: self.pageStack.setCurrentIndex(page)
-            )
+            button.clicked.connect(lambda _checked, page=index: self._switch_page(page))
         self.navButtons[0].setChecked(True)
-        self.statusBar().showMessage("ç³»ç»Ÿå°±ç»ªï½œç¤ºä¾‹ç‰©ç†å‚æ•°å°šæœªç¡®è®¤ï¼Œå½“å‰ç»“æžœä»…ä¸ºè½¯ä»¶ mock")
+        self.statusBar().showMessage(
+            f"ç³»ç»Ÿå°±ç»ªï½œå‚æ•°çŠ¶æ€ï¼š{self.config.parameter_status}ï½œæŽˆæ—¶æºï¼šæ“ä½œç³»ç»Ÿ UTC"
+        )
 
     def _build_header(self) -> QFrame:
         bar = self._frame("headerBar")
-        bar.setFixedHeight(72)
+        bar.setFixedHeight(74)
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(20, 0, 20, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
-        badge = self._frame("logoBadge")
-        badge.setFixedSize(38, 38)
-        badge_layout = QVBoxLayout(badge)
-        badge_layout.setContentsMargins(0, 0, 0, 0)
-        glyph = QLabel("A")
-        glyph.setObjectName("logoGlyph")
-        glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge_layout.addWidget(glyph)
-        layout.addWidget(badge)
-
-        title_block = QVBoxLayout()
-        title_block.setSpacing(0)
-        self.appTitle = QLabel("å—æžå­¤ç«‹å¾®ç”µç½‘ç”µç½‘æ¨¡æ‹Ÿå™¨")
-        self.appTitle.setObjectName("appTitle")
-        self.appSubtitle = QLabel("PC-A Â· åœºæ™¯ã€ä»¿çœŸä¸Žé€šä¿¡ç›‘æŽ§ç³»ç»Ÿ")
-        self.appSubtitle.setObjectName("appSubtitle")
-        title_block.addWidget(self.appTitle)
-        title_block.addWidget(self.appSubtitle)
-        layout.addLayout(title_block)
-        layout.addStretch(1)
-
-        self.clockLabel = QLabel()
-        self.clockLabel.setObjectName("clockLabel")
-        layout.addWidget(self.clockLabel)
-        layout.addSpacing(6)
-        self.dbDot, self.dbPill = self._status_pill(layout, "grid.db æœªè¿žæŽ¥", COLORS["warn"])
-        self.simDot, self.simPill = self._status_pill(layout, "ä»¿çœŸæœªå¯åŠ¨", COLORS["warn"])
-        self.tcpDot, self.tcpPill = self._status_pill(layout, "TCP æœåŠ¡åœæ­¢", COLORS["bad"])
-        return bar
-
-    def _build_nav(self) -> QFrame:
-        panel = self._frame("navPanel")
-        panel.setFixedWidth(200)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 16, 0, 16)
-        layout.setSpacing(2)
-        caption = QLabel("åŠŸèƒ½å¯¼èˆª")
-        caption.setProperty("role", "navCaption")
-        layout.addWidget(caption)
-        self.btnScenario = self._nav_button("åœºæ™¯æ›²çº¿")
-        self.btnMonitor = self._nav_button("è¿è¡Œç›‘æŽ§")
-        self.btnProtocol = self._nav_button("TCP åè®®çŠ¶æ€")
-        self.navButtons = [self.btnScenario, self.btnMonitor, self.btnProtocol]
-        for button in self.navButtons:
-            layout.addWidget(button)
-        layout.addStretch(1)
-        site = QLabel("PC-A ç”µç½‘æ¨¡æ‹Ÿå™¨\nå­¤ç«‹å¾®ç”µç½‘ / å·¥ä¸šç›‘æŽ§")
-        site.setProperty("role", "siteLabel")
-        layout.addWidget(site)
-        return panel
-
-    def _build_scenario_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(14)
-        layout.addWidget(self._section_title("é£Žé€Ÿä¸Žè´Ÿè·åœºæ™¯æ›²çº¿"))
-
-        file_card = self._frame()
-        file_card.setProperty("role", "card")
-        file_layout = QHBoxLayout(file_card)
-        file_layout.setContentsMargins(16, 12, 16, 12)
-        file_layout.setSpacing(8)
-        self.open_button = self._button("åŠ è½½ CSV", "primary")
-        self.save_button = self._button("å¦å­˜ CSV", "secondary")
-        self.initialize_button = self._button("åˆå§‹åŒ– grid.db", "success")
-        file_layout.addWidget(self.open_button)
-        file_layout.addWidget(self.save_button)
-        file_layout.addWidget(self.initialize_button)
-        self.source_label = QLabel()
-        self.source_label.setProperty("role", "source")
-        self.source_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        file_layout.addWidget(self.source_label, 1)
-        layout.addWidget(file_card)
-
-        times = [point.sim_time_s for point in self.scenario.points]
-        wind_values = [point.wind_speed_mps for point in self.scenario.points]
-        load_values = [point.load_power_kw for point in self.scenario.points]
-        self.wind_editor = CurveEditor(
-            key="wind_speed_mps",
-            name="é£Žé€Ÿåœºæ™¯è¾“å…¥",
-            unit="m/s",
-            color=COLORS["wind"],
-            times_s=times,
-            values=wind_values,
-            maximum=max(self.config.wind.cut_out_speed_mps, max(wind_values) * 1.05, 1.0),
-        )
-        self.load_editor = CurveEditor(
-            key="load_power_kw",
-            name="è´Ÿè·åœºæ™¯è¾“å…¥",
-            unit="kW",
-            color=COLORS["warn"],
-            times_s=times,
-            values=load_values,
-            maximum=max(max(load_values) * 1.1, 1.0),
-        )
-        layout.addWidget(self._chart_card(self.wind_editor), 1)
-        layout.addWidget(self._chart_card(self.load_editor), 1)
-
-        preview_card = self._frame()
-        preview_card.setProperty("role", "card")
-        preview_layout = QVBoxLayout(preview_card)
-        preview_layout.setContentsMargins(16, 10, 16, 10)
-        self.time_slider = QSlider(Qt.Orientation.Horizontal)
-        preview_layout.addWidget(self.time_slider)
-        self.preview = QLabel()
-        self.preview.setProperty("role", "cardTitle")
-        preview_layout.addWidget(self.preview)
-        layout.addWidget(preview_card)
-        return page
-
-    def _build_monitor_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(14)
-        layout.addWidget(self._section_title("ç”µç½‘æ¨¡æ‹Ÿå™¨è¿è¡Œç›‘æŽ§"))
-
-        control_card = self._frame()
-        control_card.setProperty("role", "card")
-        controls = QHBoxLayout(control_card)
-        controls.setContentsMargins(16, 12, 16, 12)
-        controls.addWidget(QLabel("ä»¿çœŸæŽ§åˆ¶"))
-        self.start_button = self._button("â–¶  å¯åŠ¨ä»¿çœŸ", "success")
-        self.pause_button = self._button("â…¡  æš‚åœ", "secondary")
-        self.resume_button = self._button("â–¶  ç»§ç»­", "primary")
-        self.stop_button = self._button("â–   åœæ­¢", "danger")
-        for button in (
-            self.start_button,
-            self.pause_button,
-            self.resume_button,
-            self.stop_button,
-        ):
-            controls.addWidget(button)
-        controls.addStretch(1)
-        self.runtime_detail = QLabel("æ•°æ®åº“æœªåˆå§‹åŒ–")
-        self.runtime_detail.setProperty("role", "source")
-        self.runtime_detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        controls.addWidget(self.runtime_detail)
-        layout.addWidget(control_card)
-
-        kpi_row = QHBoxLayout()
-        kpi_row.setSpacing(14)
-        kpi_defs = (
-            ("é£Žé€Ÿ", "m/s", "æ¥æºï¼šCSV åœºæ™¯è¾“å…¥", COLORS["wind"]),
-            ("è´Ÿè·", "kW", "æ¥æºï¼šCSV åœºæ™¯è¾“å…¥", COLORS["warn"]),
-            ("é£Žç”µå®žé™…åŠŸçŽ‡", "kW", "æ¥æºï¼šA ç‰©ç†æ¨¡åž‹", COLORS["actual"]),
-            ("æŸ´å‘å®žé™…åŠŸçŽ‡", "kW", "æ¥æºï¼šA ç‰©ç†æ¨¡åž‹", COLORS["good"]),
-        )
-        self.kpi_labels: dict[str, QLabel] = {}
-        for key, definition in zip(
-            ("wind_speed_mps", "load_power_kw", "wind_actual_kw", "diesel_actual_kw"),
-            kpi_defs,
-        ):
-            card, value = self._kpi_card(*definition)
-            self.kpi_labels[key] = value
-            kpi_row.addWidget(card, 1)
-        layout.addLayout(kpi_row)
-
-        status_row = QHBoxLayout()
-        status_row.setSpacing(14)
-        self.monitor_status: dict[str, tuple[QLabel, QLabel]] = {}
-        for key, title, detail in (
-            ("simulation", "ä»¿çœŸçŠ¶æ€", "A è®¡ç®—è¿›ç¨‹"),
-            ("wind", "é£ŽæœºçŠ¶æ€", "å®žé™…è¿è¡Œé¥ä¿¡"),
-            ("B", "B EMS é€šä¿¡", "A TCP å®¢æˆ·ç«¯çŠ¶æ€"),
-            ("C", "C STM32 é€šä¿¡", "A TCP å®¢æˆ·ç«¯çŠ¶æ€"),
-        ):
-            card, status, detail_label = self._status_card(title, "â—  æœªçŸ¥", "warn", detail)
-            self.monitor_status[key] = (status, detail_label)
-            status_row.addWidget(card, 1)
-        layout.addLayout(status_row)
-
-        capability_card = self._frame()
-        capability_card.setProperty("role", "card")
-        capability_layout = QGridLayout(capability_card)
-        capability_layout.setContentsMargins(20, 16, 20, 16)
-        self.capability_labels: dict[str, QLabel] = {}
-        for index, (key, title, color) in enumerate(
-            (
-                ("wind_available_kw", "é£Žèµ„æºå¯ç”¨åŠŸçŽ‡", COLORS["avail"]),
-                ("wind_operating_limit_kw", "é£Žæœºè¿è¡Œä¸Šé™", COLORS["primary"]),
-                ("wind_target_kw", "B é£Žç”µç›®æ ‡", COLORS["target"]),
-                ("power_imbalance_kw", "åŠŸçŽ‡ä¸å¹³è¡¡", COLORS["bad"]),
-            )
-        ):
-            title_label = QLabel(title)
-            title_label.setProperty("role", "cardTitle")
-            value_label = QLabel("-")
-            value_label.setStyleSheet(f"color:{color}; font-size:22px; font-weight:700;")
-            capability_layout.addWidget(title_label, 0, index)
-            capability_layout.addWidget(value_label, 1, index)
-            self.capability_labels[key] = value_label
-        layout.addWidget(capability_card)
-        layout.addStretch(1)
-        return page
-
-    def _build_protocol_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(14)
-        layout.addWidget(self._section_title("A â†’ B/C TCP çŠ¶æ€æŠ¥æ–‡"))
-
-        server_card = self._frame()
-        server_card.setProperty("role", "card")
-        server_layout = QHBoxLayout(server_card)
-        server_layout.setContentsMargins(16, 12, 16, 12)
-        self.tcp_button = self._button("å¯åŠ¨ TCP æœåŠ¡", "primary")
-        server_layout.addWidget(self.tcp_button)
-        server_layout.addWidget(
-            QLabel(f"ç›‘å¬é…ç½®ï¼š{self.config.server_bind}:{self.config.server_port}")
-        )
-        server_layout.addStretch(1)
-        self.envelope_label = QLabel("session_id=-  step=-  sim_time_s=-")
-        self.envelope_label.setProperty("role", "source")
-        self.envelope_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        server_layout.addWidget(self.envelope_label)
-        layout.addWidget(server_card)
-
-        self.protocol_table = QTableWidget(len(PROTOCOL_ROWS), 4)
-        self.protocol_table.setHorizontalHeaderLabels(("å­—æ®µ", "å½“å‰å€¼", "å•ä½", "è¯­ä¹‰"))
-        self.protocol_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.protocol_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.protocol_table.setAlternatingRowColors(True)
-        self.protocol_table.verticalHeader().setVisible(False)
-        header = self.protocol_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.protocol_value_items: dict[str, QTableWidgetItem] = {}
-        for row, (key, meaning, unit) in enumerate(PROTOCOL_ROWS):
-            key_item = QTableWidgetItem(key)
-            value_item = QTableWidgetItem("-")
-            unit_item = QTableWidgetItem(unit)
-            meaning_item = QTableWidgetItem(meaning)
-            for item in (key_item, value_item, unit_item, meaning_item):
-                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter)
-            self.protocol_table.setItem(row, 0, key_item)
-            self.protocol_table.setItem(row, 1, value_item)
-            self.protocol_table.setItem(row, 2, unit_item)
-            self.protocol_table.setItem(row, 3, meaning_item)
-            self.protocol_value_items[key] = value_item
-        layout.addWidget(self.protocol_table, 1)
-
-        note = self._frame()
-        note.setProperty("role", "card")
-        note_layout = QVBoxLayout(note)
-        note_layout.setContentsMargins(16, 12, 16, 12)
-        title = QLabel("â“˜ æŽ§åˆ¶æƒè¾¹ç•Œ")
-        title.setProperty("role", "cardTitle")
-        description = QLabel(
-            "B åªå‘é€ target/enableï¼›C åªå‘é€ wind_enable/pitch_target_degï¼›"
-            "A æ ¹æ®åœºæ™¯ã€ç›®æ ‡ã€åŠ¨ä½œå’Œè®¾å¤‡çº¦æŸè®¡ç®— actualã€‚ACK æŽ¥æ”¶æˆåŠŸä¸ä»£è¡¨å‡ºåŠ›å·²ç»åˆ°è¾¾ç›®æ ‡ã€‚"
-        )
-        description.setProperty("role", "source")
-        note_layout.addWidget(title)
-        note_layout.addWidget(description)
-        layout.addWidget(note)
-        return page
-
-    @staticmethod
-    def _frame(object_name: str | None = None) -> QFrame:
-        frame = QFrame()
-        if object_name:
-            frame.setObjectName(object_name)
-        frame.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        return frame
-
-    @staticmethod
-    def _section_title(text: str) -> QLabel:
-        label = QLabel("â– " + text)
-        label.setProperty("role", "sectionTitle")
-        return label
-
-    @staticmethod
-    def _button(text: str, role: str) -> QPushButton:
-        button = QPushButton(text)
-        button.setProperty("role", role)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        return button
-
-    @staticmethod
-    def _nav_button(text: str) -> QPushButton:
-        button = QPushButton(text)
-        button.setProperty("role", "nav")
-        button.setCheckable(True)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setMinimumHeight(44)
-        return button
-
-    def _status_pill(
-        self, parent_layout: QHBoxLayout, text: str, color: str
-    ) -> tuple[QFrame, QLabel]:
-        pill = self._frame()
-        pill.setProperty("role", "pill")
-        layout = QHBoxLayout(pill)
-        layout.setContentsMargins(10, 5, 12, 5)
-        layout.setSpacing(7)
-        dot = QFrame()
-        dot.setFixedSize(10, 10)
-        dot.setStyleSheet(f"background:{color}; border-radius:5px;")
-        label = QLabel(text)
-        label.setProperty("role", "pillText")
-        layout.addWidget(dot)
-        layout.addWidget(label)
-        parent_layout.addWidget(pill)
-        return dot, label
-
-    def _chart_card(self, chart: CurveEditor) -> QFrame:
-        card = self._frame()
-        card.setProperty("role", "card")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.addWidget(chart)
-        return card
-
-    def _kpi_card(
-        self, title: str, unit: str, source: str, accent: str
-    ) -> tuple[QFrame, QLabel]:
-        card = self._frame()
-        card.setProperty("role", "card")
-        card.setMinimumHeight(116)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(4)
-        header = QHBoxLayout()
-        dot = QFrame()
-        dot.setFixedSize(8, 8)
-        dot.setStyleSheet(f"background:{accent}; border-radius:4px;")
-        title_label = QLabel(title)
-        title_label.setProperty("role", "cardTitle")
-        header.addWidget(dot)
-        header.addWidget(title_label)
-        header.addStretch(1)
-        layout.addLayout(header)
-        value_row = QHBoxLayout()
-        value = QLabel("-")
-        value.setProperty("role", "bigValue")
-        unit_label = QLabel(unit)
-        unit_label.setProperty("role", "unit")
-        value_row.addWidget(value)
-        value_row.addWidget(unit_label)
-        value_row.addStretch(1)
-        layout.addLayout(value_row)
-        source_label = QLabel(source)
-        source_label.setProperty("role", "source")
-        layout.addWidget(source_label)
-        return card, value
-
-    def _status_card(
-        self, title: str, status_text: str, state: str, detail: str
-    ) -> tuple[QFrame, QLabel, QLabel]:
-        card = self._frame()
-        card.setProperty("role", "card")
-        card.setMinimumHeight(100)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(4)
-        title_label = QLabel(title)
-        title_label.setProperty("role", "cardTitle")
-        status = QLabel(status_text)
-        status.setProperty("state", state)
-        detail_label = QLabel(detail)
-        detail_label.setProperty("role", "source")
-        layout.addWidget(title_label)
-        layout.addWidget(status)
-        layout.addWidget(detail_label)
-        return card, status, detail_label
-
-    def _connect_signals(self) -> None:
-        self.open_button.clicked.connect(self.open_csv)
-        self.save_button.clicked.connect(self.save_csv)
-        self.initialize_button.clicked.connect(self.initialize_database)
-        self.time_slider.valueChanged.connect(self.update_preview)
-        self.wind_editor.curveChanged.connect(self.update_preview)
-        self.load_editor.curveChanged.connect(self.update_preview)
-        self.start_button.clicked.connect(lambda: self.control_simulation("start"))
-        self.pause_button.clicked.connect(lambda: self.control_simulation("pause"))
-        self.resume_button.clicked.connect(lambda: self.control_simulation("resume"))
-        self.stop_button.clicked.connect(lambda: self.control_simulation("stop"))
-        self.tcp_button.clicked.connect(self.toggle_tcp_server)
-        self._tcp_server.stateChanged.connect(self._tcp_state_changed)
-        self._tcp_server.readyReadStandardError.connect(self._show_tcp_error)
-        self._runner.readyReadStandardOutput.connect(self._discard_runner_output)
-        self._runner.readyReadStandardError.connect(self._show_runner_error)
-
-    def _start_timers(self) -> None:
-        self._refresh_timer = QTimer(self)
-        self._refresh_timer.setInterval(500)
-        self._refresh_timer.timeout.connect(self.refresh_state)
-        self._refresh_timer.start()
-        self._clock_timer = QTimer(self)
-        self._clock_timer.setInterval(1000)
-        self._clock_timer.timeout.connect(self._update_clock)
-        self._clock_timer.start()
-        self._update_clock()
-
-    def _update_clock(self) -> None:
-        now = datetime.now()
-        weekday = ("æ˜ŸæœŸä¸€", "æ˜ŸæœŸäºŒ", "æ˜ŸæœŸä¸‰", "æ˜ŸæœŸå››", "æ˜ŸæœŸäº”", "æ˜ŸæœŸå…­", "æ˜ŸæœŸæ—¥")[
-            now.weekday()
-        ]
-        self.clockLabel.setText(now.strftime("%Y-%m-%d %H:%M:%S") + "  " + weekday)
-
-    def _set_scenario(self, scenario: ScenarioCurve, source_path: Path | None) -> None:
-        self.scenario = scenario
-        if source_path is not None:
-            self.scenario_path = source_path.resolve()
-        times = [point.sim_time_s for point in scenario.points]
-        wind = [point.wind_speed_mps for point in scenario.points]
-        load = [point.load_power_kw for point in scenario.points]
-        self.wind_editor.set_data(
-            times,
-            wind,
-            maximum=max(self.config.wind.cut_out_speed_mps, max(wind) * 1.05, 1.0),
-        )
-        self.load_editor.set_data(times, load, maximum=max(max(load) * 1.1, 1.0))
-        self.time_slider.setRange(0, len(times) - 1)
-        self.time_slider.setValue(0)
-        self.source_label.setText(
-            f"åœºæ™¯ï¼š{self.scenario_path}" if source_path else "åœºæ™¯ï¼šå½“å‰ grid.db å¿«ç…§"
-        )
-        self.update_preview()
-
-    def _scenario_from_editors(self) -> ScenarioCurve:
-        return ScenarioCurve(
-            tuple(
-                ScenarioPoint(seconds, wind, load)
-                for seconds, wind, load in zip(
-                    self.wind_editor.times_s(),
-                    self.wind_editor.values(),
-                    self.load_editor.values(),
-                )
-            )
-        )
-
-    def open_csv(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "åŠ è½½ A åœºæ™¯ CSV", str(self.scenario_path.parent), "CSV (*.csv)"
-        )
-        if not path:
-            return
-        try:
-            scenario = load_scenario_csv(path)
-            if (
-                scenario.points[0].sim_time_s > self.config.start_s
-                or scenario.points[-1].sim_time_s < self.config.end_s
-            ):
-                raise ValueError("CSV æ—¶é—´è½´ä¸èƒ½è¦†ç›–é…ç½®ä¸­çš„ä»¿çœŸèµ·æ­¢æ—¶åˆ»")
-            self._set_scenario(scenario, Path(path))
-            self.statusBar().showMessage("CSV å·²åŠ è½½ï½œéœ€åˆå§‹åŒ–æ–°æ•°æ®åº“åŽæ‰ç”¨äºŽä»¿çœŸ", 6000)
-        except (OSError, ValueError) as error:
-            QMessageBox.critical(self, "CSV åŠ è½½å¤±è´¥", str(error))
-
-    def save_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "å¦å­˜ A åœºæ™¯ CSV", str(self.scenario_path), "CSV (*.csv)"
-        )
-        if not path:
-            return
-        try:
-            save_scenario_csv(path, self._scenario_from_editors())
-            self.scenario_path = Path(path).resolve()
-            self.source_label.setText(f"åœºæ™¯ï¼š{self.scenario_path}")
-            self.statusBar().showMessage("CSV å·²ä¿å­˜", 4000)
-        except (OSError, ValueError) as error:
-            QMessageBox.critical(self, "CSV ä¿å­˜å¤±è´¥", str(error))
-
-    def initialize_database(self) -> None:
-        try:
-            self.repository.initialize(self.config, self._scenario_from_editors())
-            self.statusBar().showMessage("grid.db åˆå§‹åŒ–å®Œæˆ", 4000)
-            self.refresh_state()
-        except (FileExistsError, OSError, ValueError) as error:
-            QMessageBox.critical(
-                self,
-                "åˆå§‹åŒ–å¤±è´¥",
-                f"{error}\n\nä¸ºä¿æŠ¤å·²æœ‰è¿è¡Œæ•°æ®ï¼Œæœ¬ç•Œé¢ä¸ä¼šè¦†ç›–çŽ°æœ‰æ•°æ®åº“ã€‚",
-            )
-
-    def update_preview(self, *_unused) -> None:
-        index = min(self.time_slider.value(), len(self.wind_editor.times_s()) - 1)
-        seconds = self.wind_editor.times_s()[index]
-        self.wind_editor.set_playhead(seconds)
-        self.load_editor.set_playhead(seconds)
-        self.preview.setText(
-            f"ä»¿çœŸæ—¶åˆ» {format_sim_time(seconds)}    "
-            f"é£Žé€Ÿ {self.wind_editor.value_at(seconds):.3f} m/s    "
-            f"è´Ÿè· {self.load_editor.value_at(seconds):.3f} kW"
-        )
-
-    def _ensure_runner(self) -> None:
-        if self._runner.state() != QProcess.ProcessState.NotRunning:
-            return
-        self._runner.setWorkingDirectory(str(ROOT_DIR))
-        self._runner.start(
-            sys.executable,
-            ["-m", "A_simulator", "run", "--db", str(self.db_path)],
-        )
-
-    def control_simulation(self, action: str) -> None:
-        try:
-            status = self.repository.set_status(action)
-            if action in {"start", "resume"}:
-                self._ensure_runner()
-            self.statusBar().showMessage(f"ä»¿çœŸçŠ¶æ€ï¼š{status}", 3000)
-            self.refresh_state()
-        except (FileNotFoundError, RuntimeError, ValueError) as error:
-            QMessageBox.warning(self, "ä»¿çœŸæŽ§åˆ¶å¤±è´¥", str(error))
-
-    def toggle_tcp_server(self) -> None:
-        if self._tcp_server.state() != QProcess.ProcessState.NotRunning:
-            self._tcp_server.terminate()
-            return
-        if not self.db_path.is_file():
-            QMessageBox.warning(self, "TCP æœåŠ¡", "è¯·å…ˆåˆå§‹åŒ– grid.db")
-            return
-        self._tcp_server.setWorkingDirectory(str(ROOT_DIR))
-        self._tcp_server.start(
-            sys.executable,
-            [
-                "-m",
-                "A_simulator",
-                "serve",
-                "--db",
-                str(self.db_path),
-                "--config",
-                str(self.config_path),
-            ],
-        )
-
-    def _tcp_state_changed(self, state: QProcess.ProcessState) -> None:
-        running = state != QProcess.ProcessState.NotRunning
-        self.tcp_button.setText("åœæ­¢ TCP æœåŠ¡" if running else "å¯åŠ¨ TCP æœåŠ¡")
-        self._set_button_role(self.tcp_button, "danger" if running else "primary")
-        self._set_pill(
-            self.tcpDot,
-            self.tcpPill,
-            "TCP æœåŠ¡è¿è¡Œ" if running else "TCP æœåŠ¡åœæ­¢",
-            COLORS["good"] if running else COLORS["bad"],
-        )
-
-    @staticmethod
-    def _set_button_role(button: QPushButton, role: str) -> None:
-        button.setProperty("role", role)
-        button.style().unpolish(button)
-        button.style().polish(button)
-        button.update()
-
-    @staticmethod
-    def _set_pill(dot: QFrame, label: QLabel, text: str, color: str) -> None:
-        dot.setStyleSheet(f"background:{color}; border-radius:5px;")
-        label.setText(text)
-
-    @staticmethod
-    def _set_state_label(label: QLabel, state: str, text: str) -> None:
-        label.setText(text)
-        label.setProperty("state", state)
-        label.style().unpolish(label)
-        label.style().polish(label)
-        label.update()
-
-    def _discard_runner_output(self) -> None:
-        self._runner.readAllStandardOutput()
-
-    def _show_runner_error(self) -> None:
-        text = bytes(self._runner.readAllStandardError()).decode("utf-8", "replace").strip()
-        if text:
-            self.statusBar().showMessage(f"ä»¿çœŸè¿›ç¨‹ï¼š{text[-180:]}", 8000)
-
-    def _show_tcp_error(self) -> None:
-        text = bytes(self._tcp_server.readAllStandardError()).decode("utf-8", "replace").strip()
-        if text:
-            self.statusBar().showMessage(f"TCPï¼š{text[-180:]}", 8000)
-
-    def refresh_state(self) -> None:
-        if not self.db_path.is_file():
-            self.runtime_detail.setText("æ•°æ®åº“æœªåˆå§‹åŒ–")
-            self._set_pill(self.dbDot, self.dbPill, "grid.db æœªè¿žæŽ¥", COLORS["warn"])
-            self._set_control_buttons(None)
-            return
-        try:
-            runtime = self.repository.runtime()
-            state = self.repository.get_state()
-            connections = self.repository.connection_statuses()
-        except (OSError, RuntimeError, ValueError) as error:
-            self.runtime_detail.setText(f"æ•°æ®åº“è¯»å–å¤±è´¥ï¼š{error}")
-            self._set_pill(self.dbDot, self.dbPill, "grid.db å¼‚å¸¸", COLORS["bad"])
-            self._set_control_buttons(None)
-            return
-
-        status = str(runtime["status"])
-        self._set_pill(self.dbDot, self.dbPill, "grid.db æ­£å¸¸", COLORS["good"])
-        sim_color = COLORS["good"] if status == "running" else COLORS["warn"]
-        if status in {"stopped", "completed"}:
-            sim_color = COLORS["bad"] if status == "stopped" else COLORS["good"]
-        self._set_pill(self.simDot, self.simPill, f"ä»¿çœŸ {status}", sim_color)
-        self.runtime_detail.setText(
-            f"grid.dbï¼š{self.db_path}ã€€step={state.step}ã€€å‚æ•°ï¼š{runtime['parameter_status']}"
-        )
-        self.envelope_label.setText(
-            f"session_id={state.session_id}ã€€step={state.step}ã€€sim_time_s={state.sim_time_s:.3f}"
-        )
-
-        for key, label in self.kpi_labels.items():
-            label.setText(f"{getattr(state, key):.1f}")
-        for key, label in self.capability_labels.items():
-            label.setText(f"{getattr(state, key):.3f} kW")
-
-        state_names = {
-            "ready": "å°±ç»ª",
-            "running": "è¿è¡Œ",
-            "paused": "æš‚åœ",
-            "stopped": "åœæ­¢",
-            "completed": "å®Œæˆ",
-        }
-        sim_state = "good" if status == "running" else "warn"
-        if status == "stopped":
-            sim_state = "bad"
-        self._update_status_card(
-            "simulation", sim_state, f"â—  {state_names.get(status, status)}", f"step={state.step}ã€€t={format_sim_time(state.sim_time_s)}"
-        )
-        self._update_status_card(
-            "wind",
-            "good" if state.wind_running else "bad",
-            "â—  è¿è¡Œ" if state.wind_running else "â—  åœæ­¢",
-            f"æ¡¨è· {state.pitch_actual_deg:.1f} degã€€æ•…éšœ={'æ˜¯' if state.fault else 'å¦'}",
-        )
-        for peer in ("B", "C"):
-            item = connections.get(peer, {"connected": False, "detail": "not connected"})
-            connected = bool(item["connected"])
-            self._update_status_card(
-                peer,
-                "good" if connected else "bad",
-                "â—  åœ¨çº¿" if connected else "â—  ç¦»çº¿",
-                str(item["detail"]),
-            )
-
-        payload = state.protocol_payload()
-        for key, item in self.protocol_value_items.items():
-            value = payload[key]
-            if isinstance(value, bool):
-                text = "true" if value else "false"
-            elif isinstance(value, float):
-                text = f"{value:.3f}"
-            else:
-                text = str(value)
-            item.setText(text)
-
-        if not self.time_slider.isSliderDown():
-            times = self.wind_editor.times_s()
-            right = bisect_left(times, state.sim_time_s)
-            if right >= len(times):
-                index = len(times) - 1
-            elif right == 0:
-                index = 0
-            else:
-                index = min(
-                    (right - 1, right),
-                    key=lambda candidate: abs(times[candidate] - state.sim_time_s),
-                )
-            self.time_slider.setValue(index)
-        self._set_control_buttons(status)
-
-    def _update_status_card(self, key: str, state: str, text: str, detail: str) -> None:
-        label, detail_label = self.monitor_status[key]
-        self._set_state_label(label, state, text)
-        detail_label.setText(detail)
-
-    def _set_control_buttons(self, status: str | None) -> None:
-        self.start_button.setEnabled(status == "ready")
-        self.pause_button.setEnabled(status == "running")
-        self.resume_button.setEnabled(status == "paused")
-        self.stop_button.setEnabled(status in {"running", "paused"})
-
-    def closeEvent(self, event) -> None:
-        for process in (self._runner, self._tcp_server):
-            if process.state() != QProcess.ProcessState.NotRunning:
-                process.terminate()
-                if not process.waitForFinished(1000):
-                    process.kill()
-        super().closeEvent(event)
-
-
-def run_gui(*, db_path: Path, config_path: Path, scenario_path: Path) -> int:
-    app = QApplication.instance() or QApplication(sys.argv)
-    window = SimulatorWindow(
-        db_path=db_path,
-        config_path=config_path,
-        scenario_path=scenario_path,
-    )
-    window.show()
-    return app.exec()
+        badge = self._fr×¿}îÚ$z{-®éÜj×&rÂÖ–ær“ ¢–b—6–ç7Fæ6R‡&rævWB‚'&ÖWFW'2"’Â†Æ—7BÂGWÆR’“ ¢fÇVW3¢—FW&&ÆU¶ö&¦V7EÒÒ&u²'&ÖWFW'2%Ð¢VÇ6S ¢fÇVW2Ò¶F–7B‡fÇVRÂ¶W“Ö¶W’’–b—6–ç7Fæ6R‡fÇVRÂÖ–ær’VÇ6R²&¶W’#¢¶W’Â'fÇVR#¢fÇVWÒf÷"¶W’ÂfÇVR–â&ræ—FV×2‚•Ð¢VÇ6S ¢fÇVW2Ò&r–b—6–ç7Fæ6R‡&rÂ—FW&&ÆR’æBæ÷B—6–ç7Fæ6R‡&rÂ‡7G"Â'—FW2’’VÇ6RµÐ¢&÷w3¢Æ—7E¶F–7E·7G"Âö&¦V7EÕÒÒµÐ¢f÷"fÇVR–âfÇVW3 ¢&÷rÒ÷&÷uöÖ–ær‡fÇVR¢¶W’Ò&÷rævWB‚&¶W’"’÷"&÷rævWB‚'&ÖWFW%ö¶W’"’÷"&÷rævWB‚'&ÖWFW""’÷"&÷rævWB‚&æÖR"¢FWf–6RÒ&÷rævWB‚&FWf–6Uö–B"¢–bFWf–6RæB¶W’æBæ÷B7G"†¶W’’ç7F'G7v—F‚†b'¶FWf–6WÒâ"“ ¢¶W’Òb'¶FWf–6WÒç¶¶W—Ò ¢–bæ÷B¶W“ ¢6öçF–çVP¢÷væW"Ò7G"‡&÷rævWB‚&÷væW""Â$"’’çWW"‚¢&÷w2æVæB‡°¢&¶W’#¢7G"†¶W’’Â'fÇVR#¢&÷rævWB‚'fÇVR"Â&÷rævWB‚&æWu÷fÇVR"Â"Ò"’’À¢'Væ—B#¢7G"‡&÷rævWB‚'Væ—B"Â""’’Â&÷væW"#¢÷væW"À¢'6÷W&6R#¢7G"‡&÷rævWB‚'6÷W&6R"Â÷væW"’’À¢'WFFVEöE÷WF2#¢7G"‡&÷rævWB‚'WFFVEöE÷WF2"Â&÷rævWB‚&6†ævVEöE÷WF2"Â"Ò"’’’À¢&VF—F&ÆR#¢&ööÂ‡&÷rævWB‚&VF—F&ÆR"Â÷væW"ÓÒ$"’’æB÷væW"ÓÒ$"À¢Ò¢&WGW&â&÷w0 ¢FVb&Vg&W6…÷&ÖWFW'2‡6VÆbÂf÷&6S¢&ööÂÒfÇ6R’ÓâæöæS ¢æ÷rÒF–ÖRæÖöæ÷Föæ–2‚¢–bæ÷Bf÷&6RæBæ÷rÒ6VÆbåöÆ7E÷&ÖWFW%÷&Vg&W6‚ÂãS ¢&WGW&à¢–bæ÷Bf÷&6RæBç’†VF—F÷"æ†4fö7W2‚’f÷"VF—F÷"–â6VÆbå÷&ÖWFW%öVF—F÷'2çfÇVW2‚’“ ¢&WGW&à¢6VÆbåöÆ7E÷&ÖWFW%÷&Vg&W6‚Òæ÷p¢&÷w3¢Æ—7E¶F–7E·7G"Âö&¦V7EÕÐ¢ÖWF†öBÒvWFGG"‡6VÆbç&W÷6—F÷'’Â'&ÖWFW%÷6æ6†÷B"ÂæöæR¢G'“ ¢&÷w2Ò6VÆbåöæ÷&ÖÆ—¦U÷&ÖWFW%÷&÷w2†ÖWF†öB‚’’–b6ÆÆ&ÆR†ÖWF†öB’æB6VÆbæF%÷F‚æ—5öf–ÆR‚’VÇ6R6VÆbåöfÆÆ&6µ÷&ÖWFW%÷&÷w2‚¢–bæ÷B&÷w3 ¢&÷w2Ò6VÆbåöfÆÆ&6µ÷&ÖWFW%÷&÷w2‚¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢&÷w2Ò6VÆbåöfÆÆ&6µ÷&ÖWFW%÷&÷w2‚¢6VÆbç&ÖWFW%7–æ4Æ&VÂç6WEFW‡B†b.Xø.i[hê^Xú>™˜Þ{ª~ûÉ§¶W'&÷'Ò"¢VÇ6S ¢6VÆbç&ÖWFW%7–æ4Æ&VÂç6WEFW‡B†b.[{.YÎjÚR¶ÆVâ‡&÷w2—ÒšžûÙÇµ÷&f3333’…÷WF5öæ÷r‚’—Ò"¢6VÆbå÷&ÖWFW%÷&÷w2Ò&÷w0¢6VÆbå÷÷VÆFU÷&ÖWFW%÷F&ÆR‡&÷w2¢6VÆbå÷&Vg&W6…÷&ÖWFW%ö†—7F÷'’‚ ¢FVb÷÷VÆFU÷&ÖWFW%÷F&ÆR‡6VÆbÂ&÷w3¢Æ—7E¶F–7E·7G"Âö&¦V7EÕÒ’ÓâæöæS ¢VæF–æu÷fÇVW2Ò°¢¶W“¢VF—F÷"çfÇVR‚¢f÷"¶W’ÂVF—F÷"–â6VÆbå÷&ÖWFW%öVF—F÷'2æ—FV×2‚¢–b¶W’–â6VÆbå÷&ÖWFW%ö÷&–v–æÇ0¢æBæ÷BÖF‚æ—66Æ÷6R€¢VF—F÷"çfÇVR‚’Â6VÆbå÷&ÖWFW%ö÷&–v–æÇ5¶¶W•ÒÂ&VÅ÷FöÃÓãÂ'5÷FöÃÓRÓ¢¢Ð¢6VÆbç&ÖWFW%F&ÆRç6WE&÷t6÷VçB†ÆVâ‡&÷w2’¢6VÆbå÷&ÖWFW%öVF—F÷'2æ6ÆV"‚¢6VÆbå÷&ÖWFW%ö÷&–v–æÇ2æ6ÆV"‚¢&VFöæÇ•ö''W6‚Ò6öÆ÷"‚"6c&cVc‚"¢f÷"–æFW‚Â&÷r–âVçVÖW&FR‡&÷w2“ ¢¶W’Ò7G"‡&÷u²&¶W’%Ò¢÷væW"Ò7G"‡&÷u²&÷væW"%Ò¢VF—F&ÆRÒ&ööÂ‡&÷u²&VF—F&ÆR%Ò¢fÇVW2Ò€¢$ÔUDU%ôäÔU2ævWB†¶W’Â¶W’ç7Æ—B‚"â"•²ÓÒ’Â¶W’Â÷væW"À¢""Â7G"‡&÷u²'Væ—B%Ò’Â7G"‡&÷u²'6÷W&6R%Ò’Â7G"‡&÷u²'WFFVEöE÷WF2%Ò’À¢¢f÷"6öÇVÖâÂFW‡B–âVçVÖW&FR‡fÇVW2“ ¢–b6öÇVÖâÓÒ3 ¢6öçF–çVP¢—FVÒÒF&ÆUv–FvWD—FVÒ‡FW‡B¢—FVÒç6WDfÆw2†—FVÒæfÆw2‚’båBä—FVÔfÆrä—FVÔ—4VF—F&ÆR¢–bæ÷BVF—F&ÆS ¢—FVÒç6WD&6¶w&÷VæB‡&VFöæÇ•ö''W6‚¢6VÆbç&ÖWFW%F&ÆRç6WD—FVÒ†–æFW‚Â6öÇVÖâÂ—FVÒ¢fÇVRÒ&÷rævWB‚'fÇVR"¢–bVF—F&ÆRæB—6–ç7Fæ6R‡fÇVRÂ†–çBÂfÆöB’’æBæ÷B—6–ç7Fæ6R‡fÇVRÂ&ööÂ’æBÖF‚æ—6f–æ—FR†fÆöB‡fÇVR’“ ¢VF—F÷"ÒF÷V&ÆU7–ä&÷‚‚¢VF—F÷"ç6WE&ævRƒãÂóóã¢VF—F÷"ç6WDFV6–ÖÇ2ƒ2¢VF—F÷"ç6WEfÇVR‡VæF–æu÷fÇVW2ævWB†¶W’ÂfÆöB‡fÇVR’’¢VF—F÷"ç6WE6–ævÆU7FWƒã¢VF—F÷"ç6WDÖ–æ–×VÔ†V–v‡Bƒ3b¢VF—F÷"ç6WE7G–ÆU6†VWB€¢%F÷V&ÆU7–ä&÷‚²FF–æs¢gƒ²Ò ¢%F÷V&ÆU7–ä&÷‚Æ–æTVF—B²FF–æs¢²&÷&FW#¢æöæS²Ò ¢¢6VÆbç&ÖWFW%F&ÆRç6WD6VÆÅv–FvWB†–æFW‚Â2ÂVF—F÷"¢6VÆbå÷&ÖWFW%öVF—F÷'5¶¶W•ÒÒVF—F÷ ¢6VÆbå÷&ÖWFW%ö÷&–v–æÇ5¶¶W•ÒÒfÆöB‡fÇVR¢VÇ6S ¢FW‡BÒ'G'VR"–bfÇVR—2G'VRVÇ6R&fÇ6R"–bfÇVR—2fÇ6RVÇ6R7G"‡fÇVR¢—FVÒÒF&ÆUv–FvWD—FVÒ‡FW‡B¢—FVÒç6WDfÆw2†—FVÒæfÆw2‚’båBä—FVÔfÆrä—FVÔ—4VF—F&ÆR¢—FVÒç6WD&6¶w&÷VæB‡&VFöæÇ•ö''W6‚¢6VÆbç&ÖWFW%F&ÆRç6WD—FVÒ†–æFW‚Â2Â—FVÒ ¢FVb6fUö÷&ÖWFW'2‡6VÆb’ÓâæöæS ¢6†ævW2Ò°¢¶W“¢VF—F÷"çfÇVR‚¢f÷"¶W’ÂVF—F÷"–â6VÆbå÷&ÖWFW%öVF—F÷'2æ—FV×2‚¢–bæ÷BÖF‚æ—66Æ÷6R†VF—F÷"çfÇVR‚’Â6VÆbå÷&ÖWFW%ö÷&–v–æÇ5¶¶W•ÒÂ&VÅ÷FöÃÓãÂ'5÷FöÃÓRÓ’¢Ð¢–bæ÷B6†ævW3 ¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR‚$Xø.i[k*iÈžXùŽXÉb"Â3¢&WGW&à¢ÖWF†öBÒvWFGG"‡6VÆbç&W÷6—F÷'’Â'WFFUö÷&ÖWFW'2"ÂæöæR¢–bæ÷B6ÆÆ&ÆR†ÖWF†öB“ ¢ÖW76vT&÷‚çv&æ–ær‡6VÆbÂ.Xø.i[KùÞZÙ‚"Â.[Ù>X˜Ò&W÷6—F÷'’[	®iÊ®hùKé²WFFUö÷&ÖWFW'2‚žûÈÎiÊ®XižXZ^K»¾KÙ^Xø.i[8""¢&WGW&à¢G'“ ¢ÖWF†öB†6†ævW2¢6VÆbåöVæE÷V•öWfVçB‚$”ädò"Â.Xø.i["Â$Xø.i[[{.i»NikûÉ¢"²"Â"æ¦ö–â†6†ævW2’¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR†b.[{.KùÞZÙ‚¶ÆVâ†6†ævW2—Òš’Xø.i["ÂC¢6VÆbç&Vg&W6…÷&ÖWFW'2†f÷&6SÕG'VR¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢ÖW76vT&÷‚çv&æ–ær‡6VÆbÂ.Xø.i[KùÞZÙŽZK‹JR"Â7G"†W'&÷"’ ¢FVb÷&Vg&W6…÷&ÖWFW%ö†—7F÷'’‡6VÆb’ÓâæöæS ¢ÖWF†öBÒvWFGG"‡6VÆbç&W÷6—F÷'’Â'&ÖWFW%ö†—7F÷'’"ÂæöæR¢G'“ ¢–bæ÷B6ÆÆ&ÆR†ÖWF†öB’÷"æ÷B6VÆbæF%÷F‚æ—5öf–ÆR‚“ ¢&÷w3¢Æ—7E¶F–7E·7G"Âç•ÕÒÒµÐ¢VÇ6S ¢G'“ ¢&rÒÖWF†öB†Æ–Ö—CÓS¢W†6WBG—TW'&÷# ¢&rÒÖWF†öBƒS¢&÷w2Òµ÷&÷uöÖ–ær‡&÷r’f÷"&÷r–â&uÐ¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"“ ¢&÷w2ÒµÐ¢6VÆbç&ÖWFW$†—7F÷'•F&ÆRç6WE&÷t6÷VçB†ÆVâ‡&÷w2’¢f÷"&÷uö–æFW‚Â&÷r–âVçVÖW&FR‡&÷w2“ ¢¶W’Ò7G"‡&÷rævWB‚&¶W’"Â&÷rævWB‚'&ÖWFW%ö¶W’"Â&÷rævWB‚&æÖR"Â"Ò"’’’¢fÇVW2Ò€¢&÷rævWB‚&6†ævVEöE÷WF2"Â&÷rævWB‚'WFFVEöE÷WF2"Â&÷rævWB‚&7&VFVEöE÷WF2"Â"Ò"’’’À¢$ÔUDU%ôäÔU2ævWB†¶W’Â¶W’’Â&÷rævWB‚&÷væW""Â"Ò"’Â&÷rævWB‚&öÆE÷fÇVR"Â"Ò"’À¢&÷rævWB‚&æWu÷fÇVR"Â&÷rævWB‚'fÇVR"Â"Ò"’’Â&÷rævWB‚'6÷W&6R"Â"Ò"’À¢&÷rævWB‚&ÖW76vR"Â&÷rævWB‚'&V6öâ"Â""’’À¢¢f÷"6öÇVÖâÂfÇVR–âVçVÖW&FR‡fÇVW2“ ¢6VÆbç&ÖWFW$†—7F÷'•F&ÆRç6WD—FVÒ‡&÷uö–æFW‚Â6öÇVÖâÂF&ÆUv–FvWD—FVÒ‡7G"‡fÇVR’’ ¢FVb&Vg&W6…ö†—7F÷'’‡6VÆbÂ¥÷VçW6VB’ÓâæöæS ¢–bæ÷B6VÆbæF%÷F‚æ—5öf–ÆR‚“ ¢6VÆbæ†—7F÷'•G&VæBæ6ÆV"‚¢6VÆbæ†—7F÷'•F&ÆRç6WE&÷t6÷VçBƒ¢6VÆbæÆöuF&ÆRç6WE&÷t6÷VçBƒ¢&WGW&à¢G'“ ¢6W76–öç2Ò6VÆbåö†—7F÷'•÷6W76–öç2‚¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR†b.XènXû.x«nhŠû¾XùnZK‹J^ûÉ§¶W'&÷'Ò"ÂS¢&WGW&à¢6VÆV7FVE÷6W76–öâÒ6VÆbæ†—7F÷'•6W76–öä6öÖ&òæ7W'&VçDFF‚¢–b6VÆV7FVE÷6W76–öâæ÷B–â6W76–öç3 ¢6VÆV7FVE÷6W76–öâÒ6W76–öç5²ÓÒ–b6W76–öç2VÇ6RæöæP¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òæ&Æö6µ6–væÇ2…G'VR¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òæ6ÆV"‚¢f÷"–æFW‚Â6W76–öåö–B–âVçVÖW&FR‡6W76–öç2“ ¢&Vf—‚Ò.[Ù>X˜Ò+r"–b–æFW‚ÓÒÆVâ‡6W76–öç2’ÒVÇ6R.XènXû"+r ¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òæFD—FVÒ‡&Vf—‚²6W76–öåö–E³£%ÒÂ6W76–öåö–B¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òç6WD—FVÔFF†–æFW‚Â6W76–öåö–BÂBä—FVÔFF&öÆRåFööÅF—&öÆR¢–b6VÆV7FVE÷6W76–öâ—2æ÷BæöæS ¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òç6WD7W'&VçD–æFW‚‡6W76–öç2æ–æFW‚‡6VÆV7FVE÷6W76–öâ’¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òæ&Æö6µ6–væÇ2„fÇ6R¢G'“ ¢6VÆV7FVE÷&÷w2Ò6VÆbå÷7FFUö†—7F÷'’€¢6VÆbæ†—7F÷'”Æ–Ö—E7–âçfÇVR‚’Â6W76–öåö–C×6VÆV7FVE÷6W76–öà¢’–b6VÆV7FVE÷6W76–öâ—2æ÷BæöæRVÇ6RµÐ¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR†b.XènXû.x«nhŠû¾XùnZK‹J^ûÉ§¶W'&÷'Ò"ÂS¢6VÆV7FVE÷&÷w2ÒµÐ¢¶W’ÂVæ—BÂ6öÆ÷"Ò6VÆbæ†—7F÷'”ÖWG&–46öÖ&òæ7W'&VçDFF‚¢Æ&VÂÒ6VÆbæ†—7F÷'”ÖWG&–46öÖ&òæ7W'&VçEFW‡B‚¢6W76–öåöÆ&VÂÒ7G"‡6VÆV7FVE÷6W76–öâ•³£…Ò–b6VÆV7FVE÷6W76–öâVÇ6R.izKÉ®ŠùÒ ¢6VÆbæ†—7F÷'•G&VæBçF—FÆRÒb.XènXû"+r¶Æ&VÇÒ+r·6W76–öåöÆ&VÇÒ ¢6VÆbæ†—7F÷'•G&VæBçVæ—BÒVæ—@¢6VÆbæ†—7F÷'•G&VæBæ6öÆ÷'2Ò¶Æ&VÃ¢6öÆ÷'Ð¢6VÆbæ†—7F÷'•G&VæBç6WE÷6W&–W2€¢·7G"‡&÷rævWB‚'6×ÆVEöE÷WF2"Â""’’f÷"&÷r–â6VÆV7FVE÷&÷w5ÒÀ¢¶Æ&VÃ¢¶fÆöB‡&÷rævWB†¶W’Âã’’f÷"&÷r–â6VÆV7FVE÷&÷w5×ÒÀ¢’–b6VÆV7FVE÷&÷w2VÇ6R6VÆbæ†—7F÷'•G&VæBæ6ÆV"‚¢æWvW7BÒÆ—7B‡&WfW'6VB‡6VÆV7FVE÷&÷w2’¢6VÆbæ†—7F÷'•F&ÆRç6WE&÷t6÷VçB†ÆVâ†æWvW7B’¢¶W—2Ò€¢'6×ÆVEöE÷WF2"Â'7FW"Â'v–æE÷7VVEö×2"Â&ÆöE÷÷vW%ö·r"Â'v–æEöf–Æ&ÆUö·r"À¢'v–æE÷F&vWEö·r"Â'v–æEö7GVÅö·r"Â&F–W6VÅ÷F&vWEö·r"Â&F–W6VÅö7GVÅö·r"À¢'÷vW%ö–Ö&Ææ6Uö·r"Â'6W76–öåö–B"À¢¢f÷"&÷uö–æFW‚Â&÷r–âVçVÖW&FR†æWvW7B“ ¢f÷"6öÇVÖâÂf–VÆB–âVçVÖW&FR†¶W—2“ ¢fÇVRÒ&÷rævWB†f–VÆBÂ"Ò"¢FW‡BÒb'¶fÆöB‡fÇVR“¢ã6gÒ"–b—6–ç7Fæ6R‡fÇVRÂfÆöB’VÇ6R7G"‡fÇVR¢6VÆbæ†—7F÷'•F&ÆRç6WD—FVÒ‡&÷uö–æFW‚Â6öÇVÖâÂF&ÆUv–FvWD—FVÒ‡FW‡B’¢6VÆbå÷&Vg&W6…öÆöw2‚ ¢FVb÷&W÷6—F÷'•öÆöw2‡6VÆbÂÆ–Ö—C¢–çB’ÓâÆ—7E¶F–7E·7G"Âç•ÕÓ ¢ÖWF†öBÒvWFGG"‡6VÆbç&W÷6—F÷'’Â&Æöw2"ÂæöæR¢–bæ÷B6ÆÆ&ÆR†ÖWF†öB“ ¢&WGW&âµÐ¢G'“ ¢&rÒÖWF†öB†Æ–Ö—CÖÆ–Ö—B¢W†6WBG—TW'&÷# ¢&rÒÖWF†öB†Æ–Ö—B¢&WGW&âµ÷&÷uöÖ–ær‡&÷r’f÷"&÷r–â&uÐ ¢FVb÷&Vg&W6…öÆöw2‡6VÆb’ÓâæöæS ¢G'“ ¢&÷w2Ò6VÆbå÷&W÷6—F÷'•öÆöw2‡6VÆbæ†—7F÷'”Æ–Ö—E7–âçfÇVR‚’¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR†b.iz^[ù~Šû¾XùnZK‹J^ûÉ§¶W'&÷'Ò"ÂS¢&÷w2ÒµÐ¢ÆWfVÅöf–ÇFW"Ò6VÆbæÆötÆWfVÄ6öÖ&òæ7W'&VçEFW‡B‚¢–bÆWfVÅöf–ÇFW"Ò.XZŽ˜:‚# ¢&÷w2Ò·&÷rf÷"&÷r–â&÷w2–b7G"‡&÷rævWB‚&ÆWfVÂ"Â""’’çWW"‚’ÓÒÆWfVÅöf–ÇFW%Ð¢6VÆbæÆöuF&ÆRç6WE&÷t6÷VçB†ÆVâ‡&÷w2’¢f÷"&÷uö–æFW‚Â&÷r–âVçVÖW&FR‡&÷w2“ ¢fÇVW2Ò€¢&÷rævWB‚&7&VFVEöE÷WF2"Â"Ò"’Â&÷rævWB‚&ÆWfVÂ"Â"Ò"’Â&÷rævWB‚&WfVçB"Â"Ò"’À¢&÷rævWB‚'7FW"Â"Ò"’Â&÷rævWB‚&ÖW76vR"Â""’À¢¢f÷"6öÇVÖâÂfÇVR–âVçVÖW&FR‡fÇVW2“ ¢6VÆbæÆöuF&ÆRç6WD—FVÒ‡&÷uö–æFW‚Â6öÇVÖâÂF&ÆUv–FvWD—FVÒ‡7G"‡fÇVR’’ ¢FVb÷&Vg&W6…öÆW'G2‡6VÆb’ÓâæöæS ¢FF&6UöWfVçG3¢Æ—7E¶F–7E·7G"Âç•ÕÒÒµÐ¢–b6VÆbæF%÷F‚æ—5öf–ÆR‚“ ¢G'“ ¢FF&6UöWfVçG2Ò°¢²¢§&÷rÂ'6÷W&6R#¢7G"‡&÷rævWB‚&WfVçB"Â&w&–BæF""’—Ð¢f÷"&÷r–â6VÆbå÷&W÷6—F÷'•öÆöw2ƒ¢–b7G"‡&÷rævWB‚&ÆWfVÂ"Â""’’çWW"‚’–â²%t$ä”är"Â$U%$õ""Â$5$•D”4Â'Ð¢Ð¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"“ ¢70¢&÷w2Ò²¦FF&6UöWfVçG2Â§6VÆbå÷V•öWfVçG5Ð¢&÷w2ç6÷'B†¶W“ÖÆÖ&F&÷s¢7G"‡&÷rævWB‚&7&VFVEöE÷WF2"Â""’’Â&WfW'6SÕG'VR¢&÷w2Ò&÷w5³£Ð¢6VÆbæÆW'EF&ÆRç6WE&÷t6÷VçB†ÆVâ‡&÷w2’¢f÷"&÷uö–æFW‚Â&÷r–âVçVÖW&FR‡&÷w2“ ¢fÇVW2Ò€¢&÷rævWB‚&7&VFVEöE÷WF2"Â"Ò"’Â&÷rævWB‚&ÆWfVÂ"Â"Ò"’À¢&÷rævWB‚'6÷W&6R"Â&÷rævWB‚&WfVçB"Â"Ò"’’Â&÷rævWB‚&ÖW76vR"Â""’À¢¢f÷"6öÇVÖâÂfÇVR–âVçVÖW&FR‡fÇVW2“ ¢6VÆbæÆW'EF&ÆRç6WD—FVÒ‡&÷uö–æFW‚Â6öÇVÖâÂF&ÆUv–FvWD—FVÒ‡7G"‡fÇVR’’ ¢FVb÷WFFUö6öÖ×Væ–6F–öå÷7VÖÖ'’‡6VÆb’ÓâæöæS ¢&–æBÒ6VÆbæ&–æD6öÖ&òæ7W'&VçEFW‡B‚’ç7G&—‚¢÷'BÒ6VÆbç÷'E7–âçfÇVR‚¢'Vææ–ærÒ6VÆbå÷F7÷6W'fW"ç7FFR‚’Ò&ö6W72å&ö6W757FFRäæ÷E'Vææ–æp¢6VÆbæ6öÖ×Væ–6F–öäÆ&VÇ5²&Æö6Â%Òç6WEFW‡B‡6VÆbæÆö6Ä—VF—BçFW‡B‚’¢6VÆbæ6öÖ×Væ–6F–öäÆ&VÇ5²&VæGö–çB%Òç6WEFW‡B†b'¶&–æGÓ§·÷'GÞ8²~‹ùŠÂr–b'Vææ–ærVÇ6R~XÎjÚ"wÒ"¢6VÆbæ6öÖ×Væ–6F–öäÆ&VÇ5²&FF&6R%Òç6WEFW‡B€¢b'·6VÆbæF%÷F‚ææÖWÞ8·6VÆbåöFF&6Uö†VÇF‡Ò ¢ ¢FVb÷WFFU÷7FGW5ö6&B‡6VÆbÂ¶W“¢7G"Â7FFS¢7G"ÂFW‡C¢7G"ÂFWF–Ã¢7G"’ÓâæöæS ¢Æ&VÂÂFWF–ÅöÆ&VÂÒ6VÆbæÖöæ—F÷%÷7FGW5¶¶W•Ð¢6VÆbå÷6WE÷7FFUöÆ&VÂ†Æ&VÂÂ7FFRÂFW‡B¢FWF–ÅöÆ&VÂç6WEFW‡B†FWF–Â ¢FVb÷6WEö6öçG&öÅö'WGFöç2‡6VÆbÂ7FGW3¢7G"ÂæöæR’ÓâæöæS ¢6VÆbç7F'Eö'WGFöâç6WDVæ&ÆVB‡7FGW2ÓÒ'&VG’"¢6VÆbçW6Uö'WGFöâç6WDVæ&ÆVB‡7FGW2ÓÒ''Vææ–ær"¢6VÆbç&W7VÖUö'WGFöâç6WDVæ&ÆVB‡7FGW2ÓÒ'W6VB"¢6VÆbç7F÷ö'WGFöâç6WDVæ&ÆVB‡7FGW2–â²''Vææ–ær"Â'W6VB'Ò¢6VÆbææWu÷6W76–öåö'WGFöâç6WDVæ&ÆVB‡7FGW2–â²'7F÷VB"Â&6ö×ÆWFVB'Ò ¢FVb6Æ÷6TWfVçB‡6VÆbÂWfVçB’ÓâæöæS ¢–b€¢6VÆbå÷'VææW"ç7FFR‚’Ò&ö6W72å&ö6W757FFRäæ÷E'Vææ–æp¢æB6VÆbæF%÷F‚æ—5öf–ÆR‚¢“ ¢G'“ ¢–b6VÆbç&W÷6—F÷'’ç'VçF–ÖR‚•²'7FGW2%ÒÓÒ''Vææ–ær# ¢6VÆbç&W÷6—F÷'’ç6WE÷7FGW2‚'W6R"¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"“ ¢70¢f÷"&ö6W72–â‡6VÆbå÷'VææW"Â6VÆbå÷F7÷6W'fW"“ ¢–b&ö6W72ç7FFR‚’Ò&ö6W72å&ö6W757FFRäæ÷E'Vææ–æs ¢&ö6W72çFW&Ö–æFR‚¢–bæ÷B&ö6W72çv—Df÷$f–æ—6†VBƒ“ ¢&ö6W72æ¶–ÆÂ‚¢&ö6W72çv—Df÷$f–æ—6†VBƒ¢7WW"‚’æ6Æ÷6TWfVçB†WfVçB  ¦FVb'VåöwV’€¢¢À¢F%÷Fƒ¢F‚À¢6öæf–u÷Fƒ¢F‚À¢66Væ&–õ÷Fƒ¢F‚À¢&–æEöFG&W73¢7G"ÂæöæRÒæöæRÀ¢÷'C¢–çBÂæöæRÒæöæRÀ¢’Óâ–çC ¢ÒÆ–6F–öâæ–ç7Fæ6R‚’÷"Æ–6F–öâ‡7—2æ&wb¢v–æF÷rÒ6–×VÆF÷%v–æF÷r€¢F%÷FƒÖF%÷F‚À¢6öæf–u÷FƒÖ6öæf–u÷F‚À¢66Væ&–õ÷Fƒ×66Væ&–õ÷F‚À¢&–æEöFG&W73Ö&–æEöFG&W72À¢÷'C×÷'BÀ¢¢v–æF÷rç6†÷r‚¢&WGW&âæW†V2‚

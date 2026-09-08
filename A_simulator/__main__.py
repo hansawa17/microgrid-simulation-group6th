@@ -58,6 +58,8 @@ def _parser() -> argparse.ArgumentParser:
     gui.add_argument("--db", type=Path, default=DEFAULT_DB)
     gui.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     gui.add_argument("--scenario", type=Path, default=DEFAULT_SCENARIO)
+    gui.add_argument("--bind", help="initial TCP bind address shown in the GUI")
+    gui.add_argument("--port", type=int, help="initial TCP listen port shown in the GUI")
     return parser
 
 
@@ -84,7 +86,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "gui":
         from .gui import run_gui
 
-        return run_gui(db_path=args.db, config_path=args.config, scenario_path=args.scenario)
+        return run_gui(
+            db_path=args.db,
+            config_path=args.config,
+            scenario_path=args.scenario,
+            bind_address=args.bind,
+            port=args.port,
+        )
     if args.command == "serve":
         config = load_config(args.config)
         serve(

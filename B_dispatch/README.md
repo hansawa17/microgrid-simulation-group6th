@@ -38,6 +38,13 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 
 **不要把真实 `data/runtime/ems.db` 提交到 GitHub。** 仓库只保存 schema 和初始化逻辑。
 
+## A 连接兼容与当前参数同步边界
+
+- `gui_b.py` 已直接使用 `EMSTcpClient` 连接 A，主机/域名和端口分开填写。
+- 新建 B 客户端以 UTC epoch 毫秒为发送序号基线，并在进程内保持严格递增，避免 A 会话未变化时重连后从 0 开始而被拒绝为旧序号。
+- A 已实现接收 B 所有权参数 `reserve_kw/b_poll_s/b_dispatch_s` 的 `parameter_update`；B GUI 的参数发送入口尚未接入，当前不能宣称 B 已完成参数发布。
+- 本机软件测试覆盖两个独立 B 客户端连续连接与 dispatch ACK；公网三机、系统时钟异常及 STM32 仍需联调。
+
 ## 本地运行
 
 Python 统一为 **3.11.x**，Qt 使用 **PyQt6**。
@@ -59,8 +66,6 @@ python scripts/init_ems_db.py
 ```bash
 python -m unittest discover -s tests -v
 ```
-
-> 当前会话通过 GitHub 文件级检查完成静态对齐；没有在你的本机执行测试，因此不在此宣称测试通过。
 
 `data/runtime/ems.db` 为本地运行数据，不提交 GitHub。
 

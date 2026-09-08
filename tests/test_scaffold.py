@@ -17,11 +17,18 @@ class ScaffoldTests(unittest.TestCase):
 
     def test_message_examples(self):
         messages = json.loads((ROOT / "common/messages.example.json").read_text(encoding="utf-8"))
-        directions = {"state": ("A", "B"), "dispatch": ("B", "A"),
-                      "wind_action": ("C", "A"), "ack": ("A", "C")}
+        directions = {
+            "state": {("A", "B")},
+            "dispatch": {("B", "A")},
+            "wind_action": {("C", "A")},
+            "parameter_update": {("B", "A"), ("C", "A")},
+            "ack": {("A", "C")},
+        }
         for message in messages:
             self.assertEqual(message["version"], 1)
-            self.assertEqual((message["source"], message["target"]), directions[message["type"]])
+            self.assertIn(
+                (message["source"], message["target"]), directions[message["type"]]
+            )
             self.assertIsInstance(message["seq"], int)
             self.assertGreaterEqual(message["sim_time_s"], 0)
             frame = (json.dumps(message, allow_nan=False) + "\n").encode("utf-8")

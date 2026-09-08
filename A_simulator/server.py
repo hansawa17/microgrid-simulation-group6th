@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import socketserver
+import threading
 
 from .repository import Repository
 
@@ -105,7 +106,7 @@ class MessageProcessor:
                 "sim_time_s": state.sim_time_s,
                 "payload": state.protocol_payload(),
             }
-        if message_type not in {"dispatch", "wind_action"}:
+        if message_type not in {"dispatch", "wind_action", "parameter_update"}:
             raise ProtocolError("unsupported_message_type")
         result = self.repository.apply_command(message)
         state = self.repository.get_state()
@@ -148,12 +149,22 @@ class MessageProcessor:
 class _RequestHandler(socketserver.StreamRequestHandler):
     server: "SimulatorTCPServer"
 
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(self.server.idle_timeout_s)
+
     def handle(self) -> None:
         peer: str | None = None
         try:
             while True:
                 try:
                     frame = self.rfile.readline(self.server.max_frame_bytes + 1)
+                except TimeoutError:
+                    if peer is not None:
+                        self.server.repository.log(
+                            "WARNING", "peer_timeout", f"{peer} idle TCP timeout"
+                        )
+                    break
                 except (ConnectionError, OSError):
                     break
                 if not frame:
@@ -169,8 +180,13 @@ class _RequestHandler(socketserver.StreamRequestHandler):
                 decoded: object = None
                 try:
                     decoded = decode_frame(frame, self.server.max_frame_bytes)
-                    peer = str(decoded["source"])
-                    self.server.repository.mark_connection(peer, True, "message received")
+                    message_peer = str(decoded["source"])
+                    if peer is None:
+                        peer = message_peer
+                        self.server.register_peer(peer)
+                    elif message_peer != peer:
+                        raise ProtocolError("source_changed_on_connection")
+                    self.server.touch_peer(peer)
                     response = self.server.processor.process(decoded)
                 except ProtocolError as exc:
                     self.server.repository.log("WARNING", "frame_rejected", str(exc))
@@ -184,18 +200,58 @@ class _RequestHandler(socketserver.StreamRequestHandler):
                     break
         finally:
             if peer is not None:
-                self.server.repository.mark_connection(peer, False, "connection closed")
+                self.server.unregister_peer(peer)
 
 
 class SimulatorTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], repository: Repository, max_frame_bytes: int):
+    def __init__(
+        self,
+        address: tuple[str, int],
+        repository: Repository,
+        max_frame_bytes: int,
+        idle_timeout_s: float = 10.0,
+    ):
+        if not math.isfinite(idle_timeout_s) or idle_timeout_s <= 0:
+            raise ValueError("idle_timeout_s must be a positive finite number")
         self.repository = repository
         self.processor = MessageProcessor(repository)
         self.max_frame_bytes = max_frame_bytes
+        self.idle_timeout_s = float(idle_timeout_s)
+        self._peer_lock = threading.Lock()
+        self._peer_counts = {"B": 0, "C": 0}
         super().__init__(address, _RequestHandler)
+        try:
+            self.repository.reset_connections("TCP server started; waiting for peer")
+        except Exception:
+            super().server_close()
+            raise
+
+    def server_close(self) -> None:
+        try:
+            self.repository.reset_connections("TCP server stopped")
+        finally:
+            super().server_close()
+
+    def register_peer(self, peer: str) -> None:
+        with self._peer_lock:
+            self._peer_counts[peer] += 1
+            count = self._peer_counts[peer]
+            self.repository.mark_connection(peer, True, f"{count} active connection(s)")
+
+    def touch_peer(self, peer: str) -> None:
+        with self._peer_lock:
+            count = self._peer_counts[peer]
+            self.repository.mark_connection(peer, count > 0, f"{count} active connection(s)")
+
+    def unregister_peer(self, peer: str) -> None:
+        with self._peer_lock:
+            self._peer_counts[peer] = max(0, self._peer_counts[peer] - 1)
+            count = self._peer_counts[peer]
+            detail = f"{count} active connection(s)" if count else "connection closed"
+            self.repository.mark_connection(peer, count > 0, detail)
 
 
 def serve(repository: Repository, bind: str, port: int, max_frame_bytes: int) -> None:

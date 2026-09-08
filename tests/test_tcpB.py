@@ -90,6 +90,28 @@ class TcpBTests(unittest.TestCase):
         self.assertEqual(message["type"], "state_request")
         self.assertTrue(message["payload"]["full"])
 
+    def test_default_sequence_does_not_go_backwards_across_new_clients(self):
+        first_socket = FakeSocket()
+        first = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: first_socket)
+        first.connect()
+        first_seq = json.loads(first_socket.sent[0])["seq"]
+
+        second_socket = FakeSocket()
+        second = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: second_socket)
+        second.connect()
+        second_seq = json.loads(second_socket.sent[0])["seq"]
+
+        self.assertGreater(second_seq, first_seq)
+
+    def test_initial_sequence_can_be_injected_for_deterministic_tests(self):
+        fake = FakeSocket()
+        client = EMSTcpClient(
+            "192.168.1.20", socket_factory=lambda *args: fake, initial_seq=41,
+        )
+        client.connect()
+        self.assertEqual(json.loads(fake.sent[0])["seq"], 41)
+        self.assertEqual(client._next_seq, 42)
+
     def test_poll_state_does_not_send_second_request_while_first_is_pending(self):
         fake = FakeSocket([encode_frame(state_message())])
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
@@ -184,7 +206,9 @@ class TcpBTests(unittest.TestCase):
 
     def test_dispatch_timeout_marks_delivery_unknown(self):
         fake = FakeSocket()
-        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake, timeout_s=0.1)
+        client = EMSTcpClient(
+            "192.168.1.20", socket_factory=lambda *args: fake, timeout_s=0.1, initial_seq=0,
+        )
         client.connect()
         client.receive(encode_frame(state_message()))
         decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(ready_state())
@@ -215,6 +239,11 @@ class TcpBTests(unittest.TestCase):
     def test_client_rejects_zero_bind_address(self):
         with self.assertRaises(ValueError):
             EMSTcpClient("0.0.0.0")
+
+    def test_client_rejects_invalid_initial_sequence(self):
+        for value in (-1, True, 1.5):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                EMSTcpClient("127.0.0.1", initial_seq=value)
 
 
 if __name__ == "__main__":

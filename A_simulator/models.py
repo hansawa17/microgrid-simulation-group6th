@@ -153,9 +153,12 @@ class SimulationState:
             "wind_actual_kw": self.wind_actual_kw,
             "diesel_actual_kw": self.diesel_actual_kw,
             "wind_target_kw": self.wind_target_kw,
+            "diesel_target_kw": self.diesel_target_kw,
             "pitch_actual_deg": self.pitch_actual_deg,
             "wind_running": self.wind_running,
+            "diesel_running": self.diesel_running,
             "fault": self.fault,
+            "power_imbalance_kw": self.power_imbalance_kw,
         }
 
 

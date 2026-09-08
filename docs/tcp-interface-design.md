@@ -1,6 +1,6 @@
 # A/B/C 通信方案草案
 
-状态：`draft-0.3`，尚未冻结。依据课程原文、`common/protocol.md`、A 当前 TCP 服务端和 B 当前 `tcpB.py` 实现编写。
+状态：`draft-0.4`，尚未冻结。依据课程原文、`common/protocol.md`、A 当前 TCP 服务端和 B 当前 `tcpB.py` 实现编写。
 
 ## 1. 正式拓扑
 
@@ -51,13 +51,15 @@ A 仍监听：
 
 公网服务商、域名、端口、访问令牌和账号信息只能放在各自本地配置中，不提交 Git。
 
+2026-09-08 联调示例可将公网 `frp-box.com:38243` 映射到 A 本机 `127.0.0.1:5005`。A UI 中的 bind/port 是本地 TCP 子进程监听设置，不会配置 FRP；B/STM32 客户端应把 host 与 port 分开填写为 `frp-box.com` 和 `38243`。该端点不是协议常量，变化后只更新各机本地配置。
+
 ## 3. 节点职责
 
 | 节点 | TCP 身份 | 接收 | 发送 | 禁止事项 |
 |---|---|---|---|---|
-| A | server，`source=A` | `state_request`、`dispatch`、`wind_action` | `state`、`ack` | 不把 target 冒充 actual |
-| B | client，`source=B` | A 的 `state/ack` | `state_request/dispatch` | 不发送桨距，不写 actual |
-| STM32 | client，`source=C` | A 的 `state/ack` | `state_request/wind_action` | 不控制柴油机，不修改负荷 |
+| A | server，`source=A` | `state_request`、`dispatch`、`wind_action`、`parameter_update` | `state`、`ack` | 不把 target 冒充 actual，不越权改写 B/C 参数 |
+| B | client，`source=B` | A 的 `state/ack` | `state_request/dispatch/parameter_update` | 不发送桨距，不写 actual，只同步 B 所有权参数 |
+| STM32 | client，`source=C` | A 的 `state/ack` | `state_request/wind_action/parameter_update` | 不控制柴油机，不修改负荷，只同步 C 所有权参数 |
 | C 上位机 | UART host，无 A-facing TCP 身份 | STM32 状态/结果 | 参数、模式、查询请求 | 不替代 STM32 保护与控制 |
 
 TCP 中的 `C` 始终指 STM32 风机控制逻辑节点。C 上位机与 STM32 的 UART 消息号是独立序列，不使用 TCP 的 `seq`。
@@ -89,7 +91,7 @@ TCP 中的 `C` 始终指 STM32 风机控制逻辑节点。C 上位机与 STM32 �
 | 字段 | 规则 |
 |---|---|
 | `version` | 当前固定为整数 `1` |
-| `type` | `state_request/state/dispatch/wind_action/ack` |
+| `type` | `state_request/state/dispatch/wind_action/parameter_update/ack` |
 | `source/target` | `A/B/C`；C 指 STM32 |
 | `session_id` | A 创建的仿真会话 ID；首次请求可为 `null` |
 | `seq` | 发送方递增非负整数；允许跳号，不允许同会话倒退 |
@@ -194,7 +196,38 @@ B 的 payload 只能包含这 4 个字段，不能发送 `pitch_target_deg` 或�
 
 STM32 负责计算 payload 中的两个能力字段和桨距/启停动作；不发送柴油机目标、负荷修改或 actual 字段。
 
-### 5.5 `ack`：A -> B/STM32
+### 5.5 `parameter_update`：B/STM32 -> A
+
+参数同步只更新 A 保存和展示的参数副本，不转移计算职责。payload 必须精确为一个非空 `parameters` 对象；每个值是有限非负数字：
+
+```json
+{
+  "version": 1,
+  "type": "parameter_update",
+  "source": "B",
+  "target": "A",
+  "session_id": "a-session-id",
+  "seq": 7,
+  "step": 5,
+  "sim_time_s": 5.0,
+  "payload": {
+    "parameters": {
+      "reserve_kw": 10.0,
+      "b_poll_s": 1.0,
+      "b_dispatch_s": 5.0
+    }
+  }
+}
+```
+
+- B 白名单：`reserve_kw`、`b_poll_s`、`b_dispatch_s`。
+- C 白名单：`wind_rated_power_kw`、`cut_in_speed_mps`、`rated_speed_mps`、`cut_out_speed_mps`、`pitch_full_output_deg`、`pitch_feather_deg`、`c_control_s`、`c_timeout_s`。
+- C 上位机先通过 UART 将 C 参数写入 STM32；联网时由逻辑节点 C/STM32 使用 `source=C` 同步给 A。C 上位机不直接获得 A-facing TCP 身份。
+- A 自有仿真/设备动态参数只经 A 本地界面修改，不通过 B/C 报文写入。
+- A 对整条参数关系执行原子校验；任一名称、数值、所有权或关系非法时都不部分落库。
+- C 风机物理参数更新会使 A 缓存的旧 C action 立即失效；C 必须根据新参数再发 `wind_action`，A 不代算。
+
+### 5.6 `ack`：A -> B/STM32
 
 ```json
 {
@@ -214,10 +247,11 @@ STM32 负责计算 payload 中的两个能力字段和桨距/启停动作；不�
 }
 ```
 
-- `ack_seq` 指向被确认的 `dispatch/wind_action.seq`。
+- `ack_seq` 指向被确认的 `dispatch/wind_action/parameter_update.seq`。
 - `accepted=true` 只表示 A 接收并通过校验，不表示设备已经达到目标。
 - 实际结果看后续 `state.*_actual_kw` 和 `pitch_actual_deg`。
 - 客户端用 `seq -> 本地命令记录` 的 pending 映射更新命令状态。
+- 参数 ACK 只表示 A 已更新副本；B 调度或 C/STM32 是否采用新参数，应查看对应模块状态与后续业务报文。
 
 ## 6. 正常通信时序
 
@@ -237,6 +271,11 @@ sequenceDiagram
     M-->>H: UART 状态与控制结果
     B->>A: dispatch
     A-->>B: ack(ack_seq)
+    B->>A: parameter_update(B 白名单)
+    A-->>B: ack(ack_seq)
+    H->>M: UART 写入 C 参数
+    M->>A: parameter_update(C 白名单)
+    A-->>M: ack(ack_seq)
     B->>A: state_request
     A-->>B: 后续 actual state
 ```
@@ -252,9 +291,9 @@ sequenceDiagram
 
 - A 的 `session_id` 变化表示新仿真会话。客户端丢弃旧状态和旧会话 pending 命令，重新发送 `full=true`。
 - 接收 `state` 时先识别 `session_id`；新会话重置接收序号基线后再检查 `seq`。
-- A 按 `session_id + source + seq` 对命令去重。
-- 完全相同的命令重发不得再次执行；A 返回如 `duplicate_accepted` 的 ACK。
-- 同会话中未出现过但小于已处理最大序号的命令拒绝为 `out_of_order`。
+- A 按 `session_id + source + seq` 对 dispatch、wind_action 和 parameter_update 去重。
+- 完全相同 type 与规范化 payload 的命令重发不得再次执行；A 返回 `duplicate_accepted` ACK。
+- 同一序号携带不同 type 或 payload 时拒绝为 `seq_conflict`；同会话中未出现过但小于已处理最大序号的命令拒绝为 `out_of_order`。
 - A 当前在 B/C 响应之间使用全局服务端序号，单个客户端看到跳号是正常现象。
 
 ## 8. 断线、超时与重连
@@ -293,9 +332,10 @@ DISCONNECTED -> CONNECTING -> SYNCING -> ONLINE
 
 ## 11. 当前实现状态
 
-- A 已支持 JSON Lines、4096 bytes、半帧/粘包、`state_request/state`、`dispatch/wind_action/ack`、命令去重和连接重建。
+- A 已支持 JSON Lines、4096 bytes、半帧/粘包、`state_request/state`、`dispatch/wind_action/parameter_update/ack`、命令去重和连接重建。
 - B 已实现单未决状态请求、持续消费到新 `state`、发送 dispatch 后等待匹配 ACK，避免响应积压。
 - B 尚需把 ACK 最终结果完整回写命令记录，并用单调时钟维护状态新鲜度。
+- B/C 尚需实现各自 `parameter_update` 的发送入口并完成跨机联调；A UI 已按 owner/source 展示本地参数和收到的只读副本。
 - STM32 Wi-Fi TCP 客户端和 C UART 协议尚未完成，硬件结果必须明确标注实机或 mock。
 - A/B 软件已适配 `wind_available_kw` 和 `wind_operating_limit_kw`；STM32 Wi-Fi 客户端仍待实现，在真实三方联调前不得宣称字段闭环完成。
 - A 对命令允许滞后的最大 step/秒数尚未冻结。
@@ -305,8 +345,8 @@ DISCONNECTED -> CONNECTING -> SYNCING -> ONLINE
 1. 本机先用 `127.0.0.1:5000` 验证 A/B JSON Lines 和 ACK。
 2. 局域网使用 A 的 WLAN IPv4 验证 B 到 A，再验证 STM32 到 A。
 3. 配置 raw TCP 隧道，将公网端点映射到 A `127.0.0.1:5000`。
-4. 在外部网络执行 `Test-NetConnection <public_host> -Port <public_port>`，随后验证 B 全量同步与 dispatch ACK。
-5. STM32 连接相同公网端点，验证全量状态、`wind_action`、ACK、拆包/粘包和重连。
+4. 在外部网络执行 `Test-NetConnection <public_host> -Port <public_port>`，随后验证 B 全量同步、dispatch ACK 和 B 参数白名单同步。
+5. STM32 连接相同公网端点，验证全量状态、`wind_action`、C 参数同步、ACK、拆包/粘包和重连。
 6. 接入 C 上位机 UART，验证参数/模式下发、状态回传、数据库与界面。
 7. 分别中断 B TCP、STM32 TCP、A 隧道和 C UART，检查离线标记、日志、退避重连及全量同步。
 8. 按 `docs/acceptance.md` 记录实机结果、异常及复现步骤。
