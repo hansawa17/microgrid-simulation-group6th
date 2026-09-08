@@ -4,9 +4,9 @@ CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NUL
 
 CREATE TABLE IF NOT EXISTS dispatch_parameters (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    wind_min_kw REAL NOT NULL CHECK (wind_min_kw >= 0),
-    wind_max_kw REAL NOT NULL CHECK (wind_max_kw >= wind_min_kw),
-    diesel_max_kw REAL NOT NULL CHECK (diesel_max_kw >= 0),
+    wind_min_kw REAL NOT NULL DEFAULT 0.0 CHECK (wind_min_kw >= 0),
+    wind_max_kw REAL NOT NULL DEFAULT 100.0 CHECK (wind_max_kw >= wind_min_kw),
+    diesel_max_kw REAL NOT NULL DEFAULT 120.0 CHECK (diesel_max_kw >= 0),
     reserve_kw REAL NOT NULL DEFAULT 10.0 CHECK (reserve_kw >= 0),
     updated_at TEXT NOT NULL
 );
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS ems_runtime_config (
     poll_period_s REAL NOT NULL DEFAULT 1.0 CHECK (poll_period_s > 0),
     dispatch_period_s REAL NOT NULL DEFAULT 5.0 CHECK (dispatch_period_s > 0),
     closed_loop INTEGER NOT NULL DEFAULT 1 CHECK (closed_loop IN (0,1)),
-    command_timeout_s REAL CHECK (command_timeout_s IS NULL OR command_timeout_s > 0),
+    command_timeout_s REAL NOT NULL DEFAULT 3.0 CHECK (command_timeout_s > 0),
     updated_at TEXT NOT NULL
 );
 
