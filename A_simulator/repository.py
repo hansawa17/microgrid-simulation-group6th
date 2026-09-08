@@ -444,4 +444,1054 @@ class Repository:
                 """INSERT INTO simulation_control
                    (singleton_id, session_id, status, start_s, end_s, step_s,
                     poll_interval_s, sim_time_s, step, parameter_status)
-                   VALUES (1, ?, 'ready', ?, ?, ?, ?, ×OzæÚ$z{-®éÜj×6öçG&öÅ÷2%Ó ¢&—6RfÇVTW'&÷"‚&5÷F–ÖV÷WE÷5ö×W7Eöæ÷Eö&Uö&VÆ÷uö5ö6öçG&öÅ÷2" ¢FVb÷WFFU÷&ÖWFW'2€¢6VÆbÀ¢6öææV7F–öã¢7Æ—FS2ä6öææV7F–öâÀ¢&ÖWFW'3¢Ö–æu·7G"Âö&¦V7EÒÀ¢¢À¢ÆÆ÷vVC¢g&÷¦Vç6WE·7G%ÒÀ¢÷væW#¢7G"À¢6÷W&6S¢7G"À¢’ÓâæöæS ¢WFFW2Ò6VÆbåöæ÷&ÖÆ—¦VE÷WFFW2‡&ÖWFW'2ÂÆÆ÷vVB¢&÷w2Ò6öææV7F–öâæW†V7WFR€¢%4TÄT5BæÖRÂfÇVRe$ôÒ&ÖWFW%÷7FFR ¢’æfWF6†ÆÂ‚¢7W'&VçBÒ·7G"‡&÷u²&æÖR%Ò“¢fÆöB‡&÷u²'fÇVR%Ò’f÷"&÷r–â&÷w7Ð¢–b6WB†7W'&VçB’Ò6WB…$ÔUDU%õ5T52“ ¢&—6R'VçF–ÖTW'&÷"‚'&ÖWFW%÷7FFRFöW2æ÷BÖF6‚F†RcR&ÖWFW"&Vv—7G'’"¢&÷7V7F—fRÒ²¢¦7W'&VçBÂ¢§WFFW7Ð¢6VÆbå÷fÆ–FFU÷&ÖWFW%÷&VÆF–öç6†—2‡&÷7V7F—fR¢6†ævVEöæÖW2Ò¶æÖRf÷"æÖRÂfÇVR–âWFFW2æ—FV×2‚’–bfÇVRÒ7W'&VçE¶æÖU×Ð ¢2&R×6VæF–ærâÇ&VG’7–æ6‡&öæ—¦VB6æ6†÷B—2fÆ–BÂ'WB—B—2æ÷@¢2&ÖWFW"6†ævRæB×W7Bæ÷B–æfÆFRF†R†—7F÷'’F&ÆRà¢–bæ÷B6†ævVEöæÖW3 ¢&WGW&à ¢F–ÖW7F×Ò÷WF5öæ÷r‚¢f÷"æÖR–â6÷'FVB†6†ævVEöæÖW2“ ¢Væ—BÂW‡V7FVEö÷væW"ÂòÒ$ÔUDU%õ5T55¶æÖUÐ¢–bW‡V7FVEö÷væW"Ò÷væW# ¢&—6RfÇVTW'&÷"‚'VæWF†÷&—¦VE÷&ÖWFW""¢öÆE÷fÇVRÒ7W'&VçE¶æÖUÐ¢æWu÷fÇVRÒWFFW5¶æÖUÐ¢6öææV7F–öâæW†V7WFR€¢""%UDDR&ÖWFW%÷7FFP¢4UBfÇVSÓòÂ6÷W&6SÓòÂWFFVEöE÷WF3Óòt„U$RæÖSÓò"""À¢†æWu÷fÇVRÂ6÷W&6RÂF–ÖW7F×ÂæÖR’À¢¢6öææV7F–öâæW†V7WFR€¢""$”å4U%B”åDò&ÖWFW%ö†—7F÷'¢†æÖRÂöÆE÷fÇVRÂæWu÷fÇVRÂVæ—BÂ÷væW"Â6÷W&6RÂ6†ævVEöE÷WF2¢dÅTU2ƒòÂòÂòÂòÂòÂòÂò’"""À¢†æÖRÂöÆE÷fÇVRÂæWu÷fÇVRÂVæ—BÂ÷væW"Â6÷W&6RÂF–ÖW7F×’À¢¢–bæÖR–âDUd”4Uõ$ÔUDU%õ5Dõ$tS ¢FWf–6Uö–BÂ7F÷&vUöæÖRÒDUd”4Uõ$ÔUDU%õ5Dõ$tU¶æÖUÐ¢6öææV7F–öâæW†V7WFR€¢""%UDDRFWf–6U÷&ÖWFW'24UBfÇVSÓð¢t„U$RFWf–6Uö–CÓòäBæÖSÓò"""À¢†æWu÷fÇVRÂFWf–6Uö–BÂ7F÷&vUöæÖR’À¢¢VÆ–bæÖR–â4”ÕTÄD”ôåõ$ÔUDU%õ5Dõ$tS ¢6öÇVÖâÒ4”ÕTÄD”ôåõ$ÔUDU%õ5Dõ$tU¶æÖUÐ¢6öææV7F–öâæW†V7WFR€¢b%UDDR6–×VÆF–öåö6öçG&öÂ4UB¶6öÇVÖçÓÓòt„U$R6–ævÆWFöåö–CÓ"À¢†æWu÷fÇVRÂ’À¢ ¢5÷‡—6–6ÅöæÖW2Ò5õ$ÔUDU%ôäÔU2Ò²&5ö6öçG&öÅ÷2"Â&5÷F–ÖV÷WE÷2'Ð¢5ö7F–öåö–çfÆ–FFVBÒ÷væW"ÓÒ$2"æB&ööÂ€¢6†ævVEöæÖW2æ–çFW'6V7F–öâ†5÷‡—6–6ÅöæÖW2¢¢–b5ö7F–öåö–çfÆ–FFVC ¢26ææ÷B&V6ö×WFRæWr27F–öââ–çfÆ–FFRF†R66†VB7F–öà¢2VçF–Â2V&Æ—6†W2v–æEö7F–öâ&6VBöâF†RWFFVB&ÖWFW'2à¢6öææV7F–öâæW†V7WFR€¢""%UDDR6öçG&öÅ÷7FFP¢4UB6öçG&öÆÆW%÷v–æEöVæ&ÆSÓÂ—F6…÷F&vWEöFVsÓòÀ¢6öçG&öÆÆW%÷v–æEöf–Æ&ÆUö·sÓÀ¢6öçG&öÆÆW%÷v–æEö÷W&F–æuöÆ–Ö—Eö·sÓÀ¢WFFVEöE÷WF3Óòt„U$R6–ævÆWFöåö–CÓ"""À¢‡&÷7V7F—fU²'—F6…öfVF†W%öFVr%ÒÂF–ÖW7F×’À¢ ¢'VçF–ÖRÒ6öææV7F–öâæW†V7WFR€¢%4TÄT5B6W76–öåö–BÂ7FWe$ôÒ6–×VÆF–öåö6öçG&öÂt„U$R6–ævÆWFöåö–CÓ ¢’æfWF6†öæR‚¢–b'VçF–ÖR—2æöæS ¢&—6R'VçF–ÖTW'&÷"‚'6–×VÆF–öåö6öçG&öÂ&÷r—2Ö—76–ær"¢æÖW2Ò"Â"æ¦ö–â‡6÷'FVB†6†ævVEöæÖW2’¢6öææV7F–öâæW†V7WFR€¢$”å4U%B”åDòÆöw2dÅTU2„åTÄÂÂt”ädòrÂw&ÖWFW'5÷WFFVBrÂòÂòÂòÂò’"À¢†b'6÷W&6S×·6÷W&6WÓ²æÖW3×¶æÖW7Ò"Â'VçF–ÖU²'6W76–öåö–B%ÒÂ'VçF–ÖU²'7FW%ÒÂF–ÖW7F×’À¢¢–b5ö7F–öåö–çfÆ–FFVC ¢6öææV7F–öâæW†V7WFR€¢$”å4U%B”åDòÆöw2dÅTU2„åTÄÂÂt”ädòrÂv5ö7F–öåö–çfÆ–FFVBrÂòÂòÂòÂò’"À¢€¢'v—F–ærf÷"v–æEö7F–öâ6Æ7VÆFVBv—F‚WFFVB2&ÖWFW'2"À¢'VçF–ÖU²'6W76–öåö–B%ÒÀ¢'VçF–ÖU²'7FW%ÒÀ¢F–ÖW7F×À¢’À¢ ¢FVbæW‡E÷6W'fW%÷6W‡6VÆb’Óâ–çC ¢6VÆbåöVç7W&UöW†—7G2‚¢v—F‚ö6öææV7B‡6VÆbçF‚’26öææV7F–öã ¢6öææV7F–öâæW†V7WFR‚$$Tt”â”ÔÔTD”DR"¢6öææV7F–öâæW†V7WFR€¢%UDDR6–×VÆF–öåö6öçG&öÂ4UB6W'fW%÷6W×6W'fW%÷6W³t„U$R6–ævÆWFöåö–CÓ ¢¢&WGW&â6öææV7F–öâæW†V7WFR€¢%4TÄT5B6W'fW%÷6We$ôÒ6–×VÆF–öåö6öçG&öÂt„U$R6–ævÆWFöåö–CÓ ¢’æfWF6†öæR‚•³Ð ¢FVbÇ•ö6öÖÖæB‡6VÆbÂÖW76vS¢F–7E·7G"Âö&¦V7EÒ’Óâ6öÖÖæE&W7VÇC ¢6VÆbåöVç7W&UöW†—7G2‚¢–ÆöBÒÖW76vU²'–ÆöB%Ð¢76W'B—6–ç7Fæ6R‡–ÆöBÂF–7B¢6W76–öåö–BÒÖW76vRævWB‚'6W76–öåö–B"¢6÷W&6RÒ7G"†ÖW76vU²'6÷W&6R%Ò¢6WÒ–çB†ÖW76vU²'6W%Ò¢ÖW76vU÷G—RÒ7G"†ÖW76vU²'G—R%Ò¢F–ÖW7F×Ò÷WF5öæ÷r‚¢v—F‚ö6öææV7B‡6VÆbçF‚’26öææV7F–öã ¢6öææV7F–öâæW†V7WFR‚$$Tt”â”ÔÔTD”DR"¢'VçF–ÖRÒ6öææV7F–öâæW†V7WFR€¢%4TÄT5B6W76–öåö–BÂ7FWe$ôÒ6–×VÆF–öåö6öçG&öÂt„U$R6–ævÆWFöåö–CÓ ¢’æfWF6†öæR‚¢–b'VçF–ÖR—2æöæS ¢&—6R'VçF–ÖTW'&÷"‚'6–×VÆF–öåö6öçG&öÂ&÷r—2Ö—76–ær"¢–ÆöEö§6öâÒö§6öå÷fÇVR‡–ÆöB¢W†—7F–ærÒ6öææV7F–öâæW†V7WFR€¢""%4TÄT5BÖW76vU÷G—RÂ–ÆöEö§6öâÂ66WFVBÂ&V6öâe$ôÒ6öÖÖæG0¢t„U$R6W76–öåö–B•2òäB6÷W&6SÓòäB6WÓò"""À¢‡6W76–öåö–BÂ6÷W&6RÂ6W’À¢’æfWF6†öæR‚¢–bW†—7F–ær—2æ÷BæöæS ¢G'“ ¢W†—7F–æu÷–ÆöBÒö§6öå÷fÇVR†§6öâæÆöG2†W†—7F–æu²'–ÆöEö§6öâ%Ò’¢W†6WB…G—TW'&÷"ÂfÇVTW'&÷"Â§6öâä¥4ôäFV6öFTW'&÷"“ ¢W†—7F–æu÷–ÆöBÒ7G"†W†—7F–æu²'–ÆöEö§6öâ%Ò¢–bW†—7F–æu²&ÖW76vU÷G—R%ÒÓÒÖW76vU÷G—RæBW†—7F–æu÷–ÆöBÓÒ–ÆöEö§6öã ¢&WGW&â6öÖÖæE&W7VÇB†&ööÂ†W†—7F–æu²&66WFVB%Ò’ÂW†—7F–æu²'&V6öâ%ÒÂG'VR¢6öææV7F–öâæW†V7WFR€¢$”å4U%B”åDòÆöw2dÅTU2„åTÄÂÂut$ä”ärrÂv6öÖÖæE÷&V¦V7FVBrÂòÂòÂòÂò’"À¢‚'6Wö6öæfÆ–7B"Â'VçF–ÖU²'6W76–öåö–B%ÒÂ'VçF–ÖU²'7FW%ÒÂF–ÖW7F×’À¢¢&WGW&â6öÖÖæE&W7VÇB„fÇ6RÂ'6Wö6öæfÆ–7B"¢&W7VÇBÒ6VÆbå÷fÆ–FFUöæEöÇ’†6öææV7F–öâÂ'VçF–ÖRÂÖW76vU÷G—RÂ6÷W&6RÂ6W76–öåö–BÂ6WÂ–ÆöB¢6öææV7F–öâæW†V7WFR€¢""$”å4U%B”åDò6öÖÖæG0¢‡6W76–öåö–BÂ6÷W&6RÂ6WÂÖW76vU÷G—RÂ–ÆöEö§6öâÂ66WFVBÂ&V6öâÂ&V6V—fVEöE÷WF2¢dÅTU2ƒòÂòÂòÂòÂòÂòÂòÂò’"""À¢‡6W76–öåö–BÂ6÷W&6RÂ6WÂÖW76vU÷G—RÂ–ÆöEö§6öâÀ¢–çB‡&W7VÇBæ66WFVB’Â&W7VÇBç&V6öâÂF–ÖW7F×’À¢¢–bæ÷B&W7VÇBæ66WFVC ¢6öææV7F–öâæW†V7WFR€¢$”å4U%B”åDòÆöw2dÅTU2„åTÄÂÂut$ä”ärrÂv6öÖÖæE÷&V¦V7FVBrÂòÂòÂòÂò’"À¢‡&W7VÇBç&V6öâÂ'VçF–ÖU²'6W76–öåö–B%ÒÂ'VçF–ÖU²'7FW%ÒÂF–ÖW7F×’À¢¢&WGW&â&W7VÇ@ ¢FVb÷fÆ–FFUöæEöÇ’€¢6VÆbÀ¢6öææV7F–öã¢7Æ—FS2ä6öææV7F–öâÀ¢'VçF–ÖS¢7Æ—FS2å&÷rÀ¢ÖW76vU÷G—S¢7G"À¢6÷W&6S¢7G"À¢6W76–öåö–C¢ö&¦V7BÀ¢6W¢–çBÀ¢–ÆöC¢F–7E·7G"Âö&¦V7EÒÀ¢’Óâ6öÖÖæE&W7VÇC ¢–b6W76–öåö–BÒ'VçF–ÖU²'6W76–öåö–B%Ó ¢&WGW&â6öÖÖæE&W7VÇB„fÇ6RÂ'7FÆU÷6W76–öâ"¢W‡V7FVE÷6÷W&6RÒ²&F—7F6‚#¢$""Â'v–æEö7F–öâ#¢$2'ÒævWB†ÖW76vU÷G—R¢–bÖW76vU÷G—RÓÒ'&ÖWFW%÷WFFR# ¢–b6÷W&6Ræ÷B–â²$""Â$2'Ó ¢&WGW&â6öÖÖæE&W7VÇB„fÇ6RÂ'VæWF†÷&—¦VEöÖW76vU÷G—R"¢VÆ–bW‡V7FVE÷6÷W&6R—2æöæR÷"6÷W&6RÒW‡V7FVE÷6÷W&6S ¢&WGW&â6öÖÖæE&W7VÇB„fÇ6RÂ'VæWF†÷&—¦VEöÖW76vU÷G—R"¢Ö…÷6WÒ6öææV7F–öâæW†V7WFR€¢%4TÄT5BÔ‚‡6W’e$ôÒ6öÖÖæG2t„U$R6W76–öåö–CÓòäB6÷W&6SÓò"À¢‡6W76–öåö–BÂ6÷W&6R’À¢’æfWF6†öæR‚•³Ð¢–bÖ…÷6W—2æ÷BæöæRæB6WÃÒÖ…÷6W ¢&WGW&â6öÖÖæE&W7VÇB„fÇ6RÂ&÷WEööeö÷&FW""¢G'“ ¢–bÖW76vU÷G—RÓÒ&F—7F6‚# ¢6VÆbåöÇ•öF—7F6‚†6öææV7F–öâÂ–ÆöB¢VÆ–bÖW76vU÷G—RÓÒ'v–æEö7F–öâ# ¢6VÆbåöÇ•÷v–æEö7F–öâ†6öææV7F–öâÂ–ÆöB¢VÇ6S ¢6VÆbåöÇ•÷&ÖWFW%÷WFFR†6öææV7F–öâÂ–ÆöBÂ6÷W&6R¢W†6WBfÇVTW'&÷"2W†3 ¢&WGW&â6öÖÖæE&W7VÇB„fÇ6RÂ7G"†W†2’¢&WGW&â6öÖÖæE&W7VÇB…G'VRÂ&66WFVB" ¢7FF–6ÖWF†ö@¢FVb÷7G&–7Eö&ööÂ‡–ÆöC¢F–7E·7G"Âö&¦V7EÒÂæÖS¢7G"’Óâ&ööÃ ¢fÇVRÒ–ÆöBævWB†æÖR¢–bG—R‡fÇVR’—2æ÷B&ööÃ ¢&—6RfÇVTW'&÷"†b&–çfÆ–E÷¶æÖWÒ"¢&WGW&âfÇVP ¢7FF–6ÖWF†ö@¢FVb÷7G&–7EöçVÖ&W"‡–ÆöC¢F–7E·7G"Âö&¦V7EÒÂæÖS¢7G"’ÓâfÆöC ¢fÇVRÒ–ÆöBævWB†æÖR¢–b—6–ç7Fæ6R‡fÇVRÂ&ööÂ’÷"æ÷B—6–ç7Fæ6R‡fÇVRÂ†–çBÂfÆöB’“ ¢&—6RfÇVTW'&÷"†b&–çfÆ–E÷¶æÖWÒ"¢&W7VÇBÒfÆöB‡fÇVR¢–bæ÷BÖF‚æ—6f–æ—FR‡&W7VÇB’÷"&W7VÇBÂ ¢&—6RfÇVTW'&÷"†b&–çfÆ–E÷¶æÖWÒ"¢&WGW&â&W7VÇ@ ¢FVböÇ•öF—7F6‚‡6VÆbÂ6öææV7F–öã¢7Æ—FS2ä6öææV7F–öâÂ–ÆöC¢F–7E·7G"Âö&¦V7EÒ’ÓâæöæS ¢W‡V7FVBÒ²'v–æE÷F&vWEö·r"Â&F–W6VÅ÷F&vWEö·r"Â'v–æEöVæ&ÆR"Â&F–W6VÅöVæ&ÆR'Ð¢–b6WB‡–ÆöB’ÒW‡V7FVC ¢&—6RfÇVTW'&÷"‚&–çfÆ–EöF—7F6…öf–VÆG2"¢v–æE÷F&vWBÒ6VÆbå÷7G&–7EöçVÖ&W"‡–ÆöBÂ'v–æE÷F&vWEö·r"¢F–W6VÅ÷F&vWBÒ6VÆbå÷7G&–7EöçVÖ&W"‡–ÆöBÂ&F–W6VÅ÷F&vWEö·r"¢v–æEöVæ&ÆRÒ6VÆbå÷7G&–7Eö&ööÂ‡–ÆöBÂ'v–æEöVæ&ÆR"¢F–W6VÅöVæ&ÆRÒ6VÆbå÷7G&–7Eö&ööÂ‡–ÆöBÂ&F–W6VÅöVæ&ÆR"¢Æ–Ö—G2Ò°¢&÷u²&FWf–6Uö–B%Ó¢&÷u²'fÇVR%Ð¢f÷"&÷r–â6öææV7F–öâæW†V7WFR€¢%4TÄT5BFWf–6Uö–BÂfÇVRe$ôÒFWf–6U÷&ÖWFW'2t„U$RæÖR”â‚w&FVE÷÷vW%ö·rrÂvÖ…÷÷vW%ö·rr’ ¢¢Ð¢–bv–æE÷F&vWBâÆ–Ö—G5²%uC%Ó ¢&—6RfÇVTW'&÷"‚'v–æE÷F&vWEö÷WEööe÷&ævR"¢–bF–W6VÅ÷F&vWBâÆ–Ö—G5²$Ds%Ó ¢&—6RfÇVTW'&÷"‚&F–W6VÅ÷F&vWEö÷WEööe÷&ævR"¢6öææV7F–öâæW†V7WFR€¢""%UDDR6öçG&öÅ÷7FFR4UBv–æE÷F&vWEö·sÓòÂF–W6VÅ÷F&vWEö·sÓòÀ¢F—7F6…÷v–æEöVæ&ÆSÓòÂF–W6VÅöVæ&ÆSÓòÂWFFVEöE÷WF3Óòt„U$R6–ævÆWFöåö–CÓ"""À¢‡v–æE÷F&vWBÂF–W6VÅ÷F&vWBÂ–çB‡v–æEöVæ&ÆR’Â–çB†F–W6VÅöVæ&ÆR’Â÷WF5öæ÷r‚’’À¢ ¢FVböÇ•÷v–æEö7F–öâ‡6VÆbÂ6öææV7F–öã¢7Æ—FS2ä6öææV7F–öâÂ–ÆöC¢F–7E·7G"Âö&¦V7EÒ’ÓâæöæS ¢W‡V7FVBÒ°¢'v–æEöVæ&ÆR"À¢'—F6…÷F&vWEöFVr"À¢'v–æEöf–Æ&ÆUö·r"À¢'v–æEö÷W&F–æuöÆ–Ö—Eö·r"À¢Ð¢–b6WB‡–ÆöB’ÒW‡V7FVC ¢&—6RfÇVTW'&÷"‚&–çfÆ–E÷v–æEö7F–öåöf–VÆG2"¢v–æEöVæ&ÆRÒ6VÆbå÷7G&–7Eö&ööÂ‡–ÆöBÂ'v–æEöVæ&ÆR"¢—F6‚Ò6VÆbå÷7G&–7EöçVÖ&W"‡–ÆöBÂ'—F6…÷F&vWEöFVr"¢f–Æ&ÆRÒ6VÆbå÷7G&–7EöçVÖ&W"‡–ÆöBÂ'v–æEöf–Æ&ÆUö·r"¢÷W&F–æuöÆ–Ö—BÒ6VÆbå÷7G&–7EöçVÖ&W"‡–ÆöBÂ'v–æEö÷W&F–æuöÆ–Ö—Eö·r"¢&÷rÒ6öææV7F–öâæW†V7WFR€¢%4TÄT5BfÇVRe$ôÒFWf–6U÷&ÖWFW'2t„U$RFWf–6Uö–CÒuuCräBæÖSÒw—F6…öfVF†W%öFVrr ¢’æfWF6†öæR‚¢–b&÷r—2æöæR÷"—F6‚â&÷u²'fÇVR%Ó ¢&—6RfÇVTW'&÷"‚'—F6…÷F&vWEö÷WEööe÷&ævR"¢&FVE÷&÷rÒ6öææV7F–öâæW†V7WFR€¢%4TÄT5BfÇVRe$ôÒFWf–6U÷&ÖWFW'2t„U$RFWf–6Uö–CÒuuCräBæÖSÒw&FVE÷÷vW%ö·rr ¢’æfWF6†öæR‚¢–b&FVE÷&÷r—2æöæR÷"f–Æ&ÆRâ&FVE÷&÷u²'fÇVR%Ó ¢&—6RfÇVTW'&÷"‚'v–æEöf–Æ&ÆUö÷WEööe÷&ævR"¢–b÷W&F–æuöÆ–Ö—Bâf–Æ&ÆS ¢&—6RfÇVTW'&÷"‚'v–æEö÷W&F–æuöÆ–Ö—Eö÷WEööe÷&ævR"¢6öææV7F–öâæW†V7WFR€¢""%UDDR6öçG&öÅ÷7FFR4UB6öçG&öÆÆW%÷v–æEöVæ&ÆSÓòÂ—F6…÷F&vWEöFVsÓòÀ¢6öçG&öÆÆW%÷v–æEöf–Æ&ÆUö·sÓòÂ6öçG&öÆÆW%÷v–æEö÷W&F–æuöÆ–Ö—Eö·sÓòÀ¢WFFVEöE÷WF3Óòt„U$R6–ævÆWFöåö–CÓ"""À¢†–çB‡v–æEöVæ&ÆR’Â—F6‚Âf–Æ&ÆRÂ÷W&F–æuöÆ–Ö—BÂ÷WF5öæ÷r‚’’À¢ ¢FVböÇ•÷&ÖWFW%÷WFFR€¢6VÆbÀ¢6öææV7F–öã¢7Æ—FS2ä6öææV7F–öâÀ¢–ÆöC¢F–7E·7G"Âö&¦V7EÒÀ¢6÷W&6S¢7G"À¢’ÓâæöæS ¢–b6WB‡–ÆöB’Ò²'&ÖWFW'2'Ò÷"æ÷B—6–ç7Fæ6R‡–ÆöE²'&ÖWFW'2%ÒÂF–7B“ ¢&—6RfÇVTW'&÷"‚&–çfÆ–E÷&ÖWFW%÷WFFUöf–VÆG2"¢–b6÷W&6RÓÒ$"# ¢ÆÆ÷vVBÒ%õ$ÔUDU%ôäÔU0¢6÷W&6UöÆ&VÂÒ$%÷F7 ¢VÆ–b6÷W&6RÓÒ$2# ¢ÆÆ÷vVBÒ5õ$ÔUDU%ôäÔU0¢6÷W&6UöÆ&VÂÒ$5÷F7 ¢VÇ6S¢2FVfVç6R–âFWFƒ²F†RVçfVÆ÷RfÆ–FF÷"Ç&VG’&V¦V7G2F†—2à¢&—6RfÇVTW'&÷"‚'VæWF†÷&—¦VEöÖW76vU÷G—R"¢6VÆbå÷WFFU÷&ÖWFW'2€¢6öææV7F–öâÀ¢–ÆöE²'&ÖWFW'2%ÒÀ¢ÆÆ÷vVCÖÆÆ÷vVBÀ¢÷væW#×6÷W&6RÀ¢6÷W&6S×6÷W&6UöÆ&VÂÀ¢ ¢FVbÖ&µö6öææV7F–öâ‡6VÆbÂVW#¢7G"Â6öææV7FVC¢&ööÂÂFWF–Ã¢7G"’ÓâæöæS ¢–bVW"æ÷B–â²$""Â$2'Ó ¢&WGW&à¢6VÆbåöVç7W&UöW†—7G2‚¢F–ÖW7F×Ò÷WF5öæ÷r‚¢v—F‚ö6öææV7B‡6VÆbçF‚’26öææV7F–öã ¢&Wf–÷W2Ò6öææV7F–öâæW†V7WFR€¢%4TÄT5B6öææV7FVBe$ôÒ6öææV7F–öå÷7FGW2t„U$RVW#Óò"Â‡VW"Â¢’æfWF6†öæR‚¢'VçF–ÖRÒ6öææV7F–öâæW†V7WFR€¢%4TÄT5B6W76–öåö–BÂ7FWe$ôÒ6–×VÆF–öåö6öçG&öÂt„U$R6–ævÆWFöåö–CÓ ¢’æfWF6†öæR‚¢6öææV7F–öâæW†V7WFR€¢""%UDDR6öææV7F–öå÷7FGW24UB6öææV7FVCÓòÂÆ7E÷6VVåöE÷WF3ÓòÂFWF–ÃÓòt„U$RVW#Óò"""À¢†–çB†6öææV7FVB’ÂF–ÖW7F×ÂFWF–ÂÂVW"’À¢¢–b€¢&Wf–÷W2—2æ÷BæöæP¢æB'VçF–ÖR—2æ÷BæöæP¢æB&ööÂ‡&Wf–÷W5²&6öææV7FVB%Ò’Ò&ööÂ†6öææV7FVB¢“ ¢WfVçBÒ'VW%ö6öææV7FVB"–b6öææV7FVBVÇ6R'VW%öF—66öææV7FVB ¢6öææV7F–öâæW†V7WFR€¢$”å4U%B”åDòÆöw2dÅTU2„åTÄÂÂt”ädòrÂòÂòÂòÂòÂò’"À¢€¢WfVçBÀ¢b'·VW'Ó¢¶FWF–ÇÒ"À¢'VçF–ÖU²'6W76–öåö–B%ÒÀ¢'VçF–ÖU²'7FW%ÒÀ¢F–ÖW7F×À¢’À¢ ¢FVbÆör‡6VÆbÂÆWfVÃ¢7G"ÂWfVçC¢7G"ÂÖW76vS¢7G"’ÓâæöæS ¢'VçF–ÖRÒ6VÆbç'VçF–ÖR‚¢v—F‚ö6öææV7B‡6VÆbçF‚’26öææV7F–öã ¢6öææV7F–öâæW†V7WFR€¢$”å4U%B”åDòÆöw2dÅTU2„åTÄÂÂòÂòÂòÂòÂòÂò’"À¢†ÆWfVÂÂWfVçBÂÖW76vRÂ'VçF–ÖU²'6W76–öåö–B%ÒÂ'VçF–ÖU²'7FW%ÒÂ÷WF5öæ÷r‚’’À¢
+                   VALUES (1, ?, 'ready', ?, ?, ?, ?, ?, 0, ?)""",
+                (session_id, config.start_s, config.end_s, config.step_s,
+                 config.poll_interval_s, config.start_s, config.parameter_status),
+            )
+            connection.executemany(
+                "INSERT INTO scenario_points VALUES (?, ?, ?, ?)",
+                [(step, p.sim_time_s, p.wind_speed_mps, p.load_power_kw)
+                 for step, p in enumerate(scenario.points)],
+            )
+            parameter_rows: list[tuple[str, str, float, str]] = []
+            for device_id, params in (("WT01", config.wind), ("DG01", config.diesel)):
+                for name, value in asdict(params).items():
+                    parameter_rows.append((device_id, name, float(value), PARAMETER_UNITS[name]))
+            connection.executemany(
+                "INSERT INTO device_parameters VALUES (?, ?, ?, ?)", parameter_rows
+            )
+            normalized_parameters = _configured_parameter_values(config)
+            connection.executemany(
+                """INSERT INTO parameter_state
+                   (name, value, unit, owner, source, updated_at_utc, editable)
+                   VALUES (?, ?, ?, ?, 'config', ?, ?)""",
+                [
+                    (
+                        name,
+                        value,
+                        PARAMETER_SPECS[name][0],
+                        PARAMETER_SPECS[name][1],
+                        timestamp,
+                        int(PARAMETER_SPECS[name][2]),
+                    )
+                    for name, value in normalized_parameters.items()
+                ],
+            )
+            connection.executemany(
+                """INSERT INTO parameter_history
+                   (name, old_value, new_value, unit, owner, source, changed_at_utc)
+                   VALUES (?, NULL, ?, ?, ?, 'config', ?)""",
+                [
+                    (
+                        name,
+                        value,
+                        PARAMETER_SPECS[name][0],
+                        PARAMETER_SPECS[name][1],
+                        timestamp,
+                    )
+                    for name, value in normalized_parameters.items()
+                ],
+            )
+            connection.execute(
+                """INSERT INTO control_state VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    float(initial["wind_target_kw"]),
+                    float(initial["diesel_target_kw"]),
+                    int(initial["dispatch_wind_enable"]),
+                    int(initial["controller_wind_enable"]),
+                    int(initial["diesel_enable"]),
+                    float(initial["pitch_target_deg"]),
+                    float(initial["controller_wind_available_kw"]),
+                    float(initial["controller_wind_operating_limit_kw"]),
+                    timestamp,
+                ),
+            )
+            connection.execute(
+                f"INSERT INTO current_state (singleton_id, {STATE_COLUMNS}, updated_at_utc) "
+                "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                _state_values(state, timestamp),
+            )
+            self._append_history(connection, state, timestamp)
+            self._write_scada(connection, state, timestamp)
+            connection.executemany(
+                "INSERT INTO connection_status VALUES (?, 0, NULL, 'not connected')",
+                [("B",), ("C",)],
+            )
+            connection.execute(
+                "INSERT INTO logs VALUES (NULL, 'INFO', 'database_initialized', ?, ?, 0, ?)",
+                (f"parameter_status={config.parameter_status}", session_id, timestamp),
+            )
+        return session_id
+
+    def _ensure_exists(self) -> None:
+        if not self.path.is_file():
+            raise FileNotFoundError(f"database not initialized: {self.path}")
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        """Migrate a schema-v4 database in place without discarding history."""
+
+        with _connect(self.path) as connection:
+            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if version > SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"database schema v{version} is newer than supported v{SCHEMA_VERSION}"
+                )
+            if version < 4:
+                raise RuntimeError(
+                    f"database schema v{version} cannot be migrated automatically; "
+                    "back it up and initialize a new database"
+                )
+            if version == SCHEMA_VERSION:
+                try:
+                    count = connection.execute(
+                        "SELECT COUNT(*) FROM parameter_state"
+                    ).fetchone()[0]
+                except sqlite3.OperationalError as exc:
+                    raise RuntimeError(
+                        "schema v5 parameter tables are missing"
+                    ) from exc
+                if count == 0:
+                    raise RuntimeError("schema v5 parameter_state is unexpectedly empty")
+                return
+
+            # Only the one-time v4 migration needs a write lock. Re-check the
+            # version after acquiring it so concurrent A processes cannot seed
+            # the same database twice.
+            connection.execute("BEGIN IMMEDIATE")
+            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if version == SCHEMA_VERSION:
+                return
+            if version != 4:
+                raise RuntimeError(f"database schema changed during migration: v{version}")
+            for statement in PARAMETER_SCHEMA:
+                connection.execute(statement)
+            self._seed_migrated_parameters(connection)
+            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    @staticmethod
+    def _seed_migrated_parameters(connection: sqlite3.Connection) -> None:
+        runtime = connection.execute(
+            """SELECT session_id, step, step_s, poll_interval_s
+               FROM simulation_control WHERE singleton_id=1"""
+        ).fetchone()
+        if runtime is None:
+            raise RuntimeError("cannot migrate: simulation_control row is missing")
+        raw_device = {
+            (row["device_id"], row["name"]): float(row["value"])
+            for row in connection.execute(
+                "SELECT device_id, name, value FROM device_parameters"
+            )
+        }
+        values: dict[str, float] = {
+            "a_step_s": float(runtime["step_s"]),
+            "a_poll_s": float(runtime["poll_interval_s"]),
+            **BASELINE_REMOTE_PARAMETERS,
+        }
+        for name, storage in DEVICE_PARAMETER_STORAGE.items():
+            try:
+                values[name] = raw_device[storage]
+            except KeyError as exc:
+                raise RuntimeError(
+                    f"cannot migrate: device parameter {storage[0]}.{storage[1]} is missing"
+                ) from exc
+        timestamp = _utc_now()
+        rows = [
+            (
+                name,
+                values[name],
+                PARAMETER_SPECS[name][0],
+                PARAMETER_SPECS[name][1],
+                "migration_v4",
+                timestamp,
+                int(PARAMETER_SPECS[name][2]),
+            )
+            for name in PARAMETER_SPECS
+        ]
+        connection.executemany(
+            """INSERT INTO parameter_state
+               (name, value, unit, owner, source, updated_at_utc, editable)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(name) DO NOTHING""",
+            rows,
+        )
+        connection.executemany(
+            """INSERT INTO parameter_history
+               (name, old_value, new_value, unit, owner, source, changed_at_utc)
+               VALUES (?, NULL, ?, ?, ?, ?, ?)""",
+            [
+                (name, value, unit, owner, source, timestamp)
+                for name, value, unit, owner, source, timestamp, _editable in rows
+            ],
+        )
+        connection.execute(
+            "INSERT INTO logs VALUES (NULL, 'INFO', 'schema_migrated', ?, ?, ?, ?)",
+            (
+                "schema v4 -> v5; existing state history preserved",
+                runtime["session_id"],
+                runtime["step"],
+                timestamp,
+            ),
+        )
+
+    def runtime(self) -> dict[str, object]:
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            row = connection.execute("SELECT * FROM simulation_control WHERE singleton_id=1").fetchone()
+            if row is None:
+                raise RuntimeError("simulation_control row is missing")
+            return dict(row)
+
+    def get_state(self) -> SimulationState:
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            row = connection.execute("SELECT * FROM current_state WHERE singleton_id=1").fetchone()
+            if row is None:
+                raise RuntimeError("current_state row is missing")
+            return _state_from_row(row)
+
+    def get_scenario(self) -> ScenarioCurve:
+        """Return the scenario snapshot stored for the active simulation."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            points = tuple(
+                ScenarioPoint(row[0], row[1], row[2])
+                for row in connection.execute(
+                    "SELECT sim_time_s, wind_speed_mps, load_power_kw "
+                    "FROM scenario_points ORDER BY sim_time_s"
+                )
+            )
+            return ScenarioCurve(points)
+
+    @staticmethod
+    def _checked_limit(limit: int) -> int:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100_000:
+            raise ValueError("limit must be an integer from 1 to 100000")
+        return limit
+
+    def parameter_snapshot(self) -> list[dict[str, object]]:
+        """Return normalized A/B/C parameters for direct GUI presentation."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                """SELECT name, value, unit, owner, source, updated_at_utc, editable
+                   FROM parameter_state
+                   ORDER BY CASE owner WHEN 'A' THEN 0 WHEN 'B' THEN 1 ELSE 2 END, name"""
+            ).fetchall()
+        return [
+            {
+                "name": str(row["name"]),
+                "value": float(row["value"]),
+                "unit": str(row["unit"]),
+                "owner": str(row["owner"]),
+                "source": str(row["source"]),
+                "updated_at_utc": str(row["updated_at_utc"]),
+                "editable": bool(row["editable"]),
+            }
+            for row in rows
+        ]
+
+    def parameter_history(self, limit: int = 200) -> list[dict[str, object]]:
+        """Return newest parameter changes first."""
+
+        self._ensure_exists()
+        checked_limit = self._checked_limit(limit)
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                """SELECT id, name, old_value, new_value, unit, owner, source,
+                          changed_at_utc
+                   FROM parameter_history ORDER BY id DESC LIMIT ?""",
+                (checked_limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def history_sessions(self) -> list[dict[str, object]]:
+        """Return every persisted session independently of the plot row limit."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                """SELECT session_id, COUNT(*) AS state_count,
+                          MIN(sampled_at_utc) AS first_sampled_at_utc,
+                          MAX(sampled_at_utc) AS last_sampled_at_utc,
+                          MAX(id) AS last_id
+                   FROM state_history GROUP BY session_id ORDER BY last_id"""
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def state_history(
+        self, limit: int = 600, session_id: str | None = None
+    ) -> list[dict[str, object]]:
+        """Return a recent chronological state window, optionally for one session."""
+
+        self._ensure_exists()
+        checked_limit = self._checked_limit(limit)
+        if session_id is not None and (not isinstance(session_id, str) or not session_id):
+            raise ValueError("session_id must be a non-empty string or None")
+        with _connect(self.path) as connection:
+            if session_id is None:
+                rows = connection.execute(
+                    f"""SELECT * FROM (
+                           SELECT id, {STATE_COLUMNS}, recorded_at_utc
+                           FROM state_history ORDER BY id DESC LIMIT ?
+                       ) ORDER BY id ASC""",
+                    (checked_limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    f"""SELECT * FROM (
+                           SELECT id, {STATE_COLUMNS}, recorded_at_utc
+                           FROM state_history WHERE session_id=?
+                           ORDER BY id DESC LIMIT ?
+                       ) ORDER BY id ASC""",
+                    (session_id, checked_limit),
+                ).fetchall()
+        result: list[dict[str, object]] = []
+        for row in rows:
+            item = dict(row)
+            for name in ("wind_running", "diesel_running", "fault"):
+                item[name] = bool(item[name])
+            result.append(item)
+        return result
+
+    def logs(self, limit: int = 200) -> list[dict[str, object]]:
+        """Return newest application log records first."""
+
+        self._ensure_exists()
+        checked_limit = self._checked_limit(limit)
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                """SELECT id, level, event, message, session_id, step, created_at_utc
+                   FROM logs ORDER BY id DESC LIMIT ?""",
+                (checked_limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_a_parameters(
+        self, parameters: Mapping[str, object]
+    ) -> list[dict[str, object]]:
+        """Validate and atomically update only parameters owned by A."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._update_parameters(
+                connection,
+                parameters,
+                allowed=A_PARAMETER_NAMES,
+                owner="A",
+                source="A_local",
+            )
+        return self.parameter_snapshot()
+
+    def connection_statuses(self) -> dict[str, dict[str, object]]:
+        """Return B/C TCP connection indicators for the GUI."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                "SELECT peer, connected, last_seen_at_utc, detail "
+                "FROM connection_status ORDER BY peer"
+            ).fetchall()
+        return {
+            str(row["peer"]): {
+                "connected": bool(row["connected"]),
+                "last_seen_at_utc": row["last_seen_at_utc"],
+                "detail": row["detail"],
+            }
+            for row in rows
+        }
+
+    def connection_status(self) -> dict[str, dict[str, object]]:
+        """Return B/C link status for GUI display without sharing a connection."""
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                "SELECT peer, connected, last_seen_at_utc, detail "
+                "FROM connection_status ORDER BY peer"
+            ).fetchall()
+        return {
+            str(row["peer"]): {
+                "connected": bool(row["connected"]),
+                "last_seen_at_utc": row["last_seen_at_utc"],
+                "detail": row["detail"],
+            }
+            for row in rows
+        }
+
+    def reset_connections(self, detail: str) -> None:
+        """Mark B/C offline when the A TCP service starts or stops."""
+
+        self._ensure_exists()
+        timestamp = _utc_now()
+        with _connect(self.path) as connection:
+            runtime = connection.execute(
+                "SELECT session_id, step FROM simulation_control WHERE singleton_id=1"
+            ).fetchone()
+            connected_peers = [
+                str(row["peer"])
+                for row in connection.execute(
+                    "SELECT peer FROM connection_status WHERE connected=1"
+                )
+            ]
+            connection.execute(
+                "UPDATE connection_status SET connected=0, detail=?", (str(detail),)
+            )
+            if runtime is not None:
+                connection.executemany(
+                    "INSERT INTO logs VALUES (NULL, 'INFO', 'peer_disconnected', ?, ?, ?, ?)",
+                    [
+                        (
+                            f"{peer}: {detail}",
+                            runtime["session_id"],
+                            runtime["step"],
+                            timestamp,
+                        )
+                        for peer in connected_peers
+                    ],
+                )
+
+    def set_status(self, action: str) -> str:
+        self._ensure_exists()
+        transitions = {
+            "start": ({"ready"}, "running"),
+            "pause": ({"running"}, "paused"),
+            "resume": ({"paused"}, "running"),
+            "stop": ({"running", "paused"}, "stopped"),
+        }
+        if action not in transitions:
+            raise ValueError(f"unsupported action: {action}")
+        allowed, target = transitions[action]
+        with _connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status, session_id, step FROM simulation_control WHERE singleton_id=1"
+            ).fetchone()
+            if row is None or row["status"] not in allowed:
+                actual = None if row is None else row["status"]
+                raise RuntimeError(f"cannot {action} simulation while status is {actual}")
+            connection.execute(
+                "UPDATE simulation_control SET status=? WHERE singleton_id=1", (target,)
+            )
+            connection.execute(
+                "INSERT INTO logs VALUES (NULL, 'INFO', 'status_changed', ?, ?, ?, ?)",
+                (f"{row['status']} -> {target}", row["session_id"], row["step"], _utc_now()),
+            )
+        return target
+
+    def create_session(self) -> str:
+        """Create a fresh safe session while preserving scenario and history."""
+
+        self._ensure_exists()
+        session_id = str(uuid.uuid4())
+        timestamp = _utc_now()
+        with _connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            runtime = connection.execute(
+                "SELECT * FROM simulation_control WHERE singleton_id=1"
+            ).fetchone()
+            if runtime is None:
+                raise RuntimeError("simulation_control row is missing")
+            if runtime["status"] not in {"stopped", "completed"}:
+                raise RuntimeError(
+                    "a new session requires the current simulation to be stopped or completed"
+                )
+            points = tuple(
+                ScenarioPoint(row[0], row[1], row[2])
+                for row in connection.execute(
+                    "SELECT sim_time_s, wind_speed_mps, load_power_kw "
+                    "FROM scenario_points ORDER BY sim_time_s"
+                )
+            )
+            environment = ScenarioCurve(points).at(float(runtime["start_s"]))
+            pitch_row = connection.execute(
+                "SELECT value FROM device_parameters "
+                "WHERE device_id='WT01' AND name='pitch_feather_deg'"
+            ).fetchone()
+            if pitch_row is None:
+                raise RuntimeError("WT01.pitch_feather_deg is missing")
+            state = SimulationState(
+                session_id=session_id,
+                step=0,
+                sim_time_s=float(runtime["start_s"]),
+                sampled_at_utc=timestamp,
+                wind_speed_mps=environment.wind_speed_mps,
+                load_power_kw=environment.load_power_kw,
+                wind_available_kw=0.0,
+                wind_operating_limit_kw=0.0,
+                wind_target_kw=0.0,
+                wind_actual_kw=0.0,
+                diesel_target_kw=0.0,
+                diesel_actual_kw=0.0,
+                pitch_actual_deg=float(pitch_row["value"]),
+                wind_running=False,
+                diesel_running=False,
+                fault=False,
+                power_imbalance_kw=environment.load_power_kw,
+            )
+            connection.execute(
+                """UPDATE simulation_control
+                   SET session_id=?, status='ready', sim_time_s=?, step=0
+                   WHERE singleton_id=1""",
+                (session_id, runtime["start_s"]),
+            )
+            connection.execute(
+                """UPDATE control_state
+                   SET wind_target_kw=0, diesel_target_kw=0,
+                       dispatch_wind_enable=0, controller_wind_enable=0,
+                       diesel_enable=0, pitch_target_deg=?,
+                       controller_wind_available_kw=0,
+                       controller_wind_operating_limit_kw=0,
+                       updated_at_utc=? WHERE singleton_id=1""",
+                (state.pitch_actual_deg, timestamp),
+            )
+            connection.execute(
+                f"""UPDATE current_state SET
+                    session_id=?, step=?, sim_time_s=?, sampled_at_utc=?, wind_speed_mps=?,
+                    load_power_kw=?, wind_available_kw=?, wind_operating_limit_kw=?,
+                    wind_target_kw=?, wind_actual_kw=?, diesel_target_kw=?, diesel_actual_kw=?,
+                    pitch_actual_deg=?, wind_running=?, diesel_running=?, fault=?,
+                    power_imbalance_kw=?, updated_at_utc=? WHERE singleton_id=1""",
+                _state_values(state, timestamp),
+            )
+            self._append_history(connection, state, timestamp)
+            self._write_scada(connection, state, timestamp)
+            connection.execute(
+                "UPDATE connection_status SET connected=0, detail='new session; waiting for peer'"
+            )
+            connection.execute(
+                "INSERT INTO logs VALUES (NULL, 'INFO', 'session_created', ?, ?, 0, ?)",
+                ("new safe session; existing history preserved", session_id, timestamp),
+            )
+        return session_id
+
+    def step_once(self) -> SimulationState | None:
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            runtime = connection.execute(
+                "SELECT * FROM simulation_control WHERE singleton_id=1"
+            ).fetchone()
+            if runtime is None:
+                raise RuntimeError("simulation_control row is missing")
+            if runtime["status"] != "running":
+                raise RuntimeError(f"simulation is not running (status={runtime['status']})")
+            next_time = runtime["sim_time_s"] + runtime["step_s"]
+            if next_time > runtime["end_s"] + 1e-9:
+                connection.execute(
+                    "UPDATE simulation_control SET status='completed' WHERE singleton_id=1"
+                )
+                return None
+
+            points = tuple(
+                ScenarioPoint(row[0], row[1], row[2])
+                for row in connection.execute(
+                    "SELECT sim_time_s, wind_speed_mps, load_power_kw FROM scenario_points ORDER BY sim_time_s"
+                )
+            )
+            environment = ScenarioCurve(points).at(next_time)
+            previous_row = connection.execute(
+                "SELECT * FROM current_state WHERE singleton_id=1"
+            ).fetchone()
+            control_row = connection.execute(
+                "SELECT * FROM control_state WHERE singleton_id=1"
+            ).fetchone()
+            if previous_row is None or control_row is None:
+                raise RuntimeError("database is missing current state or controls")
+            parameters = {
+                (row["device_id"], row["name"]): row["value"]
+                for row in connection.execute("SELECT device_id, name, value FROM device_parameters")
+            }
+            wind = WindTurbineParameters(**{
+                field.name: parameters[("WT01", field.name)]
+                for field in fields(WindTurbineParameters)
+            })
+            diesel = DieselGeneratorParameters(**{
+                field.name: parameters[("DG01", field.name)]
+                for field in fields(DieselGeneratorParameters)
+            })
+            controls = ControlInputs(
+                wind_target_kw=control_row["wind_target_kw"],
+                diesel_target_kw=control_row["diesel_target_kw"],
+                dispatch_wind_enable=bool(control_row["dispatch_wind_enable"]),
+                controller_wind_enable=bool(control_row["controller_wind_enable"]),
+                diesel_enable=bool(control_row["diesel_enable"]),
+                pitch_target_deg=control_row["pitch_target_deg"],
+                controller_wind_available_kw=control_row["controller_wind_available_kw"],
+                controller_wind_operating_limit_kw=control_row[
+                    "controller_wind_operating_limit_kw"
+                ],
+            )
+            previous_state = _state_from_row(previous_row)
+            timestamp = _utc_now()
+            if timestamp < previous_state.sampled_at_utc:
+                connection.execute(
+                    "INSERT INTO logs VALUES (NULL, 'WARNING', 'clock_adjusted_backwards', ?, ?, ?, ?)",
+                    (f"previous={previous_state.sampled_at_utc}, current={timestamp}",
+                     runtime["session_id"], runtime["step"], timestamp),
+                )
+            state = simulate_step(
+                previous=previous_state,
+                next_step=runtime["step"] + 1,
+                next_sim_time_s=next_time,
+                sampled_at_utc=timestamp,
+                step_s=runtime["step_s"],
+                wind_speed_mps=environment.wind_speed_mps,
+                load_power_kw=environment.load_power_kw,
+                controls=controls,
+                wind=wind,
+                diesel=diesel,
+            )
+            values = _state_values(state, timestamp)
+            connection.execute(
+                f"""UPDATE current_state SET
+                    session_id=?, step=?, sim_time_s=?, sampled_at_utc=?, wind_speed_mps=?, load_power_kw=?,
+                    wind_available_kw=?, wind_operating_limit_kw=?, wind_target_kw=?, wind_actual_kw=?, diesel_target_kw=?,
+                    diesel_actual_kw=?, pitch_actual_deg=?, wind_running=?, diesel_running=?, fault=?,
+                    power_imbalance_kw=?, updated_at_utc=? WHERE singleton_id=1""",
+                values,
+            )
+            self._append_history(connection, state, timestamp)
+            self._write_scada(connection, state, timestamp)
+            status = "completed" if next_time >= runtime["end_s"] - 1e-9 else "running"
+            connection.execute(
+                "UPDATE simulation_control SET sim_time_s=?, step=?, status=? WHERE singleton_id=1",
+                (next_time, state.step, status),
+            )
+            return state
+
+    @staticmethod
+    def _append_history(connection: sqlite3.Connection, state: SimulationState, timestamp: str) -> None:
+        connection.execute(
+            f"INSERT INTO state_history ({STATE_COLUMNS}, recorded_at_utc) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            _state_values(state, timestamp),
+        )
+
+    @staticmethod
+    def _write_scada(connection: sqlite3.Connection, state: SimulationState, timestamp: str) -> None:
+        points = (
+            ("WT01.wind_speed_mps", "WT01", "telemetry", state.wind_speed_mps, "m/s"),
+            ("LOAD01.load_power_kw", "LOAD01", "telemetry", state.load_power_kw, "kW"),
+            ("WT01.wind_available_kw", "WT01", "telemetry", state.wind_available_kw, "kW"),
+            ("WT01.wind_operating_limit_kw", "WT01", "telemetry", state.wind_operating_limit_kw, "kW"),
+            ("WT01.wind_actual_kw", "WT01", "telemetry", state.wind_actual_kw, "kW"),
+            ("DG01.diesel_actual_kw", "DG01", "telemetry", state.diesel_actual_kw, "kW"),
+            ("GRID.power_imbalance_kw", "GRID", "telemetry", state.power_imbalance_kw, "kW"),
+            ("WT01.wind_running", "WT01", "signal", state.wind_running, "bool"),
+            ("DG01.diesel_running", "DG01", "signal", state.diesel_running, "bool"),
+            ("GRID.fault", "GRID", "signal", state.fault, "bool"),
+            ("WT01.wind_target_kw", "WT01", "setpoint", state.wind_target_kw, "kW"),
+            ("DG01.diesel_target_kw", "DG01", "setpoint", state.diesel_target_kw, "kW"),
+            ("WT01.pitch_actual_deg", "WT01", "telemetry", state.pitch_actual_deg, "deg"),
+        )
+        for point_id, device_id, category, value, unit in points:
+            value_json = _json_value(value)
+            connection.execute(
+                """INSERT INTO scada_points
+                   (point_id, device_id, category, value_json, unit, version, updated_step,
+                    sampled_at_utc, updated_at_utc)
+                   VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                   ON CONFLICT(point_id) DO UPDATE SET value_json=excluded.value_json,
+                   version=scada_points.version+1, updated_step=excluded.updated_step,
+                   sampled_at_utc=excluded.sampled_at_utc,
+                   updated_at_utc=excluded.updated_at_utc""",
+                (point_id, device_id, category, value_json, unit, state.step,
+                 state.sampled_at_utc, timestamp),
+            )
+            connection.execute(
+                "INSERT INTO scada_history VALUES (NULL, ?, ?, ?, ?, ?, ?)",
+                (state.session_id, state.step, point_id, value_json,
+                 state.sampled_at_utc, timestamp),
+            )
+
+    @staticmethod
+    def _normalized_updates(
+        parameters: Mapping[str, object], allowed: frozenset[str]
+    ) -> dict[str, float]:
+        if not isinstance(parameters, Mapping) or not parameters:
+            raise ValueError("invalid_parameters")
+        if any(not isinstance(name, str) for name in parameters):
+            raise ValueError("invalid_parameter_name")
+        if not set(parameters).issubset(allowed):
+            raise ValueError("unauthorized_parameter")
+        normalized: dict[str, float] = {}
+        for name, raw_value in parameters.items():
+            if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+                raise ValueError(f"invalid_parameter_value:{name}")
+            value = float(raw_value)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"invalid_parameter_value:{name}")
+            normalized[name] = value
+        return normalized
+
+    @staticmethod
+    def _validate_parameter_relationships(values: Mapping[str, float]) -> None:
+        positive = (
+            "a_step_s",
+            "a_poll_s",
+            "wind_ramp_up_kw_per_s",
+            "wind_ramp_down_kw_per_s",
+            "diesel_ramp_up_kw_per_s",
+            "diesel_ramp_down_kw_per_s",
+            "b_poll_s",
+            "b_dispatch_s",
+            "wind_rated_power_kw",
+            "c_control_s",
+            "c_timeout_s",
+        )
+        if any(values[name] <= 0 for name in positive):
+            raise ValueError("parameter_must_be_positive")
+
+        # Reuse the model constructors so GUI and TCP updates cannot bypass the
+        # same physical relationships used by step_once.
+        WindTurbineParameters(
+            rated_power_kw=values["wind_rated_power_kw"],
+            cut_in_speed_mps=values["cut_in_speed_mps"],
+            rated_speed_mps=values["rated_speed_mps"],
+            cut_out_speed_mps=values["cut_out_speed_mps"],
+            pitch_full_output_deg=values["pitch_full_output_deg"],
+            pitch_feather_deg=values["pitch_feather_deg"],
+            ramp_up_kw_per_s=values["wind_ramp_up_kw_per_s"],
+            ramp_down_kw_per_s=values["wind_ramp_down_kw_per_s"],
+        )
+        DieselGeneratorParameters(
+            min_power_kw=values["diesel_min_power_kw"],
+            max_power_kw=values["diesel_max_power_kw"],
+            ramp_up_kw_per_s=values["diesel_ramp_up_kw_per_s"],
+            ramp_down_kw_per_s=values["diesel_ramp_down_kw_per_s"],
+        )
+        if values["reserve_kw"] > values["diesel_max_power_kw"]:
+            raise ValueError("reserve_kw_must_not_exceed_diesel_max_power_kw")
+        if values["c_timeout_s"] < values["c_control_s"]:
+            raise ValueError("c_timeout_s_must_not_be_below_c_control_s")
+
+    def _update_parameters(
+        self,
+        connection: sqlite3.Connection,
+        parameters: Mapping[str, object],
+        *,
+        allowed: frozenset[str],
+        owner: str,
+        source: str,
+    ) -> None:
+        updates = self._normalized_updates(parameters, allowed)
+        rows = connection.execute(
+            "SELECT name, value FROM parameter_state"
+        ).fetchall()
+        current = {str(row["name"]): float(row["value"]) for row in rows}
+        if set(current) != set(PARAMETER_SPECS):
+            raise RuntimeError("parameter_state does not match the v5 parameter registry")
+        prospective = {**current, **updates}
+        self._validate_parameter_relationships(prospective)
+        changed_names = {name for name, value in updates.items() if value != current[name]}
+
+        # Re-sending an already synchronized snapshot is valid, but it is not
+        # a parameter change and must not inflate the history table.
+        if not changed_names:
+            return
+
+        timestamp = _utc_now()
+        for name in sorted(changed_names):
+            unit, expected_owner, _ = PARAMETER_SPECS[name]
+            if expected_owner != owner:
+                raise ValueError("unauthorized_parameter")
+            old_value = current[name]
+            new_value = updates[name]
+            connection.execute(
+                """UPDATE parameter_state
+                   SET value=?, source=?, updated_at_utc=? WHERE name=?""",
+                (new_value, source, timestamp, name),
+            )
+            connection.execute(
+                """INSERT INTO parameter_history
+                   (name, old_value, new_value, unit, owner, source, changed_at_utc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (name, old_value, new_value, unit, owner, source, timestamp),
+            )
+            if name in DEVICE_PARAMETER_STORAGE:
+                device_id, storage_name = DEVICE_PARAMETER_STORAGE[name]
+                connection.execute(
+                    """UPDATE device_parameters SET value=?
+                       WHERE device_id=? AND name=?""",
+                    (new_value, device_id, storage_name),
+                )
+            elif name in SIMULATION_PARAMETER_STORAGE:
+                column = SIMULATION_PARAMETER_STORAGE[name]
+                connection.execute(
+                    f"UPDATE simulation_control SET {column}=? WHERE singleton_id=1",
+                    (new_value,),
+                )
+
+        c_physical_names = C_PARAMETER_NAMES - {"c_control_s", "c_timeout_s"}
+        c_action_invalidated = owner == "C" and bool(
+            changed_names.intersection(c_physical_names)
+        )
+        if c_action_invalidated:
+            # A cannot recompute a new C action.  Invalidate the cached action
+            # until C publishes a wind_action based on the updated parameters.
+            connection.execute(
+                """UPDATE control_state
+                   SET controller_wind_enable=0, pitch_target_deg=?,
+                       controller_wind_available_kw=0,
+                       controller_wind_operating_limit_kw=0,
+                       updated_at_utc=? WHERE singleton_id=1""",
+                (prospective["pitch_feather_deg"], timestamp),
+            )
+
+        runtime = connection.execute(
+            "SELECT session_id, step FROM simulation_control WHERE singleton_id=1"
+        ).fetchone()
+        if runtime is None:
+            raise RuntimeError("simulation_control row is missing")
+        names = ",".join(sorted(changed_names))
+        connection.execute(
+            "INSERT INTO logs VALUES (NULL, 'INFO', 'parameters_updated', ?, ?, ?, ?)",
+            (f"source={source}; names={names}", runtime["session_id"], runtime["step"], timestamp),
+        )
+        if c_action_invalidated:
+            connection.execute(
+                "INSERT INTO logs VALUES (NULL, 'INFO', 'c_action_invalidated', ?, ?, ?, ?)",
+                (
+                    "waiting for wind_action calculated with updated C parameters",
+                    runtime["session_id"],
+                    runtime["step"],
+                    timestamp,
+                ),
+            )
+
+    def next_server_seq(self) -> int:
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "UPDATE simulation_control SET server_seq=server_seq+1 WHERE singleton_id=1"
+            )
+            return connection.execute(
+                "SELECT server_seq FROM simulation_control WHERE singleton_id=1"
+            ).fetchone()[0]
+
+    def apply_command(self, message: dict[str, object]) -> CommandResult:
+        self._ensure_exists()
+        payload = message["payload"]
+        assert isinstance(payload, dict)
+        session_id = message.get("session_id")
+        source = str(message["source"])
+        seq = int(message["seq"])
+        message_type = str(message["type"])
+        timestamp = _utc_now()
+        with _connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            runtime = connection.execute(
+                "SELECT session_id, step FROM simulation_control WHERE singleton_id=1"
+            ).fetchone()
+            if runtime is None:
+                raise RuntimeError("simulation_control row is missing")
+            payload_json = _json_value(payload)
+            existing = connection.execute(
+                """SELECT message_type, payload_json, accepted, reason FROM commands
+                   WHERE session_id IS ? AND source=? AND seq=?""",
+                (session_id, source, seq),
+            ).fetchone()
+            if existing is not None:
+                try:
+                    existing_payload = _json_value(json.loads(existing["payload_json"]))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    existing_payload = str(existing["payload_json"])
+                if existing["message_type"] == message_type and existing_payload == payload_json:
+                    return CommandResult(bool(existing["accepted"]), existing["reason"], True)
+                connection.execute(
+                    "INSERT INTO logs VALUES (NULL, 'WARNING', 'command_rejected', ?, ?, ?, ?)",
+                    ("seq_conflict", runtime["session_id"], runtime["step"], timestamp),
+                )
+                return CommandResult(False, "seq_conflict")
+            result = self._validate_and_apply(connection, runtime, message_type, source, session_id, seq, payload)
+            connection.execute(
+                """INSERT INTO commands
+                   (session_id, source, seq, message_type, payload_json, accepted, reason, received_at_utc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (session_id, source, seq, message_type, payload_json,
+                 int(result.accepted), result.reason, timestamp),
+            )
+            if not result.accepted:
+                connection.execute(
+                    "INSERT INTO logs VALUES (NULL, 'WARNING', 'command_rejected', ?, ?, ?, ?)",
+                    (result.reason, runtime["session_id"], runtime["step"], timestamp),
+                )
+            return result
+
+    def _validate_and_apply(
+        self,
+        connection: sqlite3.Connection,
+        runtime: sqlite3.Row,
+        message_type: str,
+        source: str,
+        session_id: object,
+        seq: int,
+        payload: dict[str, object],
+    ) -> CommandResult:
+        if session_id != runtime["session_id"]:
+            return CommandResult(False, "stale_session")
+        expected_source = {"dispatch": "B", "wind_action": "C"}.get(message_type)
+        if message_type == "parameter_update":
+            if source not in {"B", "C"}:
+                return CommandResult(False, "unauthorized_message_type")
+        elif expected_source is None or source != expected_source:
+            return CommandResult(False, "unauthorized_message_type")
+        max_seq = connection.execute(
+            "SELECT MAX(seq) FROM commands WHERE session_id=? AND source=?",
+            (session_id, source),
+        ).fetchone()[0]
+        if max_seq is not None and seq <= max_seq:
+            return CommandResult(False, "out_of_order")
+        try:
+            if message_type == "dispatch":
+                self._apply_dispatch(connection, payload)
+            elif message_type == "wind_action":
+                self._apply_wind_action(connection, payload)
+            else:
+                self._apply_parameter_update(connection, payload, source)
+        except ValueError as exc:
+            return CommandResult(False, str(exc))
+        return CommandResult(True, "accepted")
+
+    @staticmethod
+    def _strict_bool(payload: dict[str, object], name: str) -> bool:
+        value = payload.get(name)
+        if type(value) is not bool:
+            raise ValueError(f"invalid_{name}")
+        return value
+
+    @staticmethod
+    def _strict_number(payload: dict[str, object], name: str) -> float:
+        value = payload.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"invalid_{name}")
+        result = float(value)
+        if not math.isfinite(result) or result < 0:
+            raise ValueError(f"invalid_{name}")
+        return result
+
+    def _apply_dispatch(self, connection: sqlite3.Connection, payload: dict[str, object]) -> None:
+        expected = {"wind_target_kw", "diesel_target_kw", "wind_enable", "diesel_enable"}
+        if set(payload) != expected:
+            raise ValueError("invalid_dispatch_fields")
+        wind_target = self._strict_number(payload, "wind_target_kw")
+        diesel_target = self._strict_number(payload, "diesel_target_kw")
+        wind_enable = self._strict_bool(payload, "wind_enable")
+        diesel_enable = self._strict_bool(payload, "diesel_enable")
+        limits = {
+            row["device_id"]: row["value"]
+            for row in connection.execute(
+                "SELECT device_id, value FROM device_parameters WHERE name IN ('rated_power_kw', 'max_power_kw')"
+            )
+        }
+        if wind_target > limits["WT01"]:
+            raise ValueError("wind_target_out_of_range")
+        if diesel_target > limits["DG01"]:
+            raise ValueError("diesel_target_out_of_range")
+        connection.execute(
+            """UPDATE control_state SET wind_target_kw=?, diesel_target_kw=?,
+               dispatch_wind_enable=?, diesel_enable=?, updated_at_utc=? WHERE singleton_id=1""",
+            (wind_target, diesel_target, int(wind_enable), int(diesel_enable), _utc_now()),
+        )
+
+    def _apply_wind_action(self, connection: sqlite3.Connection, payload: dict[str, object]) -> None:
+        expected = {
+            "wind_enable",
+            "pitch_target_deg",
+            "wind_available_kw",
+            "wind_operating_limit_kw",
+        }
+        if set(payload) != expected:
+            raise ValueError("invalid_wind_action_fields")
+        wind_enable = self._strict_bool(payload, "wind_enable")
+        pitch = self._strict_number(payload, "pitch_target_deg")
+        available = self._strict_number(payload, "wind_available_kw")
+        operating_limit = self._strict_number(payload, "wind_operating_limit_kw")
+        row = connection.execute(
+            "SELECT value FROM device_parameters WHERE device_id='WT01' AND name='pitch_feather_deg'"
+        ).fetchone()
+        if row is None or pitch > row["value"]:
+            raise ValueError("pitch_target_out_of_range")
+        rated_row = connection.execute(
+            "SELECT value FROM device_parameters WHERE device_id='WT01' AND name='rated_power_kw'"
+        ).fetchone()
+        if rated_row is None or available > rated_row["value"]:
+            raise ValueError("wind_available_out_of_range")
+        if operating_limit > available:
+            raise ValueError("wind_operating_limit_out_of_range")
+        connection.execute(
+            """UPDATE control_state SET controller_wind_enable=?, pitch_target_deg=?,
+               controller_wind_available_kw=?, controller_wind_operating_limit_kw=?,
+               updated_at_utc=? WHERE singleton_id=1""",
+            (int(wind_enable), pitch, available, operating_limit, _utc_now()),
+        )
+
+    def _apply_parameter_update(
+        self,
+        connection: sqlite3.Connection,
+        payload: dict[str, object],
+        source: str,
+    ) -> None:
+        if set(payload) != {"parameters"} or not isinstance(payload["parameters"], dict):
+            raise ValueError("invalid_parameter_update_fields")
+        if source == "B":
+            allowed = B_PARAMETER_NAMES
+            source_label = "B_tcp"
+        elif source == "C":
+            allowed = C_PARAMETER_NAMES
+            source_label = "C_tcp"
+        else:  # Defense in depth; the envelope validator already rejects this.
+            raise ValueError("unauthorized_message_type")
+        self._update_parameters(
+            connection,
+            payload["parameters"],
+            allowed=allowed,
+            owner=source,
+            source=source_label,
+        )
+
+    def mark_connection(self, peer: str, connected: bool, detail: str) -> None:
+        if peer not in {"B", "C"}:
+            return
+        self._ensure_exists()
+        timestamp = _utc_now()
+        with _connect(self.path) as connection:
+            previous = connection.execute(
+                "SELECT connected FROM connection_status WHERE peer=?", (peer,)
+            ).fetchone()
+            runtime = connection.execute(
+                "SELECT session_id, step FROM simulation_control WHERE singleton_id=1"
+            ).fetchone()
+            connection.execute(
+                """UPDATE connection_status SET connected=?, last_seen_at_utc=?, detail=? WHERE peer=?""",
+                (int(connected), timestamp, detail, peer),
+            )
+            if (
+                previous is not None
+                and runtime is not None
+                and bool(previous["connected"]) != bool(connected)
+            ):
+                event = "peer_connected" if connected else "peer_disconnected"
+                connection.execute(
+                    "INSERT INTO logs VALUES (NULL, 'INFO', ?, ?, ?, ?, ?)",
+                    (
+                        event,
+                        f"{peer}: {detail}",
+                        runtime["session_id"],
+                        runtime["step"],
+                        timestamp,
+                    ),
+                )
+
+    def log(self, level: str, event: str, message: str) -> None:
+        runtime = self.runtime()
+        with _connect(self.path) as connection:
+            connection.execute(
+                "INSERT INTO logs VALUES (NULL, ?, ?, ?, ?, ?, ?)",
+                (level, event, message, runtime["session_id"], runtime["step"], _utc_now()),
+            )

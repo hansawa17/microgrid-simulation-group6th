@@ -346,4 +346,1395 @@ class SimulatorWindow(QMainWindow):
         layout.setContentsMargins(20, 0, 20, 0)
         layout.setSpacing(10)
 
-        badge = self._fr×¿}îÚ$z{-®éÜj×&rÂÖ–ær“ ¢–b—6–ç7Fæ6R‡&rævWB‚'&ÖWFW'2"’Â†Æ—7BÂGWÆR’“ ¢fÇVW3¢—FW&&ÆU¶ö&¦V7EÒÒ&u²'&ÖWFW'2%Ð¢VÇ6S ¢fÇVW2Ò¶F–7B‡fÇVRÂ¶W“Ö¶W’’–b—6–ç7Fæ6R‡fÇVRÂÖ–ær’VÇ6R²&¶W’#¢¶W’Â'fÇVR#¢fÇVWÒf÷"¶W’ÂfÇVR–â&ræ—FV×2‚•Ð¢VÇ6S ¢fÇVW2Ò&r–b—6–ç7Fæ6R‡&rÂ—FW&&ÆR’æBæ÷B—6–ç7Fæ6R‡&rÂ‡7G"Â'—FW2’’VÇ6RµÐ¢&÷w3¢Æ—7E¶F–7E·7G"Âö&¦V7EÕÒÒµÐ¢f÷"fÇVR–âfÇVW3 ¢&÷rÒ÷&÷uöÖ–ær‡fÇVR¢¶W’Ò&÷rævWB‚&¶W’"’÷"&÷rævWB‚'&ÖWFW%ö¶W’"’÷"&÷rævWB‚'&ÖWFW""’÷"&÷rævWB‚&æÖR"¢FWf–6RÒ&÷rævWB‚&FWf–6Uö–B"¢–bFWf–6RæB¶W’æBæ÷B7G"†¶W’’ç7F'G7v—F‚†b'¶FWf–6WÒâ"“ ¢¶W’Òb'¶FWf–6WÒç¶¶W—Ò ¢–bæ÷B¶W“ ¢6öçF–çVP¢÷væW"Ò7G"‡&÷rævWB‚&÷væW""Â$"’’çWW"‚¢&÷w2æVæB‡°¢&¶W’#¢7G"†¶W’’Â'fÇVR#¢&÷rævWB‚'fÇVR"Â&÷rævWB‚&æWu÷fÇVR"Â"Ò"’’À¢'Væ—B#¢7G"‡&÷rævWB‚'Væ—B"Â""’’Â&÷væW"#¢÷væW"À¢'6÷W&6R#¢7G"‡&÷rævWB‚'6÷W&6R"Â÷væW"’’À¢'WFFVEöE÷WF2#¢7G"‡&÷rævWB‚'WFFVEöE÷WF2"Â&÷rævWB‚&6†ævVEöE÷WF2"Â"Ò"’’’À¢&VF—F&ÆR#¢&ööÂ‡&÷rævWB‚&VF—F&ÆR"Â÷væW"ÓÒ$"’’æB÷væW"ÓÒ$"À¢Ò¢&WGW&â&÷w0 ¢FVb&Vg&W6…÷&ÖWFW'2‡6VÆbÂf÷&6S¢&ööÂÒfÇ6R’ÓâæöæS ¢æ÷rÒF–ÖRæÖöæ÷Föæ–2‚¢–bæ÷Bf÷&6RæBæ÷rÒ6VÆbåöÆ7E÷&ÖWFW%÷&Vg&W6‚ÂãS ¢&WGW&à¢–bæ÷Bf÷&6RæBç’†VF—F÷"æ†4fö7W2‚’f÷"VF—F÷"–â6VÆbå÷&ÖWFW%öVF—F÷'2çfÇVW2‚’“ ¢&WGW&à¢6VÆbåöÆ7E÷&ÖWFW%÷&Vg&W6‚Òæ÷p¢&÷w3¢Æ—7E¶F–7E·7G"Âö&¦V7EÕÐ¢ÖWF†öBÒvWFGG"‡6VÆbç&W÷6—F÷'’Â'&ÖWFW%÷6æ6†÷B"ÂæöæR¢G'“ ¢&÷w2Ò6VÆbåöæ÷&ÖÆ—¦U÷&ÖWFW%÷&÷w2†ÖWF†öB‚’’–b6ÆÆ&ÆR†ÖWF†öB’æB6VÆbæF%÷F‚æ—5öf–ÆR‚’VÇ6R6VÆbåöfÆÆ&6µ÷&ÖWFW%÷&÷w2‚¢–bæ÷B&÷w3 ¢&÷w2Ò6VÆbåöfÆÆ&6µ÷&ÖWFW%÷&÷w2‚¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢&÷w2Ò6VÆbåöfÆÆ&6µ÷&ÖWFW%÷&÷w2‚¢6VÆbç&ÖWFW%7–æ4Æ&VÂç6WEFW‡B†b.Xø.i[hê^Xú>™˜Þ{ª~ûÉ§¶W'&÷'Ò"¢VÇ6S ¢6VÆbç&ÖWFW%7–æ4Æ&VÂç6WEFW‡B†b.[{.YÎjÚR¶ÆVâ‡&÷w2—ÒšžûÙÇµ÷&f3333’…÷WF5öæ÷r‚’—Ò"¢6VÆbå÷&ÖWFW%÷&÷w2Ò&÷w0¢6VÆbå÷÷VÆFU÷&ÖWFW%÷F&ÆR‡&÷w2¢6VÆbå÷&Vg&W6…÷&ÖWFW%ö†—7F÷'’‚ ¢FVb÷÷VÆFU÷&ÖWFW%÷F&ÆR‡6VÆbÂ&÷w3¢Æ—7E¶F–7E·7G"Âö&¦V7EÕÒ’ÓâæöæS ¢VæF–æu÷fÇVW2Ò°¢¶W“¢VF—F÷"çfÇVR‚¢f÷"¶W’ÂVF—F÷"–â6VÆbå÷&ÖWFW%öVF—F÷'2æ—FV×2‚¢–b¶W’–â6VÆbå÷&ÖWFW%ö÷&–v–æÇ0¢æBæ÷BÖF‚æ—66Æ÷6R€¢VF—F÷"çfÇVR‚’Â6VÆbå÷&ÖWFW%ö÷&–v–æÇ5¶¶W•ÒÂ&VÅ÷FöÃÓãÂ'5÷FöÃÓRÓ¢¢Ð¢6VÆbç&ÖWFW%F&ÆRç6WE&÷t6÷VçB†ÆVâ‡&÷w2’¢6VÆbå÷&ÖWFW%öVF—F÷'2æ6ÆV"‚¢6VÆbå÷&ÖWFW%ö÷&–v–æÇ2æ6ÆV"‚¢&VFöæÇ•ö''W6‚Ò6öÆ÷"‚"6c&cVc‚"¢f÷"–æFW‚Â&÷r–âVçVÖW&FR‡&÷w2“ ¢¶W’Ò7G"‡&÷u²&¶W’%Ò¢÷væW"Ò7G"‡&÷u²&÷væW"%Ò¢VF—F&ÆRÒ&ööÂ‡&÷u²&VF—F&ÆR%Ò¢fÇVW2Ò€¢$ÔUDU%ôäÔU2ævWB†¶W’Â¶W’ç7Æ—B‚"â"•²ÓÒ’Â¶W’Â÷væW"À¢""Â7G"‡&÷u²'Væ—B%Ò’Â7G"‡&÷u²'6÷W&6R%Ò’Â7G"‡&÷u²'WFFVEöE÷WF2%Ò’À¢¢f÷"6öÇVÖâÂFW‡B–âVçVÖW&FR‡fÇVW2“ ¢–b6öÇVÖâÓÒ3 ¢6öçF–çVP¢—FVÒÒF&ÆUv–FvWD—FVÒ‡FW‡B¢—FVÒç6WDfÆw2†—FVÒæfÆw2‚’båBä—FVÔfÆrä—FVÔ—4VF—F&ÆR¢–bæ÷BVF—F&ÆS ¢—FVÒç6WD&6¶w&÷VæB‡&VFöæÇ•ö''W6‚¢6VÆbç&ÖWFW%F&ÆRç6WD—FVÒ†–æFW‚Â6öÇVÖâÂ—FVÒ¢fÇVRÒ&÷rævWB‚'fÇVR"¢–bVF—F&ÆRæB—6–ç7Fæ6R‡fÇVRÂ†–çBÂfÆöB’’æBæ÷B—6–ç7Fæ6R‡fÇVRÂ&ööÂ’æBÖF‚æ—6f–æ—FR†fÆöB‡fÇVR’“ ¢VF—F÷"ÒF÷V&ÆU7–ä&÷‚‚¢VF—F÷"ç6WE&ævRƒãÂóóã¢VF—F÷"ç6WDFV6–ÖÇ2ƒ2¢VF—F÷"ç6WEfÇVR‡VæF–æu÷fÇVW2ævWB†¶W’ÂfÆöB‡fÇVR’’¢VF—F÷"ç6WE6–ævÆU7FWƒã¢VF—F÷"ç6WDÖ–æ–×VÔ†V–v‡Bƒ3b¢VF—F÷"ç6WE7G–ÆU6†VWB€¢%F÷V&ÆU7–ä&÷‚²FF–æs¢gƒ²Ò ¢%F÷V&ÆU7–ä&÷‚Æ–æTVF—B²FF–æs¢²&÷&FW#¢æöæS²Ò ¢¢6VÆbç&ÖWFW%F&ÆRç6WD6VÆÅv–FvWB†–æFW‚Â2ÂVF—F÷"¢6VÆbå÷&ÖWFW%öVF—F÷'5¶¶W•ÒÒVF—F÷ ¢6VÆbå÷&ÖWFW%ö÷&–v–æÇ5¶¶W•ÒÒfÆöB‡fÇVR¢VÇ6S ¢FW‡BÒ'G'VR"–bfÇVR—2G'VRVÇ6R&fÇ6R"–bfÇVR—2fÇ6RVÇ6R7G"‡fÇVR¢—FVÒÒF&ÆUv–FvWD—FVÒ‡FW‡B¢—FVÒç6WDfÆw2†—FVÒæfÆw2‚’båBä—FVÔfÆrä—FVÔ—4VF—F&ÆR¢—FVÒç6WD&6¶w&÷VæB‡&VFöæÇ•ö''W6‚¢6VÆbç&ÖWFW%F&ÆRç6WD—FVÒ†–æFW‚Â2Â—FVÒ ¢FVb6fUö÷&ÖWFW'2‡6VÆb’ÓâæöæS ¢6†ævW2Ò°¢¶W“¢VF—F÷"çfÇVR‚¢f÷"¶W’ÂVF—F÷"–â6VÆbå÷&ÖWFW%öVF—F÷'2æ—FV×2‚¢–bæ÷BÖF‚æ—66Æ÷6R†VF—F÷"çfÇVR‚’Â6VÆbå÷&ÖWFW%ö÷&–v–æÇ5¶¶W•ÒÂ&VÅ÷FöÃÓãÂ'5÷FöÃÓRÓ’¢Ð¢–bæ÷B6†ævW3 ¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR‚$Xø.i[k*iÈžXùŽXÉb"Â3¢&WGW&à¢ÖWF†öBÒvWFGG"‡6VÆbç&W÷6—F÷'’Â'WFFUö÷&ÖWFW'2"ÂæöæR¢–bæ÷B6ÆÆ&ÆR†ÖWF†öB“ ¢ÖW76vT&÷‚çv&æ–ær‡6VÆbÂ.Xø.i[KùÞZÙ‚"Â.[Ù>X˜Ò&W÷6—F÷'’[	®iÊ®hùKé²WFFUö÷&ÖWFW'2‚žûÈÎiÊ®XižXZ^K»¾KÙ^Xø.i[8""¢&WGW&à¢G'“ ¢ÖWF†öB†6†ævW2¢6VÆbåöVæE÷V•öWfVçB‚$”ädò"Â.Xø.i["Â$Xø.i[[{.i»NikûÉ¢"²"Â"æ¦ö–â†6†ævW2’¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR†b.[{.KùÞZÙ‚¶ÆVâ†6†ævW2—Òš’Xø.i["ÂC¢6VÆbç&Vg&W6…÷&ÖWFW'2†f÷&6SÕG'VR¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢ÖW76vT&÷‚çv&æ–ær‡6VÆbÂ.Xø.i[KùÞZÙŽZK‹JR"Â7G"†W'&÷"’ ¢FVb÷&Vg&W6…÷&ÖWFW%ö†—7F÷'’‡6VÆb’ÓâæöæS ¢ÖWF†öBÒvWFGG"‡6VÆbç&W÷6—F÷'’Â'&ÖWFW%ö†—7F÷'’"ÂæöæR¢G'“ ¢–bæ÷B6ÆÆ&ÆR†ÖWF†öB’÷"æ÷B6VÆbæF%÷F‚æ—5öf–ÆR‚“ ¢&÷w3¢Æ—7E¶F–7E·7G"Âç•ÕÒÒµÐ¢VÇ6S ¢G'“ ¢&rÒÖWF†öB†Æ–Ö—CÓS¢W†6WBG—TW'&÷# ¢&rÒÖWF†öBƒS¢&÷w2Òµ÷&÷uöÖ–ær‡&÷r’f÷"&÷r–â&uÐ¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"“ ¢&÷w2ÒµÐ¢6VÆbç&ÖWFW$†—7F÷'•F&ÆRç6WE&÷t6÷VçB†ÆVâ‡&÷w2’¢f÷"&÷uö–æFW‚Â&÷r–âVçVÖW&FR‡&÷w2“ ¢¶W’Ò7G"‡&÷rævWB‚&¶W’"Â&÷rævWB‚'&ÖWFW%ö¶W’"Â&÷rævWB‚&æÖR"Â"Ò"’’’¢fÇVW2Ò€¢&÷rævWB‚&6†ævVEöE÷WF2"Â&÷rævWB‚'WFFVEöE÷WF2"Â&÷rævWB‚&7&VFVEöE÷WF2"Â"Ò"’’’À¢$ÔUDU%ôäÔU2ævWB†¶W’Â¶W’’Â&÷rævWB‚&÷væW""Â"Ò"’Â&÷rævWB‚&öÆE÷fÇVR"Â"Ò"’À¢&÷rævWB‚&æWu÷fÇVR"Â&÷rævWB‚'fÇVR"Â"Ò"’’Â&÷rævWB‚'6÷W&6R"Â"Ò"’À¢&÷rævWB‚&ÖW76vR"Â&÷rævWB‚'&V6öâ"Â""’’À¢¢f÷"6öÇVÖâÂfÇVR–âVçVÖW&FR‡fÇVW2“ ¢6VÆbç&ÖWFW$†—7F÷'•F&ÆRç6WD—FVÒ‡&÷uö–æFW‚Â6öÇVÖâÂF&ÆUv–FvWD—FVÒ‡7G"‡fÇVR’’ ¢FVb&Vg&W6…ö†—7F÷'’‡6VÆbÂ¥÷VçW6VB’ÓâæöæS ¢–bæ÷B6VÆbæF%÷F‚æ—5öf–ÆR‚“ ¢6VÆbæ†—7F÷'•G&VæBæ6ÆV"‚¢6VÆbæ†—7F÷'•F&ÆRç6WE&÷t6÷VçBƒ¢6VÆbæÆöuF&ÆRç6WE&÷t6÷VçBƒ¢&WGW&à¢G'“ ¢6W76–öç2Ò6VÆbåö†—7F÷'•÷6W76–öç2‚¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR†b.XènXû.x«nhŠû¾XùnZK‹J^ûÉ§¶W'&÷'Ò"ÂS¢&WGW&à¢6VÆV7FVE÷6W76–öâÒ6VÆbæ†—7F÷'•6W76–öä6öÖ&òæ7W'&VçDFF‚¢–b6VÆV7FVE÷6W76–öâæ÷B–â6W76–öç3 ¢6VÆV7FVE÷6W76–öâÒ6W76–öç5²ÓÒ–b6W76–öç2VÇ6RæöæP¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òæ&Æö6µ6–væÇ2…G'VR¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òæ6ÆV"‚¢f÷"–æFW‚Â6W76–öåö–B–âVçVÖW&FR‡6W76–öç2“ ¢&Vf—‚Ò.[Ù>X˜Ò+r"–b–æFW‚ÓÒÆVâ‡6W76–öç2’ÒVÇ6R.XènXû"+r ¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òæFD—FVÒ‡&Vf—‚²6W76–öåö–E³£%ÒÂ6W76–öåö–B¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òç6WD—FVÔFF†–æFW‚Â6W76–öåö–BÂBä—FVÔFF&öÆRåFööÅF—&öÆR¢–b6VÆV7FVE÷6W76–öâ—2æ÷BæöæS ¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òç6WD7W'&VçD–æFW‚‡6W76–öç2æ–æFW‚‡6VÆV7FVE÷6W76–öâ’¢6VÆbæ†—7F÷'•6W76–öä6öÖ&òæ&Æö6µ6–væÇ2„fÇ6R¢G'“ ¢6VÆV7FVE÷&÷w2Ò6VÆbå÷7FFUö†—7F÷'’€¢6VÆbæ†—7F÷'”Æ–Ö—E7–âçfÇVR‚’Â6W76–öåö–C×6VÆV7FVE÷6W76–öà¢’–b6VÆV7FVE÷6W76–öâ—2æ÷BæöæRVÇ6RµÐ¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR†b.XènXû.x«nhŠû¾XùnZK‹J^ûÉ§¶W'&÷'Ò"ÂS¢6VÆV7FVE÷&÷w2ÒµÐ¢¶W’ÂVæ—BÂ6öÆ÷"Ò6VÆbæ†—7F÷'”ÖWG&–46öÖ&òæ7W'&VçDFF‚¢Æ&VÂÒ6VÆbæ†—7F÷'”ÖWG&–46öÖ&òæ7W'&VçEFW‡B‚¢6W76–öåöÆ&VÂÒ7G"‡6VÆV7FVE÷6W76–öâ•³£…Ò–b6VÆV7FVE÷6W76–öâVÇ6R.izKÉ®ŠùÒ ¢6VÆbæ†—7F÷'•G&VæBçF—FÆRÒb.XènXû"+r¶Æ&VÇÒ+r·6W76–öåöÆ&VÇÒ ¢6VÆbæ†—7F÷'•G&VæBçVæ—BÒVæ—@¢6VÆbæ†—7F÷'•G&VæBæ6öÆ÷'2Ò¶Æ&VÃ¢6öÆ÷'Ð¢6VÆbæ†—7F÷'•G&VæBç6WE÷6W&–W2€¢·7G"‡&÷rævWB‚'6×ÆVEöE÷WF2"Â""’’f÷"&÷r–â6VÆV7FVE÷&÷w5ÒÀ¢¶Æ&VÃ¢¶fÆöB‡&÷rævWB†¶W’Âã’’f÷"&÷r–â6VÆV7FVE÷&÷w5×ÒÀ¢’–b6VÆV7FVE÷&÷w2VÇ6R6VÆbæ†—7F÷'•G&VæBæ6ÆV"‚¢æWvW7BÒÆ—7B‡&WfW'6VB‡6VÆV7FVE÷&÷w2’¢6VÆbæ†—7F÷'•F&ÆRç6WE&÷t6÷VçB†ÆVâ†æWvW7B’¢¶W—2Ò€¢'6×ÆVEöE÷WF2"Â'7FW"Â'v–æE÷7VVEö×2"Â&ÆöE÷÷vW%ö·r"Â'v–æEöf–Æ&ÆUö·r"À¢'v–æE÷F&vWEö·r"Â'v–æEö7GVÅö·r"Â&F–W6VÅ÷F&vWEö·r"Â&F–W6VÅö7GVÅö·r"À¢'÷vW%ö–Ö&Ææ6Uö·r"Â'6W76–öåö–B"À¢¢f÷"&÷uö–æFW‚Â&÷r–âVçVÖW&FR†æWvW7B“ ¢f÷"6öÇVÖâÂf–VÆB–âVçVÖW&FR†¶W—2“ ¢fÇVRÒ&÷rævWB†f–VÆBÂ"Ò"¢FW‡BÒb'¶fÆöB‡fÇVR“¢ã6gÒ"–b—6–ç7Fæ6R‡fÇVRÂfÆöB’VÇ6R7G"‡fÇVR¢6VÆbæ†—7F÷'•F&ÆRç6WD—FVÒ‡&÷uö–æFW‚Â6öÇVÖâÂF&ÆUv–FvWD—FVÒ‡FW‡B’¢6VÆbå÷&Vg&W6…öÆöw2‚ ¢FVb÷&W÷6—F÷'•öÆöw2‡6VÆbÂÆ–Ö—C¢–çB’ÓâÆ—7E¶F–7E·7G"Âç•ÕÓ ¢ÖWF†öBÒvWFGG"‡6VÆbç&W÷6—F÷'’Â&Æöw2"ÂæöæR¢–bæ÷B6ÆÆ&ÆR†ÖWF†öB“ ¢&WGW&âµÐ¢G'“ ¢&rÒÖWF†öB†Æ–Ö—CÖÆ–Ö—B¢W†6WBG—TW'&÷# ¢&rÒÖWF†öB†Æ–Ö—B¢&WGW&âµ÷&÷uöÖ–ær‡&÷r’f÷"&÷r–â&uÐ ¢FVb÷&Vg&W6…öÆöw2‡6VÆb’ÓâæöæS ¢G'“ ¢&÷w2Ò6VÆbå÷&W÷6—F÷'•öÆöw2‡6VÆbæ†—7F÷'”Æ–Ö—E7–âçfÇVR‚’¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"’2W'&÷# ¢6VÆbç7FGW4&"‚’ç6†÷tÖW76vR†b.iz^[ù~Šû¾XùnZK‹J^ûÉ§¶W'&÷'Ò"ÂS¢&÷w2ÒµÐ¢ÆWfVÅöf–ÇFW"Ò6VÆbæÆötÆWfVÄ6öÖ&òæ7W'&VçEFW‡B‚¢–bÆWfVÅöf–ÇFW"Ò.XZŽ˜:‚# ¢&÷w2Ò·&÷rf÷"&÷r–â&÷w2–b7G"‡&÷rævWB‚&ÆWfVÂ"Â""’’çWW"‚’ÓÒÆWfVÅöf–ÇFW%Ð¢6VÆbæÆöuF&ÆRç6WE&÷t6÷VçB†ÆVâ‡&÷w2’¢f÷"&÷uö–æFW‚Â&÷r–âVçVÖW&FR‡&÷w2“ ¢fÇVW2Ò€¢&÷rævWB‚&7&VFVEöE÷WF2"Â"Ò"’Â&÷rævWB‚&ÆWfVÂ"Â"Ò"’Â&÷rævWB‚&WfVçB"Â"Ò"’À¢&÷rævWB‚'7FW"Â"Ò"’Â&÷rævWB‚&ÖW76vR"Â""’À¢¢f÷"6öÇVÖâÂfÇVR–âVçVÖW&FR‡fÇVW2“ ¢6VÆbæÆöuF&ÆRç6WD—FVÒ‡&÷uö–æFW‚Â6öÇVÖâÂF&ÆUv–FvWD—FVÒ‡7G"‡fÇVR’’ ¢FVb÷&Vg&W6…öÆW'G2‡6VÆb’ÓâæöæS ¢FF&6UöWfVçG3¢Æ—7E¶F–7E·7G"Âç•ÕÒÒµÐ¢–b6VÆbæF%÷F‚æ—5öf–ÆR‚“ ¢G'“ ¢FF&6UöWfVçG2Ò°¢²¢§&÷rÂ'6÷W&6R#¢7G"‡&÷rævWB‚&WfVçB"Â&w&–BæF""’—Ð¢f÷"&÷r–â6VÆbå÷&W÷6—F÷'•öÆöw2ƒ¢–b7G"‡&÷rævWB‚&ÆWfVÂ"Â""’’çWW"‚’–â²%t$ä”är"Â$U%$õ""Â$5$•D”4Â'Ð¢Ð¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂG—TW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"“ ¢70¢&÷w2Ò²¦FF&6UöWfVçG2Â§6VÆbå÷V•öWfVçG5Ð¢&÷w2ç6÷'B†¶W“ÖÆÖ&F&÷s¢7G"‡&÷rævWB‚&7&VFVEöE÷WF2"Â""’’Â&WfW'6SÕG'VR¢&÷w2Ò&÷w5³£Ð¢6VÆbæÆW'EF&ÆRç6WE&÷t6÷VçB†ÆVâ‡&÷w2’¢f÷"&÷uö–æFW‚Â&÷r–âVçVÖW&FR‡&÷w2“ ¢fÇVW2Ò€¢&÷rævWB‚&7&VFVEöE÷WF2"Â"Ò"’Â&÷rævWB‚&ÆWfVÂ"Â"Ò"’À¢&÷rævWB‚'6÷W&6R"Â&÷rævWB‚&WfVçB"Â"Ò"’’Â&÷rævWB‚&ÖW76vR"Â""’À¢¢f÷"6öÇVÖâÂfÇVR–âVçVÖW&FR‡fÇVW2“ ¢6VÆbæÆW'EF&ÆRç6WD—FVÒ‡&÷uö–æFW‚Â6öÇVÖâÂF&ÆUv–FvWD—FVÒ‡7G"‡fÇVR’’ ¢FVb÷WFFUö6öÖ×Væ–6F–öå÷7VÖÖ'’‡6VÆb’ÓâæöæS ¢&–æBÒ6VÆbæ&–æD6öÖ&òæ7W'&VçEFW‡B‚’ç7G&—‚¢÷'BÒ6VÆbç÷'E7–âçfÇVR‚¢'Vææ–ærÒ6VÆbå÷F7÷6W'fW"ç7FFR‚’Ò&ö6W72å&ö6W757FFRäæ÷E'Vææ–æp¢6VÆbæ6öÖ×Væ–6F–öäÆ&VÇ5²&Æö6Â%Òç6WEFW‡B‡6VÆbæÆö6Ä—VF—BçFW‡B‚’¢6VÆbæ6öÖ×Væ–6F–öäÆ&VÇ5²&VæGö–çB%Òç6WEFW‡B†b'¶&–æGÓ§·÷'GÞ8²~‹ùŠÂr–b'Vææ–ærVÇ6R~XÎjÚ"wÒ"¢6VÆbæ6öÖ×Væ–6F–öäÆ&VÇ5²&FF&6R%Òç6WEFW‡B€¢b'·6VÆbæF%÷F‚ææÖWÞ8·6VÆbåöFF&6Uö†VÇF‡Ò ¢ ¢FVb÷WFFU÷7FGW5ö6&B‡6VÆbÂ¶W“¢7G"Â7FFS¢7G"ÂFW‡C¢7G"ÂFWF–Ã¢7G"’ÓâæöæS ¢Æ&VÂÂFWF–ÅöÆ&VÂÒ6VÆbæÖöæ—F÷%÷7FGW5¶¶W•Ð¢6VÆbå÷6WE÷7FFUöÆ&VÂ†Æ&VÂÂ7FFRÂFW‡B¢FWF–ÅöÆ&VÂç6WEFW‡B†FWF–Â ¢FVb÷6WEö6öçG&öÅö'WGFöç2‡6VÆbÂ7FGW3¢7G"ÂæöæR’ÓâæöæS ¢6VÆbç7F'Eö'WGFöâç6WDVæ&ÆVB‡7FGW2ÓÒ'&VG’"¢6VÆbçW6Uö'WGFöâç6WDVæ&ÆVB‡7FGW2ÓÒ''Vææ–ær"¢6VÆbç&W7VÖUö'WGFöâç6WDVæ&ÆVB‡7FGW2ÓÒ'W6VB"¢6VÆbç7F÷ö'WGFöâç6WDVæ&ÆVB‡7FGW2–â²''Vææ–ær"Â'W6VB'Ò¢6VÆbææWu÷6W76–öåö'WGFöâç6WDVæ&ÆVB‡7FGW2–â²'7F÷VB"Â&6ö×ÆWFVB'Ò ¢FVb6Æ÷6TWfVçB‡6VÆbÂWfVçB’ÓâæöæS ¢–b€¢6VÆbå÷'VææW"ç7FFR‚’Ò&ö6W72å&ö6W757FFRäæ÷E'Vææ–æp¢æB6VÆbæF%÷F‚æ—5öf–ÆR‚¢“ ¢G'“ ¢–b6VÆbç&W÷6—F÷'’ç'VçF–ÖR‚•²'7FGW2%ÒÓÒ''Vææ–ær# ¢6VÆbç&W÷6—F÷'’ç6WE÷7FGW2‚'W6R"¢W†6WB„õ4W'&÷"Â'VçF–ÖTW'&÷"ÂfÇVTW'&÷"Â7Æ—FS2äW'&÷"“ ¢70¢f÷"&ö6W72–â‡6VÆbå÷'VææW"Â6VÆbå÷F7÷6W'fW"“ ¢–b&ö6W72ç7FFR‚’Ò&ö6W72å&ö6W757FFRäæ÷E'Vææ–æs ¢&ö6W72çFW&Ö–æFR‚¢–bæ÷B&ö6W72çv—Df÷$f–æ—6†VBƒ“ ¢&ö6W72æ¶–ÆÂ‚¢&ö6W72çv—Df÷$f–æ—6†VBƒ¢7WW"‚’æ6Æ÷6TWfVçB†WfVçB  ¦FVb'VåöwV’€¢¢À¢F%÷Fƒ¢F‚À¢6öæf–u÷Fƒ¢F‚À¢66Væ&–õ÷Fƒ¢F‚À¢&–æEöFG&W73¢7G"ÂæöæRÒæöæRÀ¢÷'C¢–çBÂæöæRÒæöæRÀ¢’Óâ–çC ¢ÒÆ–6F–öâæ–ç7Fæ6R‚’÷"Æ–6F–öâ‡7—2æ&wb¢v–æF÷rÒ6–×VÆF÷%v–æF÷r€¢F%÷FƒÖF%÷F‚À¢6öæf–u÷FƒÖ6öæf–u÷F‚À¢66Væ&–õ÷Fƒ×66Væ&–õ÷F‚À¢&–æEöFG&W73Ö&–æEöFG&W72À¢÷'C×÷'BÀ¢¢v–æF÷rç6†÷r‚¢&WGW&âæW†V2‚
+        badge = self._frame("logoBadge")
+        badge.setFixedSize(40, 40)
+        badge_layout = QVBoxLayout(badge)
+        badge_layout.setContentsMargins(0, 0, 0, 0)
+        glyph = QLabel("A")
+        glyph.setObjectName("logoGlyph")
+        glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge_layout.addWidget(glyph)
+        layout.addWidget(badge)
+
+        title_block = QVBoxLayout()
+        title_block.setSpacing(0)
+        title = QLabel("å—æžå­¤ç«‹å¾®ç”µç½‘æ¨¡æ‹Ÿå™¨")
+        title.setObjectName("appTitle")
+        subtitle = QLabel("PC-A Â· åœºæ™¯ã€å®žé™…å‡ºåŠ›ä»¿çœŸä¸Žé€šä¿¡æœåŠ¡")
+        subtitle.setObjectName("appSubtitle")
+        title_block.addWidget(title)
+        title_block.addWidget(subtitle)
+        layout.addLayout(title_block)
+        layout.addStretch(1)
+
+        self.clockLabel = QLabel()
+        self.clockLabel.setObjectName("clockLabel")
+        layout.addWidget(self.clockLabel)
+        layout.addSpacing(4)
+        self.dbDot, self.dbPill = self._status_pill(layout, "grid.db æœªè¿žæŽ¥", COLORS["warn"])
+        self.bDot, self.bPill = self._status_pill(layout, "B ç¦»çº¿", COLORS["bad"])
+        self.cDot, self.cPill = self._status_pill(layout, "C ç¦»çº¿", COLORS["bad"])
+        self.tcpDot, self.tcpPill = self._status_pill(layout, "TCP åœæ­¢", COLORS["bad"])
+        return bar
+
+    def _build_nav(self) -> QFrame:
+        panel = self._frame("navPanel")
+        panel.setFixedWidth(190)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 16, 0, 16)
+        layout.setSpacing(2)
+        caption = QLabel("åŠŸèƒ½å¯¼èˆª")
+        caption.setProperty("role", "navCaption")
+        layout.addWidget(caption)
+        self.btnMonitor = self._nav_button("è¿è¡Œç›‘æŽ§")
+        self.btnParameters = self._nav_button("å‚æ•°è®¾ç½®")
+        self.btnHistory = self._nav_button("åŽ†å²æ•°æ®")
+        self.btnProtocol = self._nav_button("æŠ¥è­¦ä¸Žé€šä¿¡")
+        # Compatibility alias: scenario editing now lives inside the monitor page.
+        self.btnScenario = self.btnMonitor
+        self.navButtons = [self.btnMonitor, self.btnParameters, self.btnHistory, self.btnProtocol]
+        for button in self.navButtons:
+            layout.addWidget(button)
+        layout.addStretch(1)
+        site = QLabel("PC-A ç”µç½‘æ¨¡æ‹Ÿå™¨\nå­¤ç«‹å¾®ç”µç½‘ / å·¥ä¸šç›‘æŽ§")
+        site.setProperty("role", "siteLabel")
+        layout.addWidget(site)
+        return panel
+
+    def _scroll_page(self) -> tuple[QWidget, QVBoxLayout]:
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        content.setObjectName("scrollContent")
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(13)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        return page, layout
+
+    def _build_monitor_page(self) -> QWidget:
+        page, layout = self._scroll_page()
+        layout.addWidget(self._section_title("ç”µç½‘æ¨¡æ‹Ÿå™¨è¿è¡Œç›‘æŽ§"))
+        layout.addWidget(self._build_communication_card())
+        layout.addWidget(self._build_simulation_controls())
+
+        kpi_grid = QGridLayout()
+        kpi_grid.setHorizontalSpacing(12)
+        kpi_grid.setVerticalSpacing(10)
+        definitions = (
+            ("wind_speed_mps", "é£Žé€Ÿ", "m/s", "æ¥æºï¼šA CSV åœºæ™¯", COLORS["wind"]),
+            ("load_power_kw", "è´Ÿè·", "kW", "æ¥æºï¼šA CSV åœºæ™¯", COLORS["load"]),
+            ("wind_available_kw", "é£Žç”µå¯ç”¨", "kW", "æ¥æºï¼šC è®¡ç®—ï¼Œç» A è½¬å‘", COLORS["avail"]),
+            ("wind_target_kw", "é£Žç”µç›®æ ‡", "kW", "æ¥æºï¼šB EMS", COLORS["target"]),
+            ("wind_actual_kw", "é£Žç”µå®žé™…", "kW", "æ¥æºï¼šA ç‰©ç†æ¨¡åž‹", COLORS["actual"]),
+            ("diesel_target_kw", "æŸ´å‘ç›®æ ‡", "kW", "æ¥æºï¼šB EMS", COLORS["warn"]),
+            ("diesel_actual_kw", "æŸ´å‘å®žé™…", "kW", "æ¥æºï¼šA ç‰©ç†æ¨¡åž‹", COLORS["diesel"]),
+            ("power_imbalance_kw", "åŠŸçŽ‡ä¸å¹³è¡¡", "kW", "A: è´Ÿè· - é£Žå®žé™… - æŸ´å®žé™…", COLORS["imbalance"]),
+        )
+        self.kpi_labels: dict[str, QLabel] = {}
+        for index, (key, title, unit, source, accent) in enumerate(definitions):
+            card, value = self._kpi_card(title, unit, source, accent)
+            self.kpi_labels[key] = value
+            kpi_grid.addWidget(card, index // 4, index % 4)
+        self.capability_labels = {
+            key: self.kpi_labels[key]
+            for key in (
+                "wind_available_kw", "wind_operating_limit_kw",
+                "wind_target_kw", "power_imbalance_kw"
+            )
+            if key in self.kpi_labels
+        }
+        layout.addLayout(kpi_grid)
+
+        status_row = QHBoxLayout()
+        status_row.setSpacing(12)
+        self.monitor_status: dict[str, tuple[QLabel, QLabel]] = {}
+        for key, title, detail in (
+            ("simulation", "ä»¿çœŸçŠ¶æ€", "A è®¡ç®—è¿›ç¨‹"),
+            ("wind", "é£ŽæœºçŠ¶æ€", "å®žé™…è¿è¡Œé¥ä¿¡"),
+            ("B", "B EMS é€šä¿¡", "A TCP ä¼šè¯"),
+            ("C", "C STM32 é€šä¿¡", "A TCP ä¼šè¯"),
+        ):
+            card, status, detail_label = self._status_card(title, "â—  æœªçŸ¥", "warn", detail)
+            self.monitor_status[key] = (status, detail_label)
+            status_row.addWidget(card, 1)
+        layout.addLayout(status_row)
+
+        chart_header = QHBoxLayout()
+        chart_title = QLabel("æ›²çº¿è§†å›¾")
+        chart_title.setProperty("role", "cardTitle")
+        chart_header.addWidget(chart_title)
+        chart_header.addStretch(1)
+        self.btnRealtimeCharts = self._button("å®žæ—¶æ›²çº¿", "segment")
+        self.btnScenarioCharts = self._button("åœºæ™¯ç¼–è¾‘", "segment")
+        for button in (self.btnRealtimeCharts, self.btnScenarioCharts):
+            button.setCheckable(True)
+            chart_header.addWidget(button)
+        self.btnRealtimeCharts.setChecked(True)
+        self.chartModeGroup = QButtonGroup(self)
+        self.chartModeGroup.setExclusive(True)
+        self.chartModeGroup.addButton(self.btnRealtimeCharts, 0)
+        self.chartModeGroup.addButton(self.btnScenarioCharts, 1)
+        layout.addLayout(chart_header)
+
+        self.chartStack = QStackedWidget()
+        self.chartStack.setMinimumHeight(300)
+        realtime = QWidget()
+        realtime_layout = QHBoxLayout(realtime)
+        realtime_layout.setContentsMargins(0, 0, 0, 0)
+        realtime_layout.setSpacing(12)
+        self.windTrend = TimeSeriesChart(
+            title="å®žæ—¶é£Žé€Ÿæ›²çº¿", unit="m/s", colors={"é£Žé€Ÿ": COLORS["wind"]}
+        )
+        self.powerTrend = TimeSeriesChart(
+            title="å®žæ—¶åŠŸçŽ‡æ›²çº¿",
+            unit="kW",
+            colors={
+                "è´Ÿè·": COLORS["load"], "å¯ç”¨": COLORS["avail"],
+                "é£Žç›®æ ‡": COLORS["target"], "é£Žå®žé™…": COLORS["actual"],
+                "æŸ´ç›®æ ‡": COLORS["warn"], "æŸ´å®žé™…": COLORS["diesel"],
+            },
+        )
+        realtime_layout.addWidget(self._chart_card(self.windTrend), 1)
+        realtime_layout.addWidget(self._chart_card(self.powerTrend), 1)
+        self.chartStack.addWidget(realtime)
+
+        scenario_page = QWidget()
+        scenario_layout = QVBoxLayout(scenario_page)
+        scenario_layout.setContentsMargins(0, 0, 0, 0)
+        scenario_layout.setSpacing(8)
+        times = [point.sim_time_s for point in self.scenario.points]
+        wind_values = [point.wind_speed_mps for point in self.scenario.points]
+        load_values = [point.load_power_kw for point in self.scenario.points]
+        editor_row = QHBoxLayout()
+        editor_row.setSpacing(12)
+        self.wind_editor = CurveEditor(
+            key="wind_speed_mps", name="é£Žé€Ÿåœºæ™¯è¾“å…¥", unit="m/s", color=COLORS["wind"],
+            times_s=times, values=wind_values,
+            maximum=max(self.config.wind.cut_out_speed_mps, max(wind_values) * 1.05, 1.0),
+        )
+        self.load_editor = CurveEditor(
+            key="load_power_kw", name="è´Ÿè·åœºæ™¯è¾“å…¥", unit="kW", color=COLORS["load"],
+            times_s=times, values=load_values, maximum=max(max(load_values) * 1.1, 1.0),
+        )
+        editor_row.addWidget(self._chart_card(self.wind_editor), 1)
+        editor_row.addWidget(self._chart_card(self.load_editor), 1)
+        scenario_layout.addLayout(editor_row)
+        preview_card = self._frame()
+        preview_card.setProperty("role", "card")
+        preview_layout = QVBoxLayout(preview_card)
+        preview_layout.setContentsMargins(14, 8, 14, 8)
+        self.time_slider = QSlider(Qt.Orientation.Horizontal)
+        self.preview = QLabel()
+        self.preview.setProperty("role", "cardTitle")
+        preview_layout.addWidget(self.time_slider)
+        preview_layout.addWidget(self.preview)
+        scenario_layout.addWidget(preview_card)
+        self.chartStack.addWidget(scenario_page)
+        layout.addWidget(self.chartStack)
+        layout.addStretch(1)
+        return page
+
+    def _build_communication_card(self) -> QFrame:
+        card = self._frame()
+        card.setProperty("role", "card")
+        grid = QGridLayout(card)
+        grid.setContentsMargins(16, 12, 16, 12)
+        grid.setHorizontalSpacing(9)
+        grid.setVerticalSpacing(9)
+
+        local_addresses = _local_ipv4_addresses()
+        grid.addWidget(QLabel("æœ¬æœº IPv4"), 0, 0)
+        self.localIpEdit = QLineEdit(" / ".join(local_addresses))
+        self.localIpEdit.setReadOnly(True)
+        self.localIpEdit.setToolTip("ä¾›é˜Ÿå‹é€‰æ‹©åŒä¸€å±€åŸŸç½‘å¯è¾¾åœ°å€ï¼›127.0.0.1 ä»…é™æœ¬æœº")
+        grid.addWidget(self.localIpEdit, 0, 1, 1, 2)
+        grid.addWidget(QLabel("ç›‘å¬åœ°å€"), 0, 3)
+        self.bindCombo = QComboBox()
+        self.bindCombo.setEditable(True)
+        bind_values = [self._bind_address, "0.0.0.0", "127.0.0.1", *local_addresses]
+        for value in dict.fromkeys(item for item in bind_values if item):
+            self.bindCombo.addItem(value)
+        self.bindCombo.setCurrentText(self._bind_address)
+        grid.addWidget(self.bindCombo, 0, 4)
+        grid.addWidget(QLabel("ç›‘å¬ç«¯å£"), 0, 5)
+        self.portSpin = QSpinBox()
+        self.portSpin.setRange(1, 65535)
+        self.portSpin.setValue(self._port)
+        grid.addWidget(self.portSpin, 0, 6)
+        self.tcp_button = self._button("å¯åŠ¨ TCP æœåŠ¡", "primary")
+        grid.addWidget(self.tcp_button, 0, 7)
+
+        self.open_button = self._button("åŠ è½½ CSV", "secondary")
+        self.save_button = self._button("å¦å­˜ CSV", "secondary")
+        self.initialize_button = self._button("åˆå§‹åŒ– grid.db", "success")
+        grid.addWidget(self.open_button, 1, 0)
+        grid.addWidget(self.save_button, 1, 1)
+        grid.addWidget(self.initialize_button, 1, 2)
+        self.source_label = QLabel()
+        self.source_label.setProperty("role", "source")
+        self.source_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.source_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        grid.addWidget(self.source_label, 1, 3, 1, 3)
+        self.dbPathLabel = QLabel(f"æ•°æ®åº“ï¼š{self.db_path}")
+        self.dbPathLabel.setProperty("role", "source")
+        self.dbPathLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.dbPathLabel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        grid.addWidget(self.dbPathLabel, 1, 6, 1, 2)
+        grid.setColumnStretch(2, 1)
+        grid.setColumnStretch(4, 1)
+        return card
+
+    def _build_simulation_controls(self) -> QFrame:
+        card = self._frame()
+        card.setProperty("role", "card")
+        controls = QHBoxLayout(card)
+        controls.setContentsMargins(16, 10, 16, 10)
+        controls.setSpacing(8)
+        controls.addWidget(QLabel("ä»¿çœŸæŽ§åˆ¶"))
+        self.start_button = self._button("â–¶  å¯åŠ¨", "success")
+        self.pause_button = self._button("â…¡  æš‚åœ", "secondary")
+        self.resume_button = self._button("â–¶  ç»§ç»­", "primary")
+        self.stop_button = self._button("â–   åœæ­¢", "danger")
+        self.new_session_button = self._button("â†»  æ–°å»ºä¼šè¯", "secondary")
+        for button in (
+            self.start_button,
+            self.pause_button,
+            self.resume_button,
+            self.stop_button,
+            self.new_session_button,
+        ):
+            controls.addWidget(button)
+        controls.addStretch(1)
+        self.runtime_detail = QLabel("æ•°æ®åº“æœªåˆå§‹åŒ–")
+        self.runtime_detail.setProperty("role", "source")
+        self.runtime_detail.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.runtime_detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        controls.addWidget(self.runtime_detail)
+        return card
+
+    def _build_parameters_page(self) -> QWidget:
+        page, layout = self._scroll_page()
+        title_row = QHBoxLayout()
+        title_row.addWidget(self._section_title("å‚æ•°è®¾ç½®ä¸Ž A/B/C åŒæ­¥"))
+        title_row.addStretch(1)
+        self.parameterSyncLabel = QLabel("ç­‰å¾… grid.db å‚æ•°å¿«ç…§")
+        self.parameterSyncLabel.setProperty("role", "source")
+        title_row.addWidget(self.parameterSyncLabel)
+        self.refreshParametersButton = self._button("åˆ·æ–°", "secondary")
+        self.saveParametersButton = self._button("ä¿å­˜ A å‚æ•°", "primary")
+        title_row.addWidget(self.refreshParametersButton)
+        title_row.addWidget(self.saveParametersButton)
+        layout.addLayout(title_row)
+
+        note = self._frame()
+        note.setProperty("role", "card")
+        note_layout = QVBoxLayout(note)
+        note_layout.setContentsMargins(15, 10, 15, 10)
+        note_title = QLabel("å‚æ•°å†™æƒé™")
+        note_title.setProperty("role", "cardTitle")
+        note_text = QLabel(
+            "ä»… owner=A çš„è¡Œå¯åœ¨æ­¤ä¿®æ”¹ï¼›B çš„è°ƒåº¦å‚æ•°å’Œ C çš„é£Žæœºå‚æ•°ç”± TCP åŒæ­¥åŽåªè¯»å±•ç¤ºã€‚"
+            "æ¥æºä¸Žæ›´æ–°æ—¶é—´ç”¨äºŽè¾¨è®¤æœ€è¿‘ä¸€æ¬¡æœ‰æ•ˆæ›´æ–°ï¼ŒA ä¸ä¼šè¦†ç›– B/C çš„æŽ§åˆ¶æƒã€‚"
+        )
+        note_text.setWordWrap(True)
+        note_text.setProperty("role", "source")
+        note_layout.addWidget(note_title)
+        note_layout.addWidget(note_text)
+        layout.addWidget(note)
+
+        self.parameterTable = QTableWidget(0, 7)
+        self.parameterTable.setHorizontalHeaderLabels(
+            ("å‚æ•°", "é”®", "Owner", "å€¼", "å•ä½", "æ¥æº", "æ›´æ–°æ—¶é—´ UTC")
+        )
+        self.parameterTable.setAlternatingRowColors(True)
+        self.parameterTable.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.parameterTable.verticalHeader().setVisible(False)
+        self.parameterTable.verticalHeader().setMinimumSectionSize(40)
+        self.parameterTable.verticalHeader().setDefaultSectionSize(40)
+        parameter_header = self.parameterTable.horizontalHeader()
+        parameter_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        parameter_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        parameter_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        parameter_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        parameter_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        parameter_header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        parameter_header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        self.parameterTable.setMinimumHeight(390)
+        layout.addWidget(self.parameterTable)
+
+        history_title = QLabel("æœ€è¿‘å‚æ•°å˜æ›´")
+        history_title.setProperty("role", "cardTitle")
+        layout.addWidget(history_title)
+        self.parameterHistoryTable = QTableWidget(0, 7)
+        self.parameterHistoryTable.setHorizontalHeaderLabels(
+            ("æ—¶é—´ UTC", "å‚æ•°", "Owner", "åŽŸå€¼", "æ–°å€¼", "æ¥æº", "è¯´æ˜Ž")
+        )
+        self.parameterHistoryTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.parameterHistoryTable.setAlternatingRowColors(True)
+        self.parameterHistoryTable.verticalHeader().setVisible(False)
+        self.parameterHistoryTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.parameterHistoryTable.setMinimumHeight(180)
+        layout.addWidget(self.parameterHistoryTable)
+        layout.addStretch(1)
+        return page
+
+    def _build_history_page(self) -> QWidget:
+        page, layout = self._scroll_page()
+        control_row = QHBoxLayout()
+        control_row.addWidget(self._section_title("åŽ†å²æ•°æ®å¯è§†åŒ–"))
+        control_row.addStretch(1)
+        control_row.addWidget(QLabel("ä¼šè¯"))
+        self.historySessionCombo = QComboBox()
+        self.historySessionCombo.setMinimumWidth(190)
+        control_row.addWidget(self.historySessionCombo)
+        control_row.addWidget(QLabel("ç»˜åˆ¶å­—æ®µ"))
+        self.historyMetricCombo = QComboBox()
+        for key, label, unit, color in HISTORY_FIELDS:
+            self.historyMetricCombo.addItem(label, (key, unit, color))
+        control_row.addWidget(self.historyMetricCombo)
+        control_row.addWidget(QLabel("è®°å½•æ•°"))
+        self.historyLimitSpin = QSpinBox()
+        self.historyLimitSpin.setRange(10, 5000)
+        self.historyLimitSpin.setValue(300)
+        self.historyLimitSpin.setSingleStep(50)
+        control_row.addWidget(self.historyLimitSpin)
+        self.refreshHistoryButton = self._button("åˆ·æ–°åŽ†å²", "primary")
+        control_row.addWidget(self.refreshHistoryButton)
+        layout.addLayout(control_row)
+
+        self.historyTrend = TimeSeriesChart(
+            title="åŽ†å²çŠ¶æ€æ›²çº¿", unit="kW", colors={"åŽ†å²": COLORS["primary"]}
+        )
+        history_chart_card = self._chart_card(self.historyTrend)
+        history_chart_card.setMinimumHeight(270)
+        layout.addWidget(history_chart_card)
+
+        self.historyTable = QTableWidget(0, 11)
+        self.historyTable.setHorizontalHeaderLabels(
+            ("é‡‡æ ·æ—¶é—´ UTC", "step", "é£Žé€Ÿ", "è´Ÿè·", "å¯ç”¨", "é£Žç›®æ ‡", "é£Žå®žé™…", "æŸ´ç›®æ ‡", "æŸ´å®žé™…", "ä¸å¹³è¡¡", "session")
+        )
+        self.historyTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.historyTable.setAlternatingRowColors(True)
+        self.historyTable.verticalHeader().setVisible(False)
+        self.historyTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.historyTable.horizontalHeader().setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
+        self.historyTable.setMinimumHeight(270)
+        layout.addWidget(self.historyTable)
+
+        log_row = QHBoxLayout()
+        log_title = QLabel("è¿è¡Œæ—¥å¿—æ–‡æœ¬")
+        log_title.setProperty("role", "cardTitle")
+        log_row.addWidget(log_title)
+        log_row.addStretch(1)
+        log_row.addWidget(QLabel("çº§åˆ«"))
+        self.logLevelCombo = QComboBox()
+        self.logLevelCombo.addItems(("å…¨éƒ¨", "INFO", "WARNING", "ERROR"))
+        log_row.addWidget(self.logLevelCombo)
+        layout.addLayout(log_row)
+        self.logTable = QTableWidget(0, 5)
+        self.logTable.setHorizontalHeaderLabels(("æ—¶é—´ UTC", "çº§åˆ«", "äº‹ä»¶", "step", "æ¶ˆæ¯"))
+        self.logTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.logTable.setAlternatingRowColors(True)
+        self.logTable.verticalHeader().setVisible(False)
+        self.logTable.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.logTable.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.logTable.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.logTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.logTable.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.logTable.setMinimumHeight(220)
+        layout.addWidget(self.logTable)
+        layout.addStretch(1)
+        return page
+
+    def _build_alarm_page(self) -> QWidget:
+        page, layout = self._scroll_page()
+        layout.addWidget(self._section_title("æŠ¥è­¦ä¸Žé€šä¿¡"))
+
+        summary = self._frame()
+        summary.setProperty("role", "card")
+        summary_layout = QGridLayout(summary)
+        summary_layout.setContentsMargins(16, 12, 16, 12)
+        self.communicationLabels: dict[str, QLabel] = {}
+        for column, (key, title) in enumerate(
+            (("local", "æœ¬æœº IPv4"), ("endpoint", "ç›‘å¬ç«¯ç‚¹"), ("database", "æ•°æ®åº“"), ("utc", "æŽˆæ—¶"))
+        ):
+            summary_layout.addWidget(QLabel(title), 0, column)
+            value = QLabel("-")
+            value.setProperty("role", "cardTitle")
+            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            summary_layout.addWidget(value, 1, column)
+            self.communicationLabels[key] = value
+        layout.addWidget(summary)
+
+        self.envelope_label = QLabel("session_id=-  step=-  sim_time_s=-  sampled_at_utc=-")
+        self.envelope_label.setProperty("role", "source")
+        self.envelope_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.envelope_label)
+
+        self.protocol_table = QTableWidget(len(PROTOCOL_ROWS), 4)
+        self.protocol_table.setHorizontalHeaderLabels(("å­—æ®µ", "å½“å‰å€¼", "å•ä½", "Owner / è¯­ä¹‰"))
+        self.protocol_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.protocol_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.protocol_table.setAlternatingRowColors(True)
+        self.protocol_table.verticalHeader().setVisible(False)
+        header = self.protocol_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.protocol_value_items: dict[str, QTableWidgetItem] = {}
+        for row, (key, meaning, unit) in enumerate(PROTOCOL_ROWS):
+            for column, text in enumerate((key, "-", unit, meaning)):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter)
+                self.protocol_table.setItem(row, column, item)
+                if column == 1:
+                    self.protocol_value_items[key] = item
+        self.protocol_table.setMinimumHeight(390)
+        layout.addWidget(self.protocol_table)
+
+        alert_row = QHBoxLayout()
+        alert_title = QLabel("è¿‘æœŸå‘Šè­¦ä¸Žé€šä¿¡äº‹ä»¶")
+        alert_title.setProperty("role", "cardTitle")
+        alert_row.addWidget(alert_title)
+        alert_row.addStretch(1)
+        self.clearUiEventsButton = self._button("æ¸…é™¤ç•Œé¢äº‹ä»¶", "secondary")
+        alert_row.addWidget(self.clearUiEventsButton)
+        layout.addLayout(alert_row)
+        self.alertTable = QTableWidget(0, 4)
+        self.alertTable.setHorizontalHeaderLabels(("æ—¶é—´ UTC", "çº§åˆ«", "æ¥æº", "å†…å®¹"))
+        self.alertTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.alertTable.setAlternatingRowColors(True)
+        self.alertTable.verticalHeader().setVisible(False)
+        self.alertTable.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.alertTable.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.alertTable.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.alertTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.alertTable.setMinimumHeight(210)
+        layout.addWidget(self.alertTable)
+        layout.addStretch(1)
+        return page
+
+    @staticmethod
+    def _frame(object_name: str | None = None) -> QFrame:
+        frame = QFrame()
+        if object_name:
+            frame.setObjectName(object_name)
+        frame.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        return frame
+
+    @staticmethod
+    def _section_title(text: str) -> QLabel:
+        label = QLabel("â– " + text)
+        label.setProperty("role", "sectionTitle")
+        return label
+
+    @staticmethod
+    def _button(text: str, role: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setProperty("role", role)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        return button
+
+    @staticmethod
+    def _nav_button(text: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setProperty("role", "nav")
+        button.setCheckable(True)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setMinimumHeight(44)
+        return button
+
+    def _status_pill(self, parent_layout: QHBoxLayout, text: str, color: str) -> tuple[QFrame, QLabel]:
+        pill = self._frame()
+        pill.setProperty("role", "pill")
+        layout = QHBoxLayout(pill)
+        layout.setContentsMargins(10, 5, 12, 5)
+        layout.setSpacing(7)
+        dot = QFrame()
+        dot.setFixedSize(10, 10)
+        dot.setStyleSheet(f"background:{color}; border-radius:5px;")
+        label = QLabel(text)
+        label.setProperty("role", "pillText")
+        layout.addWidget(dot)
+        layout.addWidget(label)
+        parent_layout.addWidget(pill)
+        return dot, label
+
+    def _chart_card(self, chart: QWidget) -> QFrame:
+        card = self._frame()
+        card.setProperty("role", "card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(10, 7, 10, 7)
+        layout.addWidget(chart)
+        return card
+
+    def _kpi_card(self, title: str, unit: str, source: str, accent: str) -> tuple[QFrame, QLabel]:
+        card = self._frame()
+        card.setProperty("role", "card")
+        card.setMinimumHeight(104)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 11, 14, 11)
+        layout.setSpacing(2)
+        header = QHBoxLayout()
+        dot = QFrame()
+        dot.setFixedSize(8, 8)
+        dot.setStyleSheet(f"background:{accent}; border-radius:4px;")
+        title_label = QLabel(title)
+        title_label.setProperty("role", "cardTitle")
+        header.addWidget(dot)
+        header.addWidget(title_label)
+        header.addStretch(1)
+        layout.addLayout(header)
+        value_row = QHBoxLayout()
+        value = QLabel("-")
+        value.setProperty("role", "bigValue")
+        unit_label = QLabel(unit)
+        unit_label.setProperty("role", "unit")
+        value_row.addWidget(value)
+        value_row.addWidget(unit_label)
+        value_row.addStretch(1)
+        layout.addLayout(value_row)
+        source_label = QLabel(source)
+        source_label.setProperty("role", "source")
+        layout.addWidget(source_label)
+        return card, value
+
+    def _status_card(self, title: str, status_text: str, state: str, detail: str) -> tuple[QFrame, QLabel, QLabel]:
+        card = self._frame()
+        card.setProperty("role", "card")
+        card.setMinimumHeight(92)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 11, 14, 11)
+        layout.setSpacing(3)
+        title_label = QLabel(title)
+        title_label.setProperty("role", "cardTitle")
+        status = QLabel(status_text)
+        status.setProperty("state", state)
+        detail_label = QLabel(detail)
+        detail_label.setProperty("role", "source")
+        detail_label.setWordWrap(True)
+        layout.addWidget(title_label)
+        layout.addWidget(status)
+        layout.addWidget(detail_label)
+        return card, status, detail_label
+
+    def _connect_signals(self) -> None:
+        self.open_button.clicked.connect(self.open_csv)
+        self.save_button.clicked.connect(self.save_csv)
+        self.initialize_button.clicked.connect(self.initialize_database)
+        self.time_slider.valueChanged.connect(self.update_preview)
+        self.wind_editor.curveChanged.connect(self.update_preview)
+        self.load_editor.curveChanged.connect(self.update_preview)
+        self.start_button.clicked.connect(lambda: self.control_simulation("start"))
+        self.pause_button.clicked.connect(lambda: self.control_simulation("pause"))
+        self.resume_button.clicked.connect(lambda: self.control_simulation("resume"))
+        self.stop_button.clicked.connect(lambda: self.control_simulation("stop"))
+        self.new_session_button.clicked.connect(self.create_new_session)
+        self.tcp_button.clicked.connect(self.toggle_tcp_server)
+        self.chartModeGroup.idClicked.connect(self.chartStack.setCurrentIndex)
+        self.refreshParametersButton.clicked.connect(lambda: self.refresh_parameters(force=True))
+        self.saveParametersButton.clicked.connect(self.save_a_parameters)
+        self.refreshHistoryButton.clicked.connect(self.refresh_history)
+        self.historySessionCombo.currentIndexChanged.connect(self.refresh_history)
+        self.historyMetricCombo.currentIndexChanged.connect(self.refresh_history)
+        self.historyLimitSpin.valueChanged.connect(self.refresh_history)
+        self.logLevelCombo.currentIndexChanged.connect(self.refresh_history)
+        self.clearUiEventsButton.clicked.connect(self._clear_ui_events)
+
+        self._tcp_server.stateChanged.connect(self._tcp_state_changed)
+        self._tcp_server.readyReadStandardOutput.connect(lambda: self._read_process_output(self._tcp_server, "TCP", False))
+        self._tcp_server.readyReadStandardError.connect(lambda: self._read_process_output(self._tcp_server, "TCP", True))
+        self._tcp_server.errorOccurred.connect(lambda error: self._process_error("TCP", error))
+        self._tcp_server.finished.connect(lambda code, _status: self._process_finished("TCP", code))
+        self._runner.readyReadStandardOutput.connect(lambda: self._read_process_output(self._runner, "ä»¿çœŸ", False, discard=True))
+        self._runner.readyReadStandardError.connect(lambda: self._read_process_output(self._runner, "ä»¿çœŸ", True))
+        self._runner.errorOccurred.connect(lambda error: self._process_error("ä»¿çœŸ", error))
+        self._runner.finished.connect(lambda code, _status: self._runner_finished(code))
+
+    def _start_timers(self) -> None:
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setInterval(500)
+        self._refresh_timer.timeout.connect(self.refresh_state)
+        self._refresh_timer.start()
+        self._clock_timer = QTimer(self)
+        self._clock_timer.setInterval(1000)
+        self._clock_timer.timeout.connect(self._update_clock)
+        self._clock_timer.start()
+        self._update_clock()
+
+    def _switch_page(self, index: int) -> None:
+        self.pageStack.setCurrentIndex(index)
+        if index == 1:
+            self.refresh_parameters(force=True)
+        elif index == 2:
+            self.refresh_history()
+        elif index == 3:
+            self._refresh_alerts()
+
+    def _update_clock(self) -> None:
+        now = _utc_now()
+        weekday = ("æ˜ŸæœŸä¸€", "æ˜ŸæœŸäºŒ", "æ˜ŸæœŸä¸‰", "æ˜ŸæœŸå››", "æ˜ŸæœŸäº”", "æ˜ŸæœŸå…­", "æ˜ŸæœŸæ—¥")[now.weekday()]
+        self.clockLabel.setText(now.strftime("%Y-%m-%d %H:%M:%S") + f" UTC  {weekday}")
+        self.communicationLabels["utc"].setText(now.strftime("%H:%M:%S UTC"))
+
+    def _scenario_labels(self, times: Iterable[float]) -> list[str]:
+        return [(self._scenario_origin_utc + timedelta(seconds=float(value))).strftime("%H:%M:%S") for value in times]
+
+    def _set_scenario(self, scenario: ScenarioCurve, source_path: Path | None) -> None:
+        self.scenario = scenario
+        self._scenario_origin_utc = _utc_now()
+        if source_path is not None:
+            self.scenario_path = source_path.resolve()
+        times = [point.sim_time_s for point in scenario.points]
+        wind = [point.wind_speed_mps for point in scenario.points]
+        load = [point.load_power_kw for point in scenario.points]
+        self.wind_editor.set_data(times, wind, maximum=max(self.config.wind.cut_out_speed_mps, max(wind) * 1.05, 1.0))
+        self.load_editor.set_data(times, load, maximum=max(max(load) * 1.1, 1.0))
+        utc_labels = self._scenario_labels(times)
+        self.wind_editor.set_time_labels(utc_labels)
+        self.load_editor.set_time_labels(utc_labels)
+        self.time_slider.setRange(0, len(times) - 1)
+        self.time_slider.setValue(0)
+        if source_path:
+            self.source_label.setText(f"åœºæ™¯ï¼š{self.scenario_path.name}")
+            self.source_label.setToolTip(str(self.scenario_path))
+        else:
+            self.source_label.setText("åœºæ™¯ï¼šå½“å‰ grid.db å¿«ç…§")
+            self.source_label.setToolTip("åœºæ™¯ç‚¹æ¥è‡ªå½“å‰ grid.db")
+        self.update_preview()
+
+    def _scenario_from_editors(self) -> ScenarioCurve:
+        return ScenarioCurve(tuple(
+            ScenarioPoint(seconds, wind, load)
+            for seconds, wind, load in zip(
+                self.wind_editor.times_s(), self.wind_editor.values(), self.load_editor.values()
+            )
+        ))
+
+    def open_csv(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "åŠ è½½ A åœºæ™¯ CSV", str(self.scenario_path.parent), "CSV (*.csv)")
+        if not path:
+            return
+        try:
+            scenario = load_scenario_csv(path)
+            if scenario.points[0].sim_time_s > self.config.start_s or scenario.points[-1].sim_time_s < self.config.end_s:
+                raise ValueError("CSV æ—¶é—´è½´ä¸èƒ½è¦†ç›–é…ç½®ä¸­çš„ä»¿çœŸèµ·æ­¢æ—¶åˆ»")
+            self._set_scenario(scenario, Path(path))
+            self.chartStack.setCurrentIndex(1)
+            self.btnScenarioCharts.setChecked(True)
+            self.statusBar().showMessage("CSV å·²åŠ è½½ï½œéœ€åˆå§‹åŒ–æ–°æ•°æ®åº“åŽæ‰ç”¨äºŽä»¿çœŸ", 6000)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "CSV åŠ è½½å¤±è´¥", str(error))
+
+    def save_csv(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "å¦å­˜ A åœºæ™¯ CSV", str(self.scenario_path), "CSV (*.csv)")
+        if not path:
+            return
+        try:
+            save_scenario_csv(path, self._scenario_from_editors())
+            self.scenario_path = Path(path).resolve()
+            self.source_label.setText(f"åœºæ™¯ï¼š{self.scenario_path.name}")
+            self.source_label.setToolTip(str(self.scenario_path))
+            self.statusBar().showMessage("CSV å·²ä¿å­˜", 4000)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "CSV ä¿å­˜å¤±è´¥", str(error))
+
+    def initialize_database(self) -> None:
+        try:
+            self.repository.initialize(self.config, self._scenario_from_editors())
+            self._append_ui_event("INFO", "æ•°æ®åº“", f"åˆå§‹åŒ–å®Œæˆï¼š{self.db_path}")
+            self.statusBar().showMessage("grid.db åˆå§‹åŒ–å®Œæˆ", 4000)
+            self.refresh_state()
+        except (FileExistsError, OSError, ValueError, sqlite3.Error) as error:
+            QMessageBox.critical(self, "åˆå§‹åŒ–å¤±è´¥", f"{error}\n\nä¸ºä¿æŠ¤å·²æœ‰è¿è¡Œæ•°æ®ï¼Œæœ¬ç•Œé¢ä¸ä¼šè¦†ç›–çŽ°æœ‰æ•°æ®åº“ã€‚")
+
+    def update_preview(self, *_unused) -> None:
+        times = self.wind_editor.times_s()
+        index = min(self.time_slider.value(), len(times) - 1)
+        seconds = times[index]
+        self.wind_editor.set_playhead(seconds)
+        self.load_editor.set_playhead(seconds)
+        utc_value = self._scenario_origin_utc + timedelta(seconds=seconds)
+        self.preview.setText(
+            f"æ˜¾ç¤ºæ—¶åˆ» {_rfc3339(utc_value)}ã€€å†…éƒ¨ sim_time_s={seconds:.3f}ã€€"
+            f"é£Žé€Ÿ {self.wind_editor.value_at(seconds):.3f} m/sã€€è´Ÿè· {self.load_editor.value_at(seconds):.3f} kW"
+        )
+
+    def _ensure_runner(self) -> None:
+        if self._runner.state() != QProcess.ProcessState.NotRunning:
+            return
+        self._runner.setWorkingDirectory(str(ROOT_DIR))
+        self._runner.start(sys.executable, ["-m", "A_simulator", "run", "--db", str(self.db_path)])
+
+    def control_simulation(self, action: str) -> None:
+        try:
+            status = self.repository.set_status(action)
+            if action in {"start", "resume"}:
+                self._ensure_runner()
+            self._append_ui_event("INFO", "ä»¿çœŸ", f"æŽ§åˆ¶åŠ¨ä½œ {action} -> {status}")
+            self.statusBar().showMessage(f"ä»¿çœŸçŠ¶æ€ï¼š{status}", 3000)
+            self.refresh_state()
+        except (FileNotFoundError, RuntimeError, ValueError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "ä»¿çœŸæŽ§åˆ¶å¤±è´¥", str(error))
+
+    def create_new_session(self) -> None:
+        try:
+            session_id = self.repository.create_session()
+            self._set_scenario(self.repository.get_scenario(), None)
+            self._append_ui_event(
+                "INFO", "ä»¿çœŸ", f"å·²åˆ›å»ºå®‰å…¨çš„æ–°ä¼šè¯ï¼š{session_id}"
+            )
+            self.statusBar().showMessage(
+                "æ–°ä¼šè¯å·²å°±ç»ªï¼›åŽ†å²è®°å½•ä¿ç•™ï¼ŒæŽ§åˆ¶ç›®æ ‡å·²å®‰å…¨å¤ä½", 6000
+            )
+            self.refresh_state()
+        except (FileNotFoundError, RuntimeError, ValueError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "æ–°å»ºä¼šè¯å¤±è´¥", str(error))
+
+    def toggle_tcp_server(self) -> None:
+        if self._tcp_server.state() != QProcess.ProcessState.NotRunning:
+            self._append_ui_event("INFO", "TCP", "æ­£åœ¨åœæ­¢æœåŠ¡")
+            self._tcp_server.terminate()
+            # Windows console processes do not always react to terminate().  Keep
+            # the GUI responsive and escalate to kill only if it is still alive.
+            QTimer.singleShot(1200, self._force_stop_tcp)
+            return
+        if not self.db_path.is_file():
+            QMessageBox.warning(self, "TCP æœåŠ¡", "è¯·å…ˆåˆå§‹åŒ– grid.db")
+            return
+        try:
+            self.repository.runtime()
+        except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
+            self._database_health = "å¼‚å¸¸"
+            self._update_communication_summary()
+            QMessageBox.warning(self, "TCP æœåŠ¡", f"grid.db æ— æ³•ä½¿ç”¨ï¼š{error}")
+            return
+        self._database_health = "æ­£å¸¸"
+        bind = self.bindCombo.currentText().strip()
+        if not bind:
+            QMessageBox.warning(self, "TCP æœåŠ¡", "ç›‘å¬åœ°å€ä¸èƒ½ä¸ºç©º")
+            return
+        port = self.portSpin.value()
+        self._tcp_server.setWorkingDirectory(str(ROOT_DIR))
+        self._tcp_server.start(
+            sys.executable,
+            [
+                "-m", "A_simulator", "serve", "--db", str(self.db_path),
+                "--config", str(self.config_path), "--bind", bind, "--port", str(port),
+            ],
+        )
+        self._append_ui_event("INFO", "TCP", f"å¯åŠ¨ç›‘å¬ {bind}:{port}")
+
+    def _force_stop_tcp(self) -> None:
+        if self._tcp_server.state() != QProcess.ProcessState.NotRunning:
+            self._append_ui_event("WARNING", "TCP", "æœåŠ¡æœªå“åº”åœæ­¢è¯·æ±‚ï¼Œå·²å¼ºåˆ¶ç»“æŸå­è¿›ç¨‹")
+            self._tcp_server.kill()
+
+    def _tcp_state_changed(self, state: QProcess.ProcessState) -> None:
+        running = state != QProcess.ProcessState.NotRunning
+        self.tcp_button.setText("åœæ­¢ TCP æœåŠ¡" if running else "å¯åŠ¨ TCP æœåŠ¡")
+        self._set_button_role(self.tcp_button, "danger" if running else "primary")
+        self.bindCombo.setEnabled(not running)
+        self.portSpin.setEnabled(not running)
+        self._set_pill(
+            self.tcpDot, self.tcpPill,
+            "TCP è¿è¡Œ" if running else "TCP åœæ­¢",
+            COLORS["good"] if running else COLORS["bad"],
+        )
+        self._update_communication_summary()
+
+    def _read_process_output(self, process: QProcess, source: str, stderr: bool, discard: bool = False) -> None:
+        raw = process.readAllStandardError() if stderr else process.readAllStandardOutput()
+        text = bytes(raw).decode("utf-8", "replace").strip()
+        if not text or discard:
+            return
+        level = "ERROR" if stderr else "INFO"
+        message = text[-500:].replace("\x00", "")
+        self._append_ui_event(level, source, message)
+        self.statusBar().showMessage(f"{source}ï¼š{message[-180:]}", 8000)
+
+    def _process_error(self, source: str, error: QProcess.ProcessError) -> None:
+        self._append_ui_event("ERROR", source, f"è¿›ç¨‹é”™è¯¯ï¼š{error.name}")
+
+    def _process_finished(self, source: str, code: int) -> None:
+        if source == "TCP" and self.db_path.is_file():
+            try:
+                self.repository.reset_connections("TCP child process stopped")
+            except (OSError, RuntimeError, ValueError, sqlite3.Error):
+                pass
+        level = "INFO" if code == 0 else "ERROR"
+        self._append_ui_event(level, source, f"è¿›ç¨‹ç»“æŸï¼Œexit_code={code}")
+
+    def _runner_finished(self, code: int) -> None:
+        recovered = False
+        if self.db_path.is_file():
+            try:
+                if self.repository.runtime()["status"] == "running":
+                    self.repository.set_status("pause")
+                    recovered = True
+            except (OSError, RuntimeError, ValueError, sqlite3.Error):
+                pass
+        if recovered:
+            self._append_ui_event(
+                "WARNING",
+                "ä»¿çœŸ",
+                f"è®¡ç®—å­è¿›ç¨‹å·²é€€å‡ºï¼ˆexit_code={code}ï¼‰ï¼Œæ•°æ®åº“çŠ¶æ€å·²è‡ªåŠ¨è½¬ä¸º paused",
+            )
+        else:
+            self._process_finished("ä»¿çœŸ", code)
+        self.refresh_state()
+
+    def _append_ui_event(self, level: str, source: str, message: str) -> None:
+        self._ui_events.append({
+            "created_at_utc": _rfc3339(_utc_now()), "level": level,
+            "source": source, "message": message,
+        })
+        self._ui_events = self._ui_events[-200:]
+        self._refresh_alerts()
+
+    def _clear_ui_events(self) -> None:
+        self._ui_events.clear()
+        self._refresh_alerts()
+
+    @staticmethod
+    def _set_button_role(button: QPushButton, role: str) -> None:
+        button.setProperty("role", role)
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.update()
+
+    @staticmethod
+    def _set_pill(dot: QFrame, label: QLabel, text: str, color: str) -> None:
+        dot.setStyleSheet(f"background:{color}; border-radius:5px;")
+        label.setText(text)
+
+    @staticmethod
+    def _set_state_label(label: QLabel, state: str, text: str) -> None:
+        label.setText(text)
+        label.setProperty("state", state)
+        label.style().unpolish(label)
+        label.style().polish(label)
+        label.update()
+
+    def refresh_state(self) -> None:
+        self._update_communication_summary()
+        if not self.db_path.is_file():
+            self._database_health = "æœªåˆå§‹åŒ–"
+            self._update_communication_summary()
+            self.runtime_detail.setText("æ•°æ®åº“æœªåˆå§‹åŒ–")
+            self._set_pill(self.dbDot, self.dbPill, "grid.db æœªè¿žæŽ¥", COLORS["warn"])
+            self._set_control_buttons(None)
+            self.initialize_button.setEnabled(True)
+            self.refresh_parameters()
+            return
+        self.initialize_button.setEnabled(False)
+        try:
+            runtime = self.repository.runtime()
+            state = self.repository.get_state()
+            connections = self.repository.connection_statuses()
+        except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
+            self._database_health = "å¼‚å¸¸"
+            self._update_communication_summary()
+            self.runtime_detail.setText(f"æ•°æ®åº“è¯»å–å¤±è´¥ï¼š{error}")
+            self._set_pill(self.dbDot, self.dbPill, "grid.db å¼‚å¸¸", COLORS["bad"])
+            self._set_control_buttons(None)
+            return
+
+        status = str(runtime["status"])
+        self._database_health = "æ­£å¸¸"
+        self._update_communication_summary()
+        self._set_pill(self.dbDot, self.dbPill, "grid.db æ­£å¸¸", COLORS["good"])
+        self.runtime_detail.setText(
+            f"step={state.step}ã€€sim={format_sim_time(state.sim_time_s)}ã€€"
+            f"UTC={state.sampled_at_utc}ã€€å‚æ•°={runtime['parameter_status']}"
+        )
+        self.envelope_label.setText(
+            f"session_id={state.session_id}ã€€step={state.step}ã€€sim_time_s={state.sim_time_s:.3f}ã€€sampled_at_utc={state.sampled_at_utc}"
+        )
+
+        for key, label in self.kpi_labels.items():
+            label.setText(f"{float(getattr(state, key)):.1f}")
+
+        state_names = {"ready": "å°±ç»ª", "running": "è¿è¡Œ", "paused": "æš‚åœ", "stopped": "åœæ­¢", "completed": "å®Œæˆ"}
+        sim_state = "good" if status == "running" else "warn"
+        if status == "stopped":
+            sim_state = "bad"
+        self._update_status_card(
+            "simulation", sim_state, f"â—  {state_names.get(status, status)}",
+            f"step={state.step}ã€€é‡‡æ · {format_utc_time(state.sampled_at_utc)} UTC",
+        )
+        self._update_status_card(
+            "wind", "good" if state.wind_running else "bad",
+            "â—  è¿è¡Œ" if state.wind_running else "â—  åœæ­¢",
+            f"æ¡¨è· {state.pitch_actual_deg:.1f} degã€€æ•…éšœ={'æ˜¯' if state.fault else 'å¦'}",
+        )
+        for peer in ("B", "C"):
+            item = connections.get(peer, {"connected": False, "detail": "not connected"})
+            connected = bool(item.get("connected"))
+            detail = str(item.get("detail", ""))
+            seen = item.get("last_seen_at_utc")
+            if seen:
+                detail = f"{detail}ã€€æœ€è¿‘ {format_utc_time(str(seen))} UTC"
+            self._update_status_card(peer, "good" if connected else "bad", "â—  åœ¨çº¿" if connected else "â—  ç¦»çº¿", detail)
+            dot, pill = (self.bDot, self.bPill) if peer == "B" else (self.cDot, self.cPill)
+            self._set_pill(dot, pill, f"{peer} {'åœ¨çº¿' if connected else 'ç¦»çº¿'}", COLORS["good"] if connected else COLORS["bad"])
+
+        payload = state.protocol_payload()
+        for key, item in self.protocol_value_items.items():
+            value = payload.get(key, "-")
+            if isinstance(value, bool):
+                text = "true" if value else "false"
+            elif isinstance(value, (int, float)):
+                text = f"{float(value):.3f}"
+            else:
+                text = str(value)
+            item.setText(text)
+
+        if not self.time_slider.isSliderDown():
+            times = self.wind_editor.times_s()
+            index = min(range(len(times)), key=lambda candidate: abs(times[candidate] - state.sim_time_s))
+            self.time_slider.setValue(index)
+        self._set_control_buttons(status)
+
+        now = time.monotonic()
+        if now - self._last_live_refresh >= 0.9:
+            self._last_live_refresh = now
+            self._refresh_live_charts(state)
+        if now - self._last_parameter_refresh >= 1.5:
+            self.refresh_parameters()
+
+    def _state_history(
+        self,
+        limit: int,
+        fallback: object | None = None,
+        session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        method = getattr(self.repository, "state_history", None)
+        rows: Iterable[object]
+        if callable(method):
+            try:
+                rows = method(limit=limit, session_id=session_id)
+            except TypeError:
+                try:
+                    rows = method(limit=limit)
+                except TypeError:
+                    rows = method(limit)
+        else:
+            rows = [] if fallback is None else [fallback]
+        result = [_row_mapping(row) for row in rows]
+        if session_id is not None:
+            result = [
+                row for row in result
+                if str(row.get("session_id", "")) == session_id
+            ]
+        if not result and fallback is not None:
+            fallback_row = _row_mapping(fallback)
+            if session_id is None or str(fallback_row.get("session_id", "")) == session_id:
+                result = [fallback_row]
+        return result[-limit:]
+
+    def _history_sessions(self) -> list[str]:
+        method = getattr(self.repository, "history_sessions", None)
+        if callable(method):
+            raw = method()
+            sessions = [
+                str(_row_mapping(row).get("session_id", "")) for row in raw
+            ]
+            return list(dict.fromkeys(session for session in sessions if session))
+        return list(dict.fromkeys(
+            str(row.get("session_id", ""))
+            for row in self._state_history(self.historyLimitSpin.maximum())
+            if row.get("session_id")
+        ))
+
+    def _refresh_live_charts(self, current_state: object) -> None:
+        try:
+            current = _row_mapping(current_state)
+            current_session = str(current.get("session_id", ""))
+            rows = self._state_history(
+                120, current_state, session_id=current_session
+            )
+            timestamps = [str(row.get("sampled_at_utc", "")) for row in rows]
+            self.windTrend.set_series(timestamps, {"é£Žé€Ÿ": [float(row.get("wind_speed_mps", 0.0)) for row in rows]})
+            self.powerTrend.set_series(
+                timestamps,
+                {
+                    "è´Ÿè·": [float(row.get("load_power_kw", 0.0)) for row in rows],
+                    "å¯ç”¨": [float(row.get("wind_available_kw", 0.0)) for row in rows],
+                    "é£Žç›®æ ‡": [float(row.get("wind_target_kw", 0.0)) for row in rows],
+                    "é£Žå®žé™…": [float(row.get("wind_actual_kw", 0.0)) for row in rows],
+                    "æŸ´ç›®æ ‡": [float(row.get("diesel_target_kw", 0.0)) for row in rows],
+                    "æŸ´å®žé™…": [float(row.get("diesel_actual_kw", 0.0)) for row in rows],
+                },
+            )
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError, sqlite3.Error) as error:
+            self.statusBar().showMessage(f"å®žæ—¶åŽ†å²è¯»å–å¤±è´¥ï¼š{error}", 5000)
+
+    def _fallback_parameter_rows(self) -> list[dict[str, object]]:
+        now = _rfc3339(_utc_now())
+        rows: list[dict[str, object]] = [
+            {"key": "a_step_s", "value": self.config.step_s, "unit": "s", "owner": "A", "source": "config", "updated_at_utc": now, "editable": True},
+            {"key": "a_poll_s", "value": self.config.poll_interval_s, "unit": "s", "owner": "A", "source": "config", "updated_at_utc": now, "editable": True},
+        ]
+        wind_owner = {
+            "rated_power_kw": "C", "cut_in_speed_mps": "C", "rated_speed_mps": "C",
+            "cut_out_speed_mps": "C", "pitch_full_output_deg": "C", "pitch_feather_deg": "C",
+            "ramp_up_kw_per_s": "A", "ramp_down_kw_per_s": "A",
+        }
+        wind_units = {
+            "rated_power_kw": "kW", "cut_in_speed_mps": "m/s", "rated_speed_mps": "m/s",
+            "cut_out_speed_mps": "m/s", "pitch_full_output_deg": "deg", "pitch_feather_deg": "deg",
+            "ramp_up_kw_per_s": "kW/s", "ramp_down_kw_per_s": "kW/s",
+        }
+        for name, value in asdict(self.config.wind).items():
+            owner = wind_owner[name]
+            canonical = {
+                "rated_power_kw": "wind_rated_power_kw",
+                "ramp_up_kw_per_s": "wind_ramp_up_kw_per_s",
+                "ramp_down_kw_per_s": "wind_ramp_down_kw_per_s",
+            }.get(name, name)
+            rows.append({"key": canonical, "value": value, "unit": wind_units[name], "owner": owner, "source": "config", "updated_at_utc": now, "editable": owner == "A"})
+        diesel_units = {"min_power_kw": "kW", "max_power_kw": "kW", "ramp_up_kw_per_s": "kW/s", "ramp_down_kw_per_s": "kW/s"}
+        for name, value in asdict(self.config.diesel).items():
+            rows.append({"key": f"diesel_{name}", "value": value, "unit": diesel_units[name], "owner": "A", "source": "config", "updated_at_utc": now, "editable": True})
+        rows.extend(
+            (
+                {"key": "reserve_kw", "value": 10.0, "unit": "kW", "owner": "B", "source": "ç»Ÿä¸€åŸºçº¿", "updated_at_utc": now, "editable": False},
+                {"key": "b_poll_s", "value": 1.0, "unit": "s", "owner": "B", "source": "ç»Ÿä¸€åŸºçº¿", "updated_at_utc": now, "editable": False},
+                {"key": "b_dispatch_s", "value": 5.0, "unit": "s", "owner": "B", "source": "ç»Ÿä¸€åŸºçº¿", "updated_at_utc": now, "editable": False},
+                {"key": "c_control_s", "value": 1.0, "unit": "s", "owner": "C", "source": "ç»Ÿä¸€åŸºçº¿", "updated_at_utc": now, "editable": False},
+                {"key": "c_timeout_s", "value": 3.0, "unit": "s", "owner": "C", "source": "ç»Ÿä¸€åŸºçº¿", "updated_at_utc": now, "editable": False},
+            )
+        )
+        if self.db_path.is_file():
+            try:
+                state = self.repository.get_state()
+                runtime_rows = (
+                    ("B.wind_target_kw", state.wind_target_kw, "kW", "B"),
+                    ("B.diesel_target_kw", state.diesel_target_kw, "kW", "B"),
+                    ("C.wind_available_kw", state.wind_available_kw, "kW", "C"),
+                    ("C.wind_operating_limit_kw", state.wind_operating_limit_kw, "kW", "C"),
+                    ("C.pitch_target_deg", state.pitch_actual_deg, "deg", "C"),
+                )
+                for key, value, unit, owner in runtime_rows:
+                    rows.append({"key": key, "value": value, "unit": unit, "owner": owner, "source": "TCP åŒæ­¥/çŠ¶æ€", "updated_at_utc": state.sampled_at_utc, "editable": False})
+            except (OSError, RuntimeError, ValueError, sqlite3.Error):
+                pass
+        return rows
+
+    def _normalize_parameter_rows(self, raw: object) -> list[dict[str, object]]:
+        if isinstance(raw, Mapping):
+            if isinstance(raw.get("parameters"), (list, tuple)):
+                values: Iterable[object] = raw["parameters"]
+            else:
+                values = [dict(value, key=key) if isinstance(value, Mapping) else {"key": key, "value": value} for key, value in raw.items()]
+        else:
+            values = raw if isinstance(raw, Iterable) and not isinstance(raw, (str, bytes)) else []
+        rows: list[dict[str, object]] = []
+        for value in values:
+            row = _row_mapping(value)
+            key = row.get("key") or row.get("parameter_key") or row.get("parameter") or row.get("name")
+            device = row.get("device_id")
+            if device and key and not str(key).startswith(f"{device}."):
+                key = f"{device}.{key}"
+            if not key:
+                continue
+            owner = str(row.get("owner", "A")).upper()
+            rows.append({
+                "key": str(key), "value": row.get("value", row.get("new_value", "-")),
+                "unit": str(row.get("unit", "")), "owner": owner,
+                "source": str(row.get("source", owner)),
+                "updated_at_utc": str(row.get("updated_at_utc", row.get("changed_at_utc", "-"))),
+                "editable": bool(row.get("editable", owner == "A")) and owner == "A",
+            })
+        return rows
+
+    def refresh_parameters(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self._last_parameter_refresh < 1.5:
+            return
+        if not force and any(editor.hasFocus() for editor in self._parameter_editors.values()):
+            return
+        self._last_parameter_refresh = now
+        rows: list[dict[str, object]]
+        method = getattr(self.repository, "parameter_snapshot", None)
+        try:
+            rows = self._normalize_parameter_rows(method()) if callable(method) and self.db_path.is_file() else self._fallback_parameter_rows()
+            if not rows:
+                rows = self._fallback_parameter_rows()
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            rows = self._fallback_parameter_rows()
+            self.parameterSyncLabel.setText(f"å‚æ•°æŽ¥å£é™çº§ï¼š{error}")
+        else:
+            self.parameterSyncLabel.setText(f"å·²åŒæ­¥ {len(rows)} é¡¹ï½œ{_rfc3339(_utc_now())}")
+        self._parameter_rows = rows
+        self._populate_parameter_table(rows)
+        self._refresh_parameter_history()
+
+    def _populate_parameter_table(self, rows: list[dict[str, object]]) -> None:
+        pending_values = {
+            key: editor.value()
+            for key, editor in self._parameter_editors.items()
+            if key in self._parameter_originals
+            and not math.isclose(
+                editor.value(), self._parameter_originals[key], rel_tol=0.0, abs_tol=1e-9
+            )
+        }
+        self.parameterTable.setRowCount(len(rows))
+        self._parameter_editors.clear()
+        self._parameter_originals.clear()
+        readonly_brush = QColor("#f2f5f8")
+        for index, row in enumerate(rows):
+            key = str(row["key"])
+            owner = str(row["owner"])
+            editable = bool(row["editable"])
+            values = (
+                PARAMETER_NAMES.get(key, key.split(".")[-1]), key, owner,
+                "", str(row["unit"]), str(row["source"]), str(row["updated_at_utc"]),
+            )
+            for column, text in enumerate(values):
+                if column == 3:
+                    continue
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if not editable:
+                    item.setBackground(readonly_brush)
+                self.parameterTable.setItem(index, column, item)
+            value = row.get("value")
+            if editable and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+                editor = QDoubleSpinBox()
+                editor.setRange(0.0, 1_000_000.0)
+                editor.setDecimals(3)
+                editor.setValue(pending_values.get(key, float(value)))
+                editor.setSingleStep(0.1)
+                editor.setMinimumHeight(36)
+                editor.setStyleSheet(
+                    "QDoubleSpinBox { padding: 0 6px; } "
+                    "QDoubleSpinBox QLineEdit { padding: 0; border: none; }"
+                )
+                self.parameterTable.setCellWidget(index, 3, editor)
+                self._parameter_editors[key] = editor
+                self._parameter_originals[key] = float(value)
+            else:
+                text = "true" if value is True else "false" if value is False else str(value)
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setBackground(readonly_brush)
+                self.parameterTable.setItem(index, 3, item)
+
+    def save_a_parameters(self) -> None:
+        changes = {
+            key: editor.value()
+            for key, editor in self._parameter_editors.items()
+            if not math.isclose(editor.value(), self._parameter_originals[key], rel_tol=0.0, abs_tol=1e-9)
+        }
+        if not changes:
+            self.statusBar().showMessage("A å‚æ•°æ²¡æœ‰å˜åŒ–", 3000)
+            return
+        method = getattr(self.repository, "update_a_parameters", None)
+        if not callable(method):
+            QMessageBox.warning(self, "å‚æ•°ä¿å­˜", "å½“å‰ Repository å°šæœªæä¾› update_a_parameters()ï¼Œæœªå†™å…¥ä»»ä½•å‚æ•°ã€‚")
+            return
+        try:
+            method(changes)
+            self._append_ui_event("INFO", "å‚æ•°", "A å‚æ•°å·²æ›´æ–°ï¼š" + ", ".join(changes))
+            self.statusBar().showMessage(f"å·²ä¿å­˜ {len(changes)} é¡¹ A å‚æ•°", 4000)
+            self.refresh_parameters(force=True)
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "å‚æ•°ä¿å­˜å¤±è´¥", str(error))
+
+    def _refresh_parameter_history(self) -> None:
+        method = getattr(self.repository, "parameter_history", None)
+        try:
+            if not callable(method) or not self.db_path.is_file():
+                rows: list[dict[str, Any]] = []
+            else:
+                try:
+                    raw = method(limit=50)
+                except TypeError:
+                    raw = method(50)
+                rows = [_row_mapping(row) for row in raw]
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
+            rows = []
+        self.parameterHistoryTable.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            key = str(row.get("key", row.get("parameter_key", row.get("name", "-"))))
+            values = (
+                row.get("changed_at_utc", row.get("updated_at_utc", row.get("created_at_utc", "-"))),
+                PARAMETER_NAMES.get(key, key), row.get("owner", "-"), row.get("old_value", "-"),
+                row.get("new_value", row.get("value", "-")), row.get("source", "-"),
+                row.get("message", row.get("reason", "")),
+            )
+            for column, value in enumerate(values):
+                self.parameterHistoryTable.setItem(row_index, column, QTableWidgetItem(str(value)))
+
+    def refresh_history(self, *_unused) -> None:
+        if not self.db_path.is_file():
+            self.historyTrend.clear()
+            self.historyTable.setRowCount(0)
+            self.logTable.setRowCount(0)
+            return
+        try:
+            sessions = self._history_sessions()
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            self.statusBar().showMessage(f"åŽ†å²çŠ¶æ€è¯»å–å¤±è´¥ï¼š{error}", 5000)
+            return
+        selected_session = self.historySessionCombo.currentData()
+        if selected_session not in sessions:
+            selected_session = sessions[-1] if sessions else None
+        self.historySessionCombo.blockSignals(True)
+        self.historySessionCombo.clear()
+        for index, session_id in enumerate(sessions):
+            prefix = "å½“å‰ Â· " if index == len(sessions) - 1 else "åŽ†å² Â· "
+            self.historySessionCombo.addItem(prefix + session_id[:12], session_id)
+            self.historySessionCombo.setItemData(index, session_id, Qt.ItemDataRole.ToolTipRole)
+        if selected_session is not None:
+            self.historySessionCombo.setCurrentIndex(sessions.index(selected_session))
+        self.historySessionCombo.blockSignals(False)
+        try:
+            selected_rows = self._state_history(
+                self.historyLimitSpin.value(), session_id=selected_session
+            ) if selected_session is not None else []
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            self.statusBar().showMessage(f"åŽ†å²çŠ¶æ€è¯»å–å¤±è´¥ï¼š{error}", 5000)
+            selected_rows = []
+        key, unit, color = self.historyMetricCombo.currentData()
+        label = self.historyMetricCombo.currentText()
+        session_label = str(selected_session)[:8] if selected_session else "æ— ä¼šè¯"
+        self.historyTrend.title = f"åŽ†å² Â· {label} Â· {session_label}"
+        self.historyTrend.unit = unit
+        self.historyTrend.colors = {label: color}
+        self.historyTrend.set_series(
+            [str(row.get("sampled_at_utc", "")) for row in selected_rows],
+            {label: [float(row.get(key, 0.0)) for row in selected_rows]},
+        ) if selected_rows else self.historyTrend.clear()
+        newest = list(reversed(selected_rows))
+        self.historyTable.setRowCount(len(newest))
+        keys = (
+            "sampled_at_utc", "step", "wind_speed_mps", "load_power_kw", "wind_available_kw",
+            "wind_target_kw", "wind_actual_kw", "diesel_target_kw", "diesel_actual_kw",
+            "power_imbalance_kw", "session_id",
+        )
+        for row_index, row in enumerate(newest):
+            for column, field in enumerate(keys):
+                value = row.get(field, "-")
+                text = f"{float(value):.3f}" if isinstance(value, float) else str(value)
+                self.historyTable.setItem(row_index, column, QTableWidgetItem(text))
+        self._refresh_logs()
+
+    def _repository_logs(self, limit: int) -> list[dict[str, Any]]:
+        method = getattr(self.repository, "logs", None)
+        if not callable(method):
+            return []
+        try:
+            raw = method(limit=limit)
+        except TypeError:
+            raw = method(limit)
+        return [_row_mapping(row) for row in raw]
+
+    def _refresh_logs(self) -> None:
+        try:
+            rows = self._repository_logs(self.historyLimitSpin.value())
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            self.statusBar().showMessage(f"æ—¥å¿—è¯»å–å¤±è´¥ï¼š{error}", 5000)
+            rows = []
+        level_filter = self.logLevelCombo.currentText()
+        if level_filter != "å…¨éƒ¨":
+            rows = [row for row in rows if str(row.get("level", "")).upper() == level_filter]
+        self.logTable.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            values = (
+                row.get("created_at_utc", "-"), row.get("level", "-"), row.get("event", "-"),
+                row.get("step", "-"), row.get("message", ""),
+            )
+            for column, value in enumerate(values):
+                self.logTable.setItem(row_index, column, QTableWidgetItem(str(value)))
+
+    def _refresh_alerts(self) -> None:
+        database_events: list[dict[str, Any]] = []
+        if self.db_path.is_file():
+            try:
+                database_events = [
+                    {**row, "source": str(row.get("event", "grid.db"))}
+                    for row in self._repository_logs(100)
+                    if str(row.get("level", "")).upper() in {"WARNING", "ERROR", "CRITICAL"}
+                ]
+            except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
+                pass
+        rows = [*database_events, *self._ui_events]
+        rows.sort(key=lambda row: str(row.get("created_at_utc", "")), reverse=True)
+        rows = rows[:100]
+        self.alertTable.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            values = (
+                row.get("created_at_utc", "-"), row.get("level", "-"),
+                row.get("source", row.get("event", "-")), row.get("message", ""),
+            )
+            for column, value in enumerate(values):
+                self.alertTable.setItem(row_index, column, QTableWidgetItem(str(value)))
+
+    def _update_communication_summary(self) -> None:
+        bind = self.bindCombo.currentText().strip()
+        port = self.portSpin.value()
+        running = self._tcp_server.state() != QProcess.ProcessState.NotRunning
+        self.communicationLabels["local"].setText(self.localIpEdit.text())
+        self.communicationLabels["endpoint"].setText(f"{bind}:{port}ã€€{'è¿è¡Œ' if running else 'åœæ­¢'}")
+        self.communicationLabels["database"].setText(
+            f"{self.db_path.name}ã€€{self._database_health}"
+        )
+
+    def _update_status_card(self, key: str, state: str, text: str, detail: str) -> None:
+        label, detail_label = self.monitor_status[key]
+        self._set_state_label(label, state, text)
+        detail_label.setText(detail)
+
+    def _set_control_buttons(self, status: str | None) -> None:
+        self.start_button.setEnabled(status == "ready")
+        self.pause_button.setEnabled(status == "running")
+        self.resume_button.setEnabled(status == "paused")
+        self.stop_button.setEnabled(status in {"running", "paused"})
+        self.new_session_button.setEnabled(status in {"stopped", "completed"})
+
+    def closeEvent(self, event) -> None:
+        if (
+            self._runner.state() != QProcess.ProcessState.NotRunning
+            and self.db_path.is_file()
+        ):
+            try:
+                if self.repository.runtime()["status"] == "running":
+                    self.repository.set_status("pause")
+            except (OSError, RuntimeError, ValueError, sqlite3.Error):
+                pass
+        for process in (self._runner, self._tcp_server):
+            if process.state() != QProcess.ProcessState.NotRunning:
+                process.terminate()
+                if not process.waitForFinished(1000):
+                    process.kill()
+                    process.waitForFinished(1000)
+        super().closeEvent(event)
+
+
+def run_gui(
+    *,
+    db_path: Path,
+    config_path: Path,
+    scenario_path: Path,
+    bind_address: str | None = None,
+    port: int | None = None,
+) -> int:
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = SimulatorWindow(
+        db_path=db_path,
+        config_path=config_path,
+        scenario_path=scenario_path,
+        bind_address=bind_address,
+        port=port,
+    )
+    window.show()
+    return app.exec()

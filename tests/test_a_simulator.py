@@ -347,4 +347,428 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(state.power_imbalance_kw, state.load_power_kw)
         self.assertEqual(len(self.repo.state_history(100)), len(history_before) + 1)
         self.assertEqual(
-            {×Î}¶‰Ëkºwµç}‘” ‰ÕÑ˜´àˆ¤¤(€€€€€€€€€€€€€€€€€€€€€€€ÍÑÉ•…´¹™±ÕÍ  ¤(€€€€€€€€€€€€€€€€€€€€€€€…¬€ô©Í½¸¹±½…‘Ì¡ÍÑÉ•…´¹É•…‘±¥¹” ¤¤(€€€€€€€€€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡…­l‰ÑåÁ”‰t°€‰…¬ˆ¤(€€€€€€€€€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡…­l‰Á…å±½…‰t°ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…­}Í•Äˆè€Ä°€‰…•ÁÑ•ˆèQÉÕ”°€‰É•…Í½¸ˆè€‰…•ÁÑ•ˆ°(€€€€€€€€€€€€€€€€€€€€€€€ô¤((€€€€€€€€€€€€€€€€€€€€€€€ÍÑÉ•…´¹İÉ¥Ñ” ¡©Í½¸¹‘ÕµÁÌ¡‘¥ÍÁ…Ñ ¤€¬€‰q¸ˆ¤¹•¹½‘” ‰ÕÑ˜´àˆ¤¤(€€€€€€€€€€€€€€€€€€€€€€€ÍÑÉ•…´¹™±ÕÍ  ¤(€€€€€€€€€€€€€€€€€€€€€€€‘ÕÁ±¥…Ñ•}…¬€ô©Í½¸¹±½…‘Ì¡ÍÑÉ•…´¹É•…‘±¥¹” ¤¤(€€€€€€€€€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡‘ÕÁ±¥…Ñ•}…­l‰Á…å±½…‰t°ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…­}Í•Äˆè€Ä°€‰…•ÁÑ•ˆèQÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰É•…Í½¸ˆè€‰‘ÕÁ±¥…Ñ•}…•ÁÑ•ˆ°(€€€€€€€€€€€€€€€€€€€€€€€ô¤((€€€€€€€€€€€€€€€€€€€€€€€½±‘}‘¥ÍÁ…Ñ €ôì¨©‘¥ÍÁ…Ñ °€‰Í•Äˆè€Áô(€€€€€€€€€€€€€€€€€€€€€€€ÍÑÉ•…´¹İÉ¥Ñ” ¡©Í½¸¹‘ÕµÁÌ¡½±‘}‘¥ÍÁ…Ñ ¤€¬€‰q¸ˆ¤¹•¹½‘” ‰ÕÑ˜´àˆ¤¤(€€€€€€€€€€€€€€€€€€€€€€€ÍÑÉ•…´¹™±ÕÍ  ¤(€€€€€€€€€€€€€€€€€€€€€€€½±‘}…¬€ô©Í½¸¹±½…‘Ì¡ÍÑÉ•…´¹É•…‘±¥¹” ¤¤(€€€€€€€€€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡½±‘}…­l‰Á…å±½…‰t°ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…­}Í•Äˆè€À°€‰…•ÁÑ•ˆè…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰É•…Í½¸ˆè€‰½ÕÑ}½™}½É‘•Èˆ°(€€€€€€€€€€€€€€€€€€€€€€€ô¤((€€€€€€€€€€€€€€€€€€€€€€€Á…É…µ•Ñ•É}ÕÁ‘…Ñ”€ôì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€¨©‘¥ÍÁ…Ñ °(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÑåÁ”ˆè€‰Á…É…µ•Ñ•É}ÕÁ‘…Ñ”ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰Í•Äˆè€È°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì‰Á…É…µ•Ñ•ÉÌˆèì‰É•Í•ÉÙ•}­Üˆè€à¸Áõô°(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€€€ÍÑÉ•…´¹İÉ¥Ñ” ¡©Í½¸¹‘ÕµÁÌ¡Á…É…µ•Ñ•É}ÕÁ‘…Ñ”¤€¬€‰q¸ˆ¤¹•¹½‘” ‰ÕÑ˜´àˆ¤¤(€€€€€€€€€€€€€€€€€€€€€€€ÍÑÉ•…´¹™±ÕÍ  ¤(€€€€€€€€€€€€€€€€€€€€€€€Á…É…µ•Ñ•É}…¬€ô©Í½¸¹±½…‘Ì¡ÍÑÉ•…´¹É•…‘±¥¹” ¤¤(€€€€€€€€€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡Á…É…µ•Ñ•É}…­l‰Á…å±½…‰t°ì(€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…­}Í•Äˆè€È°€‰…•ÁÑ•ˆèQÉÕ”°€‰É•…Í½¸ˆè€‰…•ÁÑ•ˆ°(€€€€€€€€€€€€€€€€€€€€€€€ô¤((€€€€€€€€€€€€€€€É•½¹¹•Ñ}É•ÅÕ•ÍĞ€ôì¨©ÍÑ…Ñ•}É•ÅÕ•ÍĞ°€‰Í•ÍÍ¥½¹}¥ˆèÍ•ÍÍ¥½¹}¥°€‰Í•Äˆè€Íô(€€€€€€€€€€€€€€€İ¥Ñ Í½­•Ğ¹É•…Ñ•}½¹¹•Ñ¥½¸¡Í•ÉÙ•È¹Í•ÉÙ•É}…‘‘É•ÍÌ°Ñ¥µ•½ÕĞôÈ¤…Ì±¥•¹Ğè(€€€€€€€€€€€€€€€€€€€±¥•¹Ğ¹Í•¹‘…±° ¡©Í½¸¹‘ÕµÁÌ¡É•½¹¹•Ñ}É•ÅÕ•ÍĞ¤€¬€‰q¸ˆ¤¹•¹½‘” ‰ÕÑ˜´àˆ¤¤(€€€€€€€€€€€€€€€€€€€İ¥Ñ ±¥•¹Ğ¹µ…­•™¥±” ‰Éˆˆ¤…ÌÍÑÉ•…´è(€€€€€€€€€€€€€€€€€€€€€€€ÍÑ…Ñ•}…™Ñ•É}É•½¹¹•Ğ€ô©Í½¸¹±½…‘Ì¡ÍÑÉ•…´¹É•…‘±¥¹” ¤¤(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡ÍÑ…Ñ•}…™Ñ•É}É•½¹¹•Ñl‰ÑåÁ”‰t°€‰ÍÑ…Ñ”ˆ¤(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡ÍÑ…Ñ•}…™Ñ•É}É•½¹¹•Ñl‰Í•ÍÍ¥½¹}¥‰t°Í•ÍÍ¥½¹}¥¤(€€€€€€€€€€€™¥¹…±±äè(€€€€€€€€€€€€€€€Í•ÉÙ•È¹Í¡ÕÑ‘½İ¸ ¤(€€€€€€€€€€€€€€€Í•ÉÙ•È¹Í•ÉÙ•É}±½Í” ¤(€€€€€€€€€€€€€€€Ñ¡É•…¹©½¥¸¡Ñ¥µ•½ÕĞôÈ¤((€€€‘•˜Ñ•ÍÑ}‘¥ÍÁ…Ñ¡}É•©•ÑÍ}™¥•±‘Í}½ÕÑÍ¥‘•}‰}½¹ÑÉ…Ğ¡Í•±˜¤è(€€€€€€€İ¥Ñ Ñ•µÁ™¥±”¹Q•µÁ½É…Éå¥É•Ñ½Éä ¤…Ì‘¥É•Ñ½Éäè(€€€€€€€€€€€É•Á¼€ôI•Á½Í¥Ñ½Éä¡A…Ñ ¡‘¥É•Ñ½Éä¤€¼€‰É¥¹‘ˆˆ¤(€€€€€€€€€€€½¹™¥œ€ôÉ•Á±…”¡±½…‘}½¹™¥œ¡=9%}AQ ¤°•¹‘}ÌôÄÀ¸À¤(€€€€€€€€€€€Í•ÍÍ¥½¹}¥€ôÉ•Á¼¹¥¹¥Ñ¥…±¥é”¡½¹™¥œ°±½…‘}Í•¹…É¥½}ÍØ¡M9I%=}AQ ¤¤(€€€€€€€€€€€µ•ÍÍ…”€ôì(€€€€€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°€‰ÑåÁ”ˆè€‰‘¥ÍÁ…Ñ ˆ°€‰Í½ÕÉ”ˆè€‰ˆ°€‰Ñ…É•Ğˆè€‰ˆ°(€€€€€€€€€€€€€€€€‰Í•ÍÍ¥½¹}¥ˆèÍ•ÍÍ¥½¹}¥°€‰Í•Äˆè€Ä°€‰ÍÑ•Àˆè€À°€‰Í¥µ}Ñ¥µ•}Ìˆè€À¸À°(€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}Ñ…É•Ñ}­Üˆè€ÔÀ¸À°€‰‘¥•Í•±}Ñ…É•Ñ}­Üˆè€ÜÀ¸À°(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}•¹…‰±”ˆèQÉÕ”°€‰‘¥•Í•±}•¹…‰±”ˆèQÉÕ”°(€€€€€€€€€€€€€€€€€€€€‰Á¥Ñ¡}Ñ…É•Ñ}‘•œˆè€À¸À°(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€ô(€€€€€€€€€€€É•ÍÕ±Ğ€ôÉ•Á¼¹…ÁÁ±å}½µµ…¹¡µ•ÍÍ…”¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡É•ÍÕ±Ğ¹…•ÁÑ•¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡É•ÍÕ±Ğ¹É•…Í½¸°€‰¥¹Ù…±¥‘}‘¥ÍÁ…Ñ¡}™¥•±‘Ìˆ¤((€€€‘•˜Ñ•ÍÑ}}İ¥¹‘}…Ñ¥½¹}½İ¹Í}…Á…‰¥±¥Ñå}…¹‘}Á¥Ñ¡}™¥•±‘Ì¡Í•±˜¤è(€€€€€€€İ¥Ñ Ñ•µÁ™¥±”¹Q•µÁ½É…Éå¥É•Ñ½Éä ¤…Ì‘¥É•Ñ½Éäè(€€€€€€€€€€€‘ˆ€ôA…Ñ ¡‘¥É•Ñ½Éä¤€¼€‰É¥¹‘ˆˆ(€€€€€€€€€€€É•Á¼€ôI•Á½Í¥Ñ½Éä¡‘ˆ¤(€€€€€€€€€€€½¹™¥œ€ôÉ•Á±…”¡±½…‘}½¹™¥œ¡=9%}AQ ¤°•¹‘}ÌôÄÀ¸À¤(€€€€€€€€€€€Í•ÍÍ¥½¹}¥€ôÉ•Á¼¹¥¹¥Ñ¥…±¥é”¡½¹™¥œ°±½…‘}Í•¹…É¥½}ÍØ¡M9I%=}AQ ¤¤(€€€€€€€€€€€µ•ÍÍ…”€ôì(€€€€€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°(€€€€€€€€€€€€€€€€‰ÑåÁ”ˆè€‰İ¥¹‘}…Ñ¥½¸ˆ°(€€€€€€€€€€€€€€€€‰Í½ÕÉ”ˆè€‰ˆ°(€€€€€€€€€€€€€€€€‰Ñ…É•Ğˆè€‰ˆ°(€€€€€€€€€€€€€€€€‰Í•ÍÍ¥½¹}¥ˆèÍ•ÍÍ¥½¹}¥°(€€€€€€€€€€€€€€€€‰Í•Äˆè€Ä°(€€€€€€€€€€€€€€€€‰ÍÑ•Àˆè€À°(€€€€€€€€€€€€€€€€‰Í¥µ}Ñ¥µ•}Ìˆè€À¸À°(€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}•¹…‰±”ˆèQÉÕ”°(€€€€€€€€€€€€€€€€€€€€‰Á¥Ñ¡}Ñ…É•Ñ}‘•œˆè€ÄÈ¸À°(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}…Ù…¥±…‰±•}­Üˆè€ĞÀ¸À°(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}½Á•É…Ñ¥¹}±¥µ¥Ñ}­Üˆè€ĞÀ¸À°(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€ô(€€€€€€€€€€€É•ÍÕ±Ğ€ôÉ•Á¼¹…ÁÁ±å}½µµ…¹¡µ•ÍÍ…”¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡É•ÍÕ±Ğ¹…•ÁÑ•¤((€€€€€€€€€€€¥µÁ½ÉĞÍÅ±¥Ñ”Ì(€€€€€€€€€€€İ¥Ñ ±½Í¥¹œ¡ÍÅ±¥Ñ”Ì¹½¹¹•Ğ¡‘ˆ¤¤…Ì½¹¹•Ñ¥½¸è(€€€€€€€€€€€€€€€É½Ü€ô½¹¹•Ñ¥½¸¹•á•ÕÑ” (€€€€€€€€€€€€€€€€€€€€‰M1PÁ¥Ñ¡}Ñ…É•Ñ}‘•œ°½¹ÑÉ½±±•É}İ¥¹‘}…Ù…¥±…‰±•}­Ü°€ˆ(€€€€€€€€€€€€€€€€€€€€‰½¹ÑÉ½±±•É}İ¥¹‘}½Á•É…Ñ¥¹}±¥µ¥Ñ}­ÜI=4½¹ÑÉ½±}ÍÑ…Ñ”]!IÍ¥¹±•Ñ½¹}¥ôÄˆ(€€€€€€€€€€€€€€€€¤¹™•Ñ¡½¹” ¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡É½Ü°€ ÄÈ¸À°€ĞÀ¸À°€ĞÀ¸À¤¤((€€€€€€€€€€€¥¹Ù…±¥€ôì(€€€€€€€€€€€€€€€€¨©µ•ÍÍ…”°(€€€€€€€€€€€€€€€€‰Í•Äˆè€È°(€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì‰İ¥¹‘}•¹…‰±”ˆèQÉÕ”°€‰Á¥Ñ¡}Ñ…É•Ñ}‘•œˆè€ÄÈ¸Áô°(€€€€€€€€€€€ô(€€€€€€€€€€€É•©•Ñ•€ôÉ•Á¼¹…ÁÁ±å}½µµ…¹¡¥¹Ù…±¥¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡É•©•Ñ•¹…•ÁÑ•¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡É•©•Ñ•¹É•…Í½¸°€‰¥¹Ù…±¥‘}İ¥¹‘}…Ñ¥½¹}™¥•±‘Ìˆ¤((€€€‘•˜Ñ•ÍÑ}Á…É…µ•Ñ•É}ÕÁ‘…Ñ•}•¹™½É•Í}½İ¹•É}Á•ÉÍ¥ÍÑÍ}…¹‘}¥Í}ÕÍ•‘}‰å}¹•áÑ}ÍÑ•À¡Í•±˜¤è(€€€€€€€İ¥Ñ Ñ•µÁ™¥±”¹Q•µÁ½É…Éå¥É•Ñ½Éä ¤…Ì‘¥É•Ñ½Éäè(€€€€€€€€€€€‘ˆ€ôA…Ñ ¡‘¥É•Ñ½Éä¤€¼€‰É¥¹‘ˆˆ(€€€€€€€€€€€É•Á¼€ôI•Á½Í¥Ñ½Éä¡‘ˆ¤(€€€€€€€€€€€½¹™¥œ€ôÉ•Á±…”¡±½…‘}½¹™¥œ¡=9%}AQ ¤°•¹‘}ÌôÄÀ¸À¤(€€€€€€€€€€€Í•ÍÍ¥½¹}¥€ôÉ•Á¼¹¥¹¥Ñ¥…±¥é”¡½¹™¥œ°±½…‘}Í•¹…É¥½}ÍØ¡M9I%=}AQ ¤¤((€€€€€€€€€€€‘•˜ÕÁ‘…Ñ”¡Í½ÕÉ”°Í•Ä°Á…É…µ•Ñ•ÉÌ¤è(€€€€€€€€€€€€€€€É•ÑÕÉ¸É•Á¼¹…ÁÁ±å}½µµ…¹¡ì(€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°(€€€€€€€€€€€€€€€€€€€€‰ÑåÁ”ˆè€‰Á…É…µ•Ñ•É}ÕÁ‘…Ñ”ˆ°(€€€€€€€€€€€€€€€€€€€€‰Í½ÕÉ”ˆèÍ½ÕÉ”°(€€€€€€€€€€€€€€€€€€€€‰Ñ…É•Ğˆè€‰ˆ°(€€€€€€€€€€€€€€€€€€€€‰Í•ÍÍ¥½¹}¥ˆèÍ•ÍÍ¥½¹}¥°(€€€€€€€€€€€€€€€€€€€€‰Í•ÄˆèÍ•Ä°(€€€€€€€€€€€€€€€€€€€€‰ÍÑ•Àˆè€À°(€€€€€€€€€€€€€€€€€€€€‰Í¥µ}Ñ¥µ•}Ìˆè€À¸À°(€€€€€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì‰Á…É…µ•Ñ•ÉÌˆèÁ…É…µ•Ñ•ÉÍô°(€€€€€€€€€€€€€€€ô¤((€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡ÕÁ‘…Ñ” ‰ˆ°€Ä°ì(€€€€€€€€€€€€€€€€‰É•Í•ÉÙ•}­Üˆè€ä¸À°(€€€€€€€€€€€€€€€€‰‰}Á½±±}Ìˆè€À¸Ô°(€€€€€€€€€€€€€€€€‰‰}‘¥ÍÁ…Ñ¡}Ìˆè€È¸À°(€€€€€€€€€€€ô¤¹…•ÁÑ•¤(€€€€€€€€€€€Õ¹…ÕÑ¡½É¥é•€ôÕÁ‘…Ñ” ‰ˆ°€È°ì‰İ¥¹‘}É…Ñ•‘}Á½İ•É}­Üˆè€àÀ¸Áô¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡Õ¹…ÕÑ¡½É¥é•¹…•ÁÑ•¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡Õ¹…ÕÑ¡½É¥é•¹É•…Í½¸°€‰Õ¹…ÕÑ¡½É¥é•‘}Á…É…µ•Ñ•Èˆ¤((€€€€€€€€€€€‰…‘}É•±…Ñ¥½¸€ôÕÁ‘…Ñ” ‰ˆ°€Ä°ì‰ÕÑ}¥¹}ÍÁ••‘}µÁÌˆè€ÈÀ¸Áô¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡‰…‘}É•±…Ñ¥½¸¹…•ÁÑ•¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ%¸ ‰İ¥¹ÍÁ••‘Ìˆ°‰…‘}É•±…Ñ¥½¸¹É•…Í½¸¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…° (€€€€€€€€€€€€€€€íÉ½İl‰¹…µ”‰tèÉ½İl‰Ù…±Õ”‰t™½ÈÉ½Ü¥¸É•Á¼¹Á…É…µ•Ñ•É}Í¹…ÁÍ¡½Ğ ¥õl(€€€€€€€€€€€€€€€€€€€€‰ÕÑ}¥¹}ÍÁ••‘}µÁÌˆ(€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€Ì¸À°(€€€€€€€€€€€€¤((€€€€€€€€€€€¡…¹•€ôÕÁ‘…Ñ” ‰ˆ°€È°ì(€€€€€€€€€€€€€€€€‰İ¥¹‘}É…Ñ•‘}Á½İ•É}­Üˆè€ÈÀ¸À°(€€€€€€€€€€€€€€€€‰ÕÑ}¥¹}ÍÁ••‘}µÁÌˆè€À¸À°(€€€€€€€€€€€€€€€€‰É…Ñ•‘}ÍÁ••‘}µÁÌˆè€Ä¸À°(€€€€€€€€€€€ô¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡¡…¹•¹…•ÁÑ•¤(€€€€€€€€€€€Í¹…ÁÍ¡½Ğ€ôíÉ½İl‰¹…µ”‰tèÉ½Ü™½ÈÉ½Ü¥¸É•Á¼¹Á…É…µ•Ñ•É}Í¹…ÁÍ¡½Ğ ¥ô(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡Í¹…ÁÍ¡½Ñl‰É•Í•ÉÙ•}­Ü‰ul‰Í½ÕÉ”‰t°€‰	}ÑÀˆ¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡Í¹…ÁÍ¡½Ñl‰İ¥¹‘}É…Ñ•‘}Á½İ•É}­Ü‰ul‰Í½ÕÉ”‰t°€‰}ÑÀˆ¤(€€€€€€€€€€€İ¥Ñ ±½Í¥¹œ¡ÍÅ±¥Ñ”Ì¹½¹¹•Ğ¡‘ˆ¤¤…Ì½¹¹•Ñ¥½¸è(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…° (€€€€€€€€€€€€€€€€€€€½¹¹•Ñ¥½¸¹•á•ÕÑ” (€€€€€€€€€€€€€€€€€€€€€€€€‰M1PÙ…±Õ”I=4‘•Ù¥•}Á…É…µ•Ñ•ÉÌ€ˆ(€€€€€€€€€€€€€€€€€€€€€€€€‰]!I‘•Ù¥•}¥ô]PÀÄœ9¹…µ”ôÉ…Ñ•‘}Á½İ•É}­Üœˆ(€€€€€€€€€€€€€€€€€€€€¤¹™•Ñ¡½¹” ¥lÁt°(€€€€€€€€€€€€€€€€€€€€ÈÀ¸À°(€€€€€€€€€€€€€€€€¤(€€€€€€€€€€€€€€€Í…™•}½¹ÑÉ½°€ô½¹¹•Ñ¥½¸¹•á•ÕÑ” (€€€€€€€€€€€€€€€€€€€€‰M1P½¹ÑÉ½±±•É}İ¥¹‘}•¹…‰±”°Á¥Ñ¡}Ñ…É•Ñ}‘•œ°€ˆ(€€€€€€€€€€€€€€€€€€€€‰½¹ÑÉ½±±•É}İ¥¹‘}…Ù…¥±…‰±•}­Ü°½¹ÑÉ½±±•É}İ¥¹‘}½Á•É…Ñ¥¹}±¥µ¥Ñ}­Ü€ˆ(€€€€€€€€€€€€€€€€€€€€‰I=4½¹ÑÉ½±}ÍÑ…Ñ”]!IÍ¥¹±•Ñ½¹}¥ôÄˆ(€€€€€€€€€€€€€€€€¤¹™•Ñ¡½¹” ¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡Í…™•}½¹ÑÉ½°°€ À°€äÀ¸À°€À¸À°€À¸À¤¤((€€€€€€€€€€€İ¥¹‘}…Ñ¥½¸€ôì(€€€€€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°€‰ÑåÁ”ˆè€‰İ¥¹‘}…Ñ¥½¸ˆ°€‰Í½ÕÉ”ˆè€‰ˆ°€‰Ñ…É•Ğˆè€‰ˆ°(€€€€€€€€€€€€€€€€‰Í•ÍÍ¥½¹}¥ˆèÍ•ÍÍ¥½¹}¥°€‰Í•Äˆè€Ì°€‰ÍÑ•Àˆè€À°€‰Í¥µ}Ñ¥µ•}Ìˆè€À¸À°(€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}•¹…‰±”ˆèQÉÕ”°(€€€€€€€€€€€€€€€€€€€€‰Á¥Ñ¡}Ñ…É•Ñ}‘•œˆè€À¸À°(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}…Ù…¥±…‰±•}­Üˆè€ÈÀ¸À°(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}½Á•É…Ñ¥¹}±¥µ¥Ñ}­Üˆè€ÈÀ¸À°(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€ô(€€€€€€€€€€€‘¥ÍÁ…Ñ €ôì(€€€€€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°€‰ÑåÁ”ˆè€‰‘¥ÍÁ…Ñ ˆ°€‰Í½ÕÉ”ˆè€‰ˆ°€‰Ñ…É•Ğˆè€‰ˆ°(€€€€€€€€€€€€€€€€‰Í•ÍÍ¥½¹}¥ˆèÍ•ÍÍ¥½¹}¥°€‰Í•Äˆè€Ì°€‰ÍÑ•Àˆè€À°€‰Í¥µ}Ñ¥µ•}Ìˆè€À¸À°(€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}Ñ…É•Ñ}­Üˆè€ÈÀ¸À°€‰‘¥•Í•±}Ñ…É•Ñ}­Üˆè€À¸À°(€€€€€€€€€€€€€€€€€€€€‰İ¥¹‘}•¹…‰±”ˆèQÉÕ”°€‰‘¥•Í•±}•¹…‰±”ˆè…±Í”°(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€ô(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡É•Á¼¹…ÁÁ±å}½µµ…¹¡İ¥¹‘}…Ñ¥½¸¤¹…•ÁÑ•¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡É•Á¼¹…ÁÁ±å}½µµ…¹¡‘¥ÍÁ…Ñ ¤¹…•ÁÑ•¤(€€€€€€€€€€€É•Á¼¹ÕÁ‘…Ñ•}…}Á…É…µ•Ñ•ÉÌ¡ì‰İ¥¹‘}É…µÁ}ÕÁ}­İ}Á•É}Ìˆè€ÄÀÀ¸Áô¤(€€€€€€€€€€€É•Á¼¹Í•Ñ}ÍÑ…ÑÕÌ ‰ÍÑ…ÉĞˆ¤(€€€€€€€€€€€ÍÑ…Ñ”€ôÉ•Á¼¹ÍÑ•Á}½¹” ¤(€€€€€€€€€€€…ÍÍ•ÉĞÍÑ…Ñ”¥Ì¹½Ğ9½¹”(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡ÍÑ…Ñ”¹İ¥¹‘}…ÑÕ…±}­Ü°€ÈÀ¸À¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡ÍÑ…Ñ”¹İ¥¹‘}…Ù…¥±…‰±•}­Ü°€ÈÀ¸À¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡…¹ä (€€€€€€€€€€€€€€€É½İl‰Í½ÕÉ”‰t€ôô€‰}ÑÀˆ…¹É½İl‰¹…µ”‰t€ôô€‰İ¥¹‘}É…Ñ•‘}Á½İ•É}­Üˆ(€€€€€€€€€€€€€€€™½ÈÉ½Ü¥¸É•Á¼¹Á…É…µ•Ñ•É}¡¥ÍÑ½Éä ÈÀ¤(€€€€€€€€€€€€¤¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡…¹ä (€€€€€€€€€€€€€€€É½İl‰•Ù•¹Ğ‰t€ôô€‰Á…É…µ•Ñ•ÉÍ}ÕÁ‘…Ñ•ˆ™½ÈÉ½Ü¥¸É•Á¼¹±½Ì ÈÀ¤(€€€€€€€€€€€€¤¤((€€€‘•˜Ñ•ÍÑ}Á…É…µ•Ñ•É}ÕÁ‘…Ñ•}Á…å±½…‘}Í¡…Á•}¥Í}ÍÑÉ¥Ğ¡Í•±˜¤è(€€€€€€€İ¥Ñ Ñ•µÁ™¥±”¹Q•µÁ½É…Éå¥É•Ñ½Éä ¤…Ì‘¥É•Ñ½Éäè(€€€€€€€€€€€É•Á¼€ôI•Á½Í¥Ñ½Éä¡A…Ñ ¡‘¥É•Ñ½Éä¤€¼€‰É¥¹‘ˆˆ¤(€€€€€€€€€€€½¹™¥œ€ôÉ•Á±…”¡±½…‘}½¹™¥œ¡=9%}AQ ¤°•¹‘}ÌôÄÀ¸À¤(€€€€€€€€€€€Í•ÍÍ¥½¹}¥€ôÉ•Á¼¹¥¹¥Ñ¥…±¥é”¡½¹™¥œ°±½…‘}Í•¹…É¥½}ÍØ¡M9I%=}AQ ¤¤(€€€€€€€€€€€É•ÍÕ±Ğ€ôÉ•Á¼¹…ÁÁ±å}½µµ…¹¡ì(€€€€€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°€‰ÑåÁ”ˆè€‰Á…É…µ•Ñ•É}ÕÁ‘…Ñ”ˆ°€‰Í½ÕÉ”ˆè€‰ˆ°€‰Ñ…É•Ğˆè€‰ˆ°(€€€€€€€€€€€€€€€€‰Í•ÍÍ¥½¹}¥ˆèÍ•ÍÍ¥½¹}¥°€‰Í•Äˆè€Ä°€‰ÍÑ•Àˆè€À°€‰Í¥µ}Ñ¥µ•}Ìˆè€À¸À°(€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì‰Á…É…µ•Ñ•ÉÌˆèì‰É•Í•ÉÙ•}­Üˆè€à¸Áô°€‰Í½ÕÉ”ˆè€‰‰ô°(€€€€€€€€€€€ô¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡É•ÍÕ±Ğ¹…•ÁÑ•¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡É•ÍÕ±Ğ¹É•…Í½¸°€‰¥¹Ù…±¥‘}Á…É…µ•Ñ•É}ÕÁ‘…Ñ•}™¥•±‘Ìˆ¤((€€€‘•˜Ñ•ÍÑ}Á…É…µ•Ñ•É}ÕÁ‘…Ñ•}İ¥Ñ¡}Í…µ•}Ù…±Õ•}‘½•Í}¹½Ñ}¥¹™±…Ñ•}¡¥ÍÑ½Éä¡Í•±˜¤è(€€€€€€€İ¥Ñ Ñ•µÁ™¥±”¹Q•µÁ½É…Éå¥É•Ñ½Éä ¤…Ì‘¥É•Ñ½Éäè(€€€€€€€€€€€É•Á¼€ôI•Á½Í¥Ñ½Éä¡A…Ñ ¡‘¥É•Ñ½Éä¤€¼€‰É¥¹‘ˆˆ¤(€€€€€€€€€€€½¹™¥œ€ôÉ•Á±…”¡±½…‘}½¹™¥œ¡=9%}AQ ¤°•¹‘}ÌôÄÀ¸À¤(€€€€€€€€€€€Í•ÍÍ¥½¹}¥€ôÉ•Á¼¹¥¹¥Ñ¥…±¥é”¡½¹™¥œ°±½…‘}Í•¹…É¥½}ÍØ¡M9I%=}AQ ¤¤(€€€€€€€€€€€‰•™½É”€ôÉ•Á¼¹Á…É…µ•Ñ•É}¡¥ÍÑ½Éä ÄÀÀÀ¤(€€€€€€€€€€€É•Í•ÉÙ•}‰•™½É”€ô¹•áĞ (€€€€€€€€€€€€€€€É½Ü™½ÈÉ½Ü¥¸É•Á¼¹Á…É…µ•Ñ•É}Í¹…ÁÍ¡½Ğ ¤¥˜É½İl‰¹…µ”‰t€ôô€‰É•Í•ÉÙ•}­Üˆ(€€€€€€€€€€€€¤(€€€€€€€€€€€É•ÍÕ±Ğ€ôÉ•Á¼¹…ÁÁ±å}½µµ…¹¡ì(€€€€€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°(€€€€€€€€€€€€€€€€‰ÑåÁ”ˆè€‰Á…É…µ•Ñ•É}ÕÁ‘…Ñ”ˆ°(€€€€€€€€€€€€€€€€‰Í½ÕÉ”ˆè€‰ˆ°(€€€€€€€€€€€€€€€€‰Ñ…É•Ğˆè€‰ˆ°(€€€€€€€€€€€€€€€€‰Í•ÍÍ¥½¹}¥ˆèÍ•ÍÍ¥½¹}¥°(€€€€€€€€€€€€€€€€‰Í•Äˆè€Ä°(€€€€€€€€€€€€€€€€‰ÍÑ•Àˆè€À°(€€€€€€€€€€€€€€€€‰Í¥µ}Ñ¥µ•}Ìˆè€À¸À°(€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì‰Á…É…µ•Ñ•ÉÌˆèì‰É•Í•ÉÙ•}­ÜˆèÉ•Í•ÉÙ•}‰•™½É•l‰Ù…±Õ”‰uõô°(€€€€€€€€€€€ô¤(€€€€€€€€€€€É•Í•ÉÙ•}…™Ñ•È€ô¹•áĞ (€€€€€€€€€€€€€€€É½Ü™½ÈÉ½Ü¥¸É•Á¼¹Á…É…µ•Ñ•É}Í¹…ÁÍ¡½Ğ ¤¥˜É½İl‰¹…µ”‰t€ôô€‰É•Í•ÉÙ•}­Üˆ(€€€€€€€€€€€€¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡É•ÍÕ±Ğ¹…•ÁÑ•¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡É•Á¼¹Á…É…µ•Ñ•É}¡¥ÍÑ½Éä ÄÀÀÀ¤°‰•™½É”¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡É•Í•ÉÙ•}…™Ñ•È°É•Í•ÉÙ•}‰•™½É”¤((€€€‘•˜Ñ•ÍÑ}Í•ÉÙ•É}ÑÉ…­Í}µÕ±Ñ¥Á±•}½¹¹•Ñ¥½¹Í}Á•É}Á••È¡Í•±˜¤è(€€€€€€€İ¥Ñ Ñ•µÁ™¥±”¹Q•µÁ½É…Éå¥É•Ñ½Éä ¤…Ì‘¥É•Ñ½Éäè(€€€€€€€€€€€É•Á¼€ôI•Á½Í¥Ñ½Éä¡A…Ñ ¡‘¥É•Ñ½Éä¤€¼€‰É¥¹‘ˆˆ¤(€€€€€€€€€€€½¹™¥œ€ôÉ•Á±…”¡±½…‘}½¹™¥œ¡=9%}AQ ¤°•¹‘}ÌôÄÀ¸À¤(€€€€€€€€€€€É•Á¼¹¥¹¥Ñ¥…±¥é”¡½¹™¥œ°±½…‘}Í•¹…É¥½}ÍØ¡M9I%=}AQ ¤¤(€€€€€€€€€€€É•Á¼¹µ…É­}½¹¹•Ñ¥½¸ ‰ˆ°QÉÕ”°€‰ÍÑ…±”ÁÉ½•ÍÌÍÑ…Ñ”ˆ¤(€€€€€€€€€€€Í•ÉÙ•È€ôM¥µÕ±…Ñ½ÉQAM•ÉÙ•È  ˆÄÈÜ¸À¸À¸Äˆ°€À¤°É•Á¼°€ĞÀäØ¤(€€€€€€€€€€€ÑÉäè(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰½¹¹•Ñ•‰t¤(€€€€€€€€€€€€€€€Í•ÉÙ•È¹É•¥ÍÑ•É}Á••È ‰ˆ¤(€€€€€€€€€€€€€€€Í•ÉÙ•È¹É•¥ÍÑ•É}Á••È ‰ˆ¤(€€€€€€€€€€€€€€€Í•ÉÙ•È¹Õ¹É•¥ÍÑ•É}Á••È ‰ˆ¤(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰½¹¹•Ñ•‰t¤(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…° (€€€€€€€€€€€€€€€€€€€É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰‘•Ñ…¥°‰t°(€€€€€€€€€€€€€€€€€€€€ˆÄ…Ñ¥Ù”½¹¹•Ñ¥½¸¡Ì¤ˆ°(€€€€€€€€€€€€€€€€¤(€€€€€€€€€€€€€€€Í•ÉÙ•È¹Õ¹É•¥ÍÑ•É}Á••È ‰ˆ¤(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰½¹¹•Ñ•‰t¤(€€€€€€€€€€€€€€€•Ù•¹ÑÌ€ômÉ½İl‰•Ù•¹Ğ‰t™½ÈÉ½Ü¥¸É•Á¼¹±½Ì ÈÀ¥t(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ%¸ ‰Á••É}½¹¹•Ñ•ˆ°•Ù•¹ÑÌ¤(€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ%¸ ‰Á••É}‘¥Í½¹¹•Ñ•ˆ°•Ù•¹ÑÌ¤(€€€€€€€€€€€™¥¹…±±äè(€€€€€€€€€€€€€€€Í•ÉÙ•È¹Í•ÉÙ•É}±½Í” ¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰½¹¹•Ñ•‰t¤(€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…° (€€€€€€€€€€€€€€€É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰‘•Ñ…¥°‰t°€‰Q@Í•ÉÙ•ÈÍÑ½ÁÁ•ˆ(€€€€€€€€€€€€¤((€€€‘•˜Ñ•ÍÑ}Í•ÉÙ•É}µ…É­Í}¥‘±•}Á••É}½™™±¥¹”¡Í•±˜¤è(€€€€€€€İ¥Ñ Ñ•µÁ™¥±”¹Q•µÁ½É…Éå¥É•Ñ½Éä ¤…Ì‘¥É•Ñ½Éäè(€€€€€€€€€€€É•Á¼€ôI•Á½Í¥Ñ½Éä¡A…Ñ ¡‘¥É•Ñ½Éä¤€¼€‰É¥¹‘ˆˆ¤(€€€€€€€€€€€½¹™¥œ€ôÉ•Á±…”¡±½…‘}½¹™¥œ¡=9%}AQ ¤°•¹‘}ÌôÄÀ¸À¤(€€€€€€€€€€€É•Á¼¹¥¹¥Ñ¥…±¥é”¡½¹™¥œ°±½…‘}Í•¹…É¥½}ÍØ¡M9I%=}AQ ¤¤(€€€€€€€€€€€Í•ÉÙ•È€ôM¥µÕ±…Ñ½ÉQAM•ÉÙ•È (€€€€€€€€€€€€€€€€ ˆÄÈÜ¸À¸À¸Äˆ°€À¤°É•Á¼°€ĞÀäØ°¥‘±•}Ñ¥µ•½ÕÑ}ÌôÀ¸Ä(€€€€€€€€€€€€¤(€€€€€€€€€€€Ñ¡É•…€ôÑ¡É•…‘¥¹œ¹Q¡É•…¡Ñ…É•ĞõÍ•ÉÙ•È¹Í•ÉÙ•}™½É•Ù•È°‘…•µ½¸õQÉÕ”¤(€€€€€€€€€€€Ñ¡É•…¹ÍÑ…ÉĞ ¤(€€€€€€€€€€€ÑÉäè(€€€€€€€€€€€€€€€É•ÅÕ•ÍĞ€ôì(€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÍ¥½¸ˆè€Ä°(€€€€€€€€€€€€€€€€€€€€‰ÑåÁ”ˆè€‰ÍÑ…Ñ•}É•ÅÕ•ÍĞˆ°(€€€€€€€€€€€€€€€€€€€€‰Í½ÕÉ”ˆè€‰ˆ°(€€€€€€€€€€€€€€€€€€€€‰Ñ…É•Ğˆè€‰ˆ°(€€€€€€€€€€€€€€€€€€€€‰Í•ÍÍ¥½¹}¥ˆè9½¹”°(€€€€€€€€€€€€€€€€€€€€‰Í•Äˆè€Ä°(€€€€€€€€€€€€€€€€€€€€‰ÍÑ•Àˆè€À°(€€€€€€€€€€€€€€€€€€€€‰Í¥µ}Ñ¥µ•}Ìˆè€À¸À°(€€€€€€€€€€€€€€€€€€€€‰Á…å±½…ˆèì‰™Õ±°ˆèQÉÕ•ô°(€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€İ¥Ñ Í½­•Ğ¹É•…Ñ•}½¹¹•Ñ¥½¸¡Í•ÉÙ•È¹Í•ÉÙ•É}…‘‘É•ÍÌ°Ñ¥µ•½ÕĞôÈ¤…Ì±¥•¹Ğè(€€€€€€€€€€€€€€€€€€€±¥•¹Ğ¹Í•¹‘…±° ¡©Í½¸¹‘ÕµÁÌ¡É•ÅÕ•ÍĞ¤€¬€‰q¸ˆ¤¹•¹½‘” ‰ÕÑ˜´àˆ¤¤(€€€€€€€€€€€€€€€€€€€İ¥Ñ ±¥•¹Ğ¹µ…­•™¥±” ‰Éˆˆ¤…ÌÍÑÉ•…´è(€€€€€€€€€€€€€€€€€€€€€€€É•ÍÁ½¹Í”€ô©Í½¸¹±½…‘Ì¡ÍÑÉ•…´¹É•…‘±¥¹” ¤¤(€€€€€€€€€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑÅÕ…°¡É•ÍÁ½¹Í•l‰ÑåÁ”‰t°€‰ÍÑ…Ñ”ˆ¤(€€€€€€€€€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑQÉÕ”¡É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰½¹¹•Ñ•‰t¤(€€€€€€€€€€€€€€€€€€€€€€€‘•…‘±¥¹”€ôÑ¥µ”¹µ½¹½Ñ½¹¥Œ ¤€¬€È¸À(€€€€€€€€€€€€€€€€€€€€€€€İ¡¥±”€ (€€€€€€€€€€€€€€€€€€€€€€€€€€€É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰½¹¹•Ñ•‰t(€€€€€€€€€€€€€€€€€€€€€€€€€€€…¹Ñ¥µ”¹µ½¹½Ñ½¹¥Œ ¤€ğ‘•…‘±¥¹”(€€€€€€€€€€€€€€€€€€€€€€€€¤è(€€€€€€€€€€€€€€€€€€€€€€€€€€€Ñ¥µ”¹Í±••À À¸ÀÈ¤(€€€€€€€€€€€€€€€€€€€€€€€Í•±˜¹…ÍÍ•ÉÑ…±Í”¡É•Á¼¹½¹¹•Ñ¥½¹}ÍÑ…ÑÕÍ•Ì ¥l‰‰ul‰½¹¹•Ñ•‰t¤(€€€€€€€€€€€™¥¹…±±äè(€€€€€€€€€€€€€€€Í•ÉÙ•È¹Í¡ÕÑ‘½İ¸ ¤(€€€€€€€€€€€€€€€Í•ÉÙ•È¹Í•ÉÙ•É}±½Í” ¤(€€€€€€€€€€€€€€€Ñ¡É•…¹©½¥¸¡Ñ¥µ•½ÕĞôÈ¤(()¥˜}}¹…µ•}|€ôô€‰}}µ…¥¹}|ˆè(€€€Õ¹¥ÑÑ•ÍĞ¹µ…¥¸ ¤(
+            {row["name"]: row["value"] for row in self.repo.parameter_snapshot()}[
+                "a_poll_s"
+            ],
+            0.75,
+        )
+        self.assertFalse(self.repo.connection_statuses()["B"]["connected"])
+        self.assertEqual(self.repo.next_server_seq(), old_server_seq + 1)
+        self.assertEqual(
+            {row["session_id"] for row in self.repo.state_history(100)},
+            {self.session, new_session},
+        )
+        self.assertEqual(
+            [row["session_id"] for row in self.repo.history_sessions()],
+            [self.session, new_session],
+        )
+        self.assertEqual(
+            {row["session_id"] for row in self.repo.state_history(100, self.session)},
+            {self.session},
+        )
+
+
+class ProtocolTests(unittest.TestCase):
+    def test_rejects_nan_and_oversize(self):
+        raw = (b'{"version":1,"type":"state_request","source":"B","target":"A",'
+               b'"session_id":null,"seq":1,"step":0,"sim_time_s":NaN,"payload":{"full":true}}\n')
+        with self.assertRaises(ProtocolError):
+            decode_frame(raw, 4096)
+        with self.assertRaises(ProtocolError):
+            decode_frame(b"{}\n", 2)
+
+    def test_tcp_handles_split_and_coalesced_frames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            server = SimulatorTCPServer(("127.0.0.1", 0), repo, 4096)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                address = server.server_address
+                request = {
+                    "version": 1, "type": "state_request", "source": "B", "target": "A",
+                    "session_id": None, "seq": 1, "step": 0, "sim_time_s": 0,
+                    "payload": {"full": True},
+                }
+                frame1 = (json.dumps(request) + "\n").encode()
+                frame2 = (json.dumps({**request, "seq": 2}) + "\n").encode()
+                with socket.create_connection(address, timeout=2) as client:
+                    client.sendall(frame1[:17])
+                    client.sendall(frame1[17:] + frame2)
+                    with client.makefile("rb") as stream:
+                        responses = [json.loads(stream.readline()), json.loads(stream.readline())]
+                self.assertEqual([item["type"] for item in responses], ["state", "state"])
+                self.assertEqual([item["target"] for item in responses], ["B", "B"])
+                for item in responses:
+                    self.assertRegex(
+                        item["payload"]["sampled_at_utc"],
+                        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$",
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_tcp_matches_b_state_dispatch_ack_and_reconnect_flow(self):
+        """Exercise the exact envelope and payload shape used by B/tcpB.py."""
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            server = SimulatorTCPServer(("127.0.0.1", 0), repo, 4096)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                state_request = {
+                    "version": 1, "type": "state_request", "source": "B", "target": "A",
+                    "session_id": None, "seq": 0, "step": 0, "sim_time_s": 0.0,
+                    "payload": {"full": True},
+                }
+                with socket.create_connection(server.server_address, timeout=2) as client:
+                    with client.makefile("rwb") as stream:
+                        stream.write((json.dumps(state_request) + "\n").encode("utf-8"))
+                        stream.flush()
+                        state = json.loads(stream.readline())
+                        self.assertEqual(state["type"], "state")
+                        self.assertEqual(state["session_id"], session_id)
+                        self.assertEqual(
+                            set(state["payload"]),
+                            {
+                                "sampled_at_utc", "wind_speed_mps", "load_power_kw",
+                                "wind_available_kw", "wind_operating_limit_kw",
+                                "wind_actual_kw", "diesel_actual_kw", "wind_target_kw",
+                                "diesel_target_kw", "pitch_actual_deg", "wind_running",
+                                "diesel_running", "fault", "power_imbalance_kw",
+                            },
+                        )
+
+                        dispatch = {
+                            "version": 1, "type": "dispatch", "source": "B", "target": "A",
+                            "session_id": session_id, "seq": 1,
+                            "step": state["step"], "sim_time_s": state["sim_time_s"],
+                            "payload": {
+                                "wind_target_kw": 50.0, "diesel_target_kw": 70.0,
+                                "wind_enable": True, "diesel_enable": True,
+                            },
+                        }
+                        stream.write((json.dumps(dispatch) + "\n").encode("utf-8"))
+                        stream.flush()
+                        ack = json.loads(stream.readline())
+                        self.assertEqual(ack["type"], "ack")
+                        self.assertEqual(ack["payload"], {
+                            "ack_seq": 1, "accepted": True, "reason": "accepted",
+                        })
+
+                        stream.write((json.dumps(dispatch) + "\n").encode("utf-8"))
+                        stream.flush()
+                        duplicate_ack = json.loads(stream.readline())
+                        self.assertEqual(duplicate_ack["payload"], {
+                            "ack_seq": 1, "accepted": True,
+                            "reason": "duplicate_accepted",
+                        })
+
+                        old_dispatch = {**dispatch, "seq": 0}
+                        stream.write((json.dumps(old_dispatch) + "\n").encode("utf-8"))
+                        stream.flush()
+                        old_ack = json.loads(stream.readline())
+                        self.assertEqual(old_ack["payload"], {
+                            "ack_seq": 0, "accepted": False,
+                            "reason": "out_of_order",
+                        })
+
+                        parameter_update = {
+                            **dispatch,
+                            "type": "parameter_update",
+                            "seq": 2,
+                            "payload": {"parameters": {"reserve_kw": 8.0}},
+                        }
+                        stream.write((json.dumps(parameter_update) + "\n").encode("utf-8"))
+                        stream.flush()
+                        parameter_ack = json.loads(stream.readline())
+                        self.assertEqual(parameter_ack["payload"], {
+                            "ack_seq": 2, "accepted": True, "reason": "accepted",
+                        })
+
+                reconnect_request = {**state_request, "session_id": session_id, "seq": 3}
+                with socket.create_connection(server.server_address, timeout=2) as client:
+                    client.sendall((json.dumps(reconnect_request) + "\n").encode("utf-8"))
+                    with client.makefile("rb") as stream:
+                        state_after_reconnect = json.loads(stream.readline())
+                self.assertEqual(state_after_reconnect["type"], "state")
+                self.assertEqual(state_after_reconnect["session_id"], session_id)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_dispatch_rejects_fields_outside_b_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            message = {
+                "version": 1, "type": "dispatch", "source": "B", "target": "A",
+                "session_id": session_id, "seq": 1, "step": 0, "sim_time_s": 0.0,
+                "payload": {
+                    "wind_target_kw": 50.0, "diesel_target_kw": 70.0,
+                    "wind_enable": True, "diesel_enable": True,
+                    "pitch_target_deg": 0.0,
+                },
+            }
+            result = repo.apply_command(message)
+            self.assertFalse(result.accepted)
+            self.assertEqual(result.reason, "invalid_dispatch_fields")
+
+    def test_c_wind_action_owns_capability_and_pitch_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "grid.db"
+            repo = Repository(db)
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            message = {
+                "version": 1,
+                "type": "wind_action",
+                "source": "C",
+                "target": "A",
+                "session_id": session_id,
+                "seq": 1,
+                "step": 0,
+                "sim_time_s": 0.0,
+                "payload": {
+                    "wind_enable": True,
+                    "pitch_target_deg": 12.0,
+                    "wind_available_kw": 40.0,
+                    "wind_operating_limit_kw": 40.0,
+                },
+            }
+            result = repo.apply_command(message)
+            self.assertTrue(result.accepted)
+
+            import sqlite3
+            with closing(sqlite3.connect(db)) as connection:
+                row = connection.execute(
+                    "SELECT pitch_target_deg, controller_wind_available_kw, "
+                    "controller_wind_operating_limit_kw FROM control_state WHERE singleton_id=1"
+                ).fetchone()
+            self.assertEqual(row, (12.0, 40.0, 40.0))
+
+            invalid = {
+                **message,
+                "seq": 2,
+                "payload": {"wind_enable": True, "pitch_target_deg": 12.0},
+            }
+            rejected = repo.apply_command(invalid)
+            self.assertFalse(rejected.accepted)
+            self.assertEqual(rejected.reason, "invalid_wind_action_fields")
+
+    def test_parameter_update_enforces_owner_persists_and_is_used_by_next_step(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "grid.db"
+            repo = Repository(db)
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+
+            def update(source, seq, parameters):
+                return repo.apply_command({
+                    "version": 1,
+                    "type": "parameter_update",
+                    "source": source,
+                    "target": "A",
+                    "session_id": session_id,
+                    "seq": seq,
+                    "step": 0,
+                    "sim_time_s": 0.0,
+                    "payload": {"parameters": parameters},
+                })
+
+            self.assertTrue(update("B", 1, {
+                "reserve_kw": 9.0,
+                "b_poll_s": 0.5,
+                "b_dispatch_s": 2.0,
+            }).accepted)
+            unauthorized = update("B", 2, {"wind_rated_power_kw": 80.0})
+            self.assertFalse(unauthorized.accepted)
+            self.assertEqual(unauthorized.reason, "unauthorized_parameter")
+
+            bad_relation = update("C", 1, {"cut_in_speed_mps": 20.0})
+            self.assertFalse(bad_relation.accepted)
+            self.assertIn("wind speeds", bad_relation.reason)
+            self.assertEqual(
+                {row["name"]: row["value"] for row in repo.parameter_snapshot()}[
+                    "cut_in_speed_mps"
+                ],
+                3.0,
+            )
+
+            changed = update("C", 2, {
+                "wind_rated_power_kw": 20.0,
+                "cut_in_speed_mps": 0.0,
+                "rated_speed_mps": 1.0,
+            })
+            self.assertTrue(changed.accepted)
+            snapshot = {row["name"]: row for row in repo.parameter_snapshot()}
+            self.assertEqual(snapshot["reserve_kw"]["source"], "B_tcp")
+            self.assertEqual(snapshot["wind_rated_power_kw"]["source"], "C_tcp")
+            with closing(sqlite3.connect(db)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT value FROM device_parameters "
+                        "WHERE device_id='WT01' AND name='rated_power_kw'"
+                    ).fetchone()[0],
+                    20.0,
+                )
+                safe_control = connection.execute(
+                    "SELECT controller_wind_enable, pitch_target_deg, "
+                    "controller_wind_available_kw, controller_wind_operating_limit_kw "
+                    "FROM control_state WHERE singleton_id=1"
+                ).fetchone()
+            self.assertEqual(safe_control, (0, 90.0, 0.0, 0.0))
+
+            wind_action = {
+                "version": 1, "type": "wind_action", "source": "C", "target": "A",
+                "session_id": session_id, "seq": 3, "step": 0, "sim_time_s": 0.0,
+                "payload": {
+                    "wind_enable": True,
+                    "pitch_target_deg": 0.0,
+                    "wind_available_kw": 20.0,
+                    "wind_operating_limit_kw": 20.0,
+                },
+            }
+            dispatch = {
+                "version": 1, "type": "dispatch", "source": "B", "target": "A",
+                "session_id": session_id, "seq": 3, "step": 0, "sim_time_s": 0.0,
+                "payload": {
+                    "wind_target_kw": 20.0, "diesel_target_kw": 0.0,
+                    "wind_enable": True, "diesel_enable": False,
+                },
+            }
+            self.assertTrue(repo.apply_command(wind_action).accepted)
+            self.assertTrue(repo.apply_command(dispatch).accepted)
+            repo.update_a_parameters({"wind_ramp_up_kw_per_s": 100.0})
+            repo.set_status("start")
+            state = repo.step_once()
+            assert state is not None
+            self.assertEqual(state.wind_actual_kw, 20.0)
+            self.assertEqual(state.wind_available_kw, 20.0)
+            self.assertTrue(any(
+                row["source"] == "C_tcp" and row["name"] == "wind_rated_power_kw"
+                for row in repo.parameter_history(20)
+            ))
+            self.assertTrue(any(
+                row["event"] == "parameters_updated" for row in repo.logs(20)
+            ))
+
+    def test_parameter_update_payload_shape_is_strict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            result = repo.apply_command({
+                "version": 1, "type": "parameter_update", "source": "B", "target": "A",
+                "session_id": session_id, "seq": 1, "step": 0, "sim_time_s": 0.0,
+                "payload": {"parameters": {"reserve_kw": 8.0}, "source": "B"},
+            })
+            self.assertFalse(result.accepted)
+            self.assertEqual(result.reason, "invalid_parameter_update_fields")
+
+    def test_parameter_update_with_same_value_does_not_inflate_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            before = repo.parameter_history(1000)
+            reserve_before = next(
+                row for row in repo.parameter_snapshot() if row["name"] == "reserve_kw"
+            )
+            result = repo.apply_command({
+                "version": 1,
+                "type": "parameter_update",
+                "source": "B",
+                "target": "A",
+                "session_id": session_id,
+                "seq": 1,
+                "step": 0,
+                "sim_time_s": 0.0,
+                "payload": {"parameters": {"reserve_kw": reserve_before["value"]}},
+            })
+            reserve_after = next(
+                row for row in repo.parameter_snapshot() if row["name"] == "reserve_kw"
+            )
+            self.assertTrue(result.accepted)
+            self.assertEqual(repo.parameter_history(1000), before)
+            self.assertEqual(reserve_after, reserve_before)
+
+    def test_server_tracks_multiple_connections_per_peer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            repo.mark_connection("B", True, "stale process state")
+            server = SimulatorTCPServer(("127.0.0.1", 0), repo, 4096)
+            try:
+                self.assertFalse(repo.connection_statuses()["B"]["connected"])
+                server.register_peer("B")
+                server.register_peer("B")
+                server.unregister_peer("B")
+                self.assertTrue(repo.connection_statuses()["B"]["connected"])
+                self.assertEqual(
+                    repo.connection_statuses()["B"]["detail"],
+                    "1 active connection(s)",
+                )
+                server.unregister_peer("B")
+                self.assertFalse(repo.connection_statuses()["B"]["connected"])
+                events = [row["event"] for row in repo.logs(20)]
+                self.assertIn("peer_connected", events)
+                self.assertIn("peer_disconnected", events)
+            finally:
+                server.server_close()
+            self.assertFalse(repo.connection_statuses()["B"]["connected"])
+            self.assertEqual(
+                repo.connection_statuses()["B"]["detail"], "TCP server stopped"
+            )
+
+    def test_server_marks_idle_peer_offline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            server = SimulatorTCPServer(
+                ("127.0.0.1", 0), repo, 4096, idle_timeout_s=0.1
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = {
+                    "version": 1,
+                    "type": "state_request",
+                    "source": "B",
+                    "target": "A",
+                    "session_id": None,
+                    "seq": 1,
+                    "step": 0,
+                    "sim_time_s": 0.0,
+                    "payload": {"full": True},
+                }
+                with socket.create_connection(server.server_address, timeout=2) as client:
+                    client.sendall((json.dumps(request) + "\n").encode("utf-8"))
+                    with client.makefile("rb") as stream:
+                        response = json.loads(stream.readline())
+                        self.assertEqual(response["type"], "state")
+                        self.assertTrue(repo.connection_statuses()["B"]["connected"])
+                        deadline = time.monotonic() + 2.0
+                        while (
+                            repo.connection_statuses()["B"]["connected"]
+                            and time.monotonic() < deadline
+                        ):
+                            time.sleep(0.02)
+                        self.assertFalse(repo.connection_statuses()["B"]["connected"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+
+if __name__ == "__main__":
+    unittest.main()
