@@ -83,6 +83,14 @@ B 的 TCP/服务文件统一使用 `*B` 后缀，避免和其他成员冲突。
 
 ## 开发时间节点 / 功能增量
 
+### 2026-09-08 · B GUI 手动调度等待最新状态后自动下发
+
+- 修复 `B_dispatch/gui_b.py` 点击“下发当前调度”时遇到未完成 `state_request` 直接失败的问题。
+- 手动下发现在先排队并获取 A 的最新 `state`；若已有请求正在等待，则复用该请求，不重复发送。
+- 收到最新 `state` 后重新计算 EMS decision，再自动发送 `dispatch` 并处理 ACK；不再使用点击瞬间可能已经过期的旧 decision。
+- 自动闭环调度不会与手动排队请求、state request 或 dispatch ACK 争抢同一 TCP 事务。
+- ACK 未知仍保持原有安全策略：不自动换新 seq 盲目重发。
+
 ### 2026-09-08 · A 综合监控 UI 与一键启动
 
 - 合并场景曲线和运行监控，新增参数、历史、日志/通信页面。
@@ -121,7 +129,7 @@ B 的 TCP/服务文件统一使用 `*B` 后缀，避免和其他成员冲突。
 2. **实时曲线**：负荷、风电能力/限制、目标/实际及柴油实际趋势。
 3. **本地场景 / 手动调度**：构造 mock `GridState`，验证风优先、operating limit、10 kW reserve、柴油 OFF、C fault 优先和缺供结果。
 4. **参数设置**：统一基线从 `ems.db` 读取并按职责展示；生产基线不允许由 GUI 任意改写。
-5. **EMS 调度**：手动计算/下发和可选自动闭环；显示 target unserved、target surplus、reason、ACK。
+5. **EMS 调度**：手动计算/下发和可选自动闭环；显示 target unserved、target surplus、reason、ACK；手动下发会等待最新 A state 后自动重算并发送。
 6. **历史数据**：读取 `ems.db/state_history`、session 过滤和 CSV 导出。
 7. **通信诊断**：连接、pending request、full-sync、seq、ACK 和 GUI 事件日志。
 8. **报警与评价**：C fault、状态过期、delivery unknown 以及数据库评价 KPI。
@@ -156,6 +164,7 @@ python -m B_dispatch gui
 - `wind_available_kw` / `wind_operating_limit_kw` 已进入 B 模型、TCP parser、dispatch、数据库和测试。
 - `ems.db` schema v4 已增加完整物理参数只读副本，并固定 B dispatch / runtime baseline。
 - B PyQt6 GUI 已进入 `B_dispatch/gui_b.py`，支持 A IP/端口、真实 TCP 接入、本地 mock、参数展示、历史导出、通信诊断和调度评价。
+- 手动 GUI dispatch 已支持等待最新 A state 后自动重算和下发。
 
 ### 尚需完成
 
