@@ -28,12 +28,16 @@ def _validate(state: GridState, config: DispatchConfig) -> None:
     for name in (
         "sim_time_s",
         "wind_speed_mps",
+        "wind_available_kw",
+        "wind_operating_limit_kw",
         "load_power_kw",
         "wind_actual_kw",
         "diesel_actual_kw",
         "received_age_s",
     ):
         _finite_nonnegative(name, getattr(state, name))
+    if state.wind_operating_limit_kw > state.wind_available_kw:
+        raise DispatchError("wind_operating_limit_kw must be <= wind_available_kw")
     for name in (
         "wind_min_kw",
         "wind_max_kw",
@@ -56,9 +60,9 @@ def _validate(state: GridState, config: DispatchConfig) -> None:
 def calculate_dispatch(state: GridState, config: DispatchConfig) -> DispatchResult:
     """Calculate wind-first, diesel-compensating targets.
 
-    No wind-speed/power curve is invented here. Until A supplies a dedicated
-    available-power field, ``wind_actual_kw`` is used conservatively as the
-    available-wind estimate.
+    ``wind_operating_limit_kw`` is the protocol-defined capability boundary for
+    B. ``wind_available_kw`` remains an informational resource-capability field,
+    while ``wind_actual_kw`` is deliberately never used to decide the target.
     """
     _validate(state, config)
 
@@ -67,11 +71,11 @@ def calculate_dispatch(state: GridState, config: DispatchConfig) -> DispatchResu
         diesel_target = min(state.load_power_kw, config.diesel_dispatch_max_kw)
         reason = "C-priority fault: wind request suppressed"
     else:
-        available_wind = min(state.wind_actual_kw, config.wind_max_kw)
-        wind_target = min(state.load_power_kw, available_wind)
+        operating_limit = min(state.wind_operating_limit_kw, config.wind_max_kw)
+        wind_target = min(state.load_power_kw, operating_limit)
         remaining_load = max(state.load_power_kw - wind_target, 0.0)
         diesel_target = min(remaining_load, config.diesel_dispatch_max_kw)
-        reason = "wind-first dispatch"
+        reason = "wind-first dispatch within operating limit"
 
     target_generation = wind_target + diesel_target
     target_unserved = max(state.load_power_kw - target_generation, 0.0)
