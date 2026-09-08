@@ -12,6 +12,22 @@ from typing import Iterator, Mapping, Optional
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS physical_parameters (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    wind_rated_kw REAL NOT NULL DEFAULT 100.0 CHECK (wind_rated_kw > 0),
+    wind_cut_in_mps REAL NOT NULL DEFAULT 3.0 CHECK (wind_cut_in_mps >= 0),
+    wind_rated_speed_mps REAL NOT NULL DEFAULT 12.0 CHECK (wind_rated_speed_mps > wind_cut_in_mps),
+    wind_cut_out_mps REAL NOT NULL DEFAULT 25.0 CHECK (wind_cut_out_mps > wind_rated_speed_mps),
+    pitch_min_deg REAL NOT NULL DEFAULT 0.0 CHECK (pitch_min_deg >= 0),
+    pitch_max_deg REAL NOT NULL DEFAULT 90.0 CHECK (pitch_max_deg >= pitch_min_deg),
+    wind_ramp_up_kw_s REAL NOT NULL DEFAULT 40.0 CHECK (wind_ramp_up_kw_s > 0),
+    wind_ramp_down_kw_s REAL NOT NULL DEFAULT 60.0 CHECK (wind_ramp_down_kw_s > 0),
+    diesel_min_kw REAL NOT NULL DEFAULT 20.0 CHECK (diesel_min_kw >= 0),
+    diesel_max_kw REAL NOT NULL DEFAULT 120.0 CHECK (diesel_max_kw >= diesel_min_kw),
+    diesel_ramp_up_kw_s REAL NOT NULL DEFAULT 30.0 CHECK (diesel_ramp_up_kw_s > 0),
+    diesel_ramp_down_kw_s REAL NOT NULL DEFAULT 40.0 CHECK (diesel_ramp_down_kw_s > 0),
+    updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS dispatch_parameters (
     id INTEGER PRIMARY KEY CHECK (id = 1), wind_min_kw REAL NOT NULL CHECK (wind_min_kw >= 0),
     wind_max_kw REAL NOT NULL CHECK (wind_max_kw >= wind_min_kw), diesel_max_kw REAL NOT NULL CHECK (diesel_max_kw >= 0),
@@ -60,6 +76,23 @@ CREATE TABLE IF NOT EXISTS event_log (
     session_id TEXT, step INTEGER, created_at_utc TEXT NOT NULL
 );
 """
+
+UNIFIED_PHYSICAL = {
+    "wind_rated_kw": 100.0,
+    "wind_cut_in_mps": 3.0,
+    "wind_rated_speed_mps": 12.0,
+    "wind_cut_out_mps": 25.0,
+    "pitch_min_deg": 0.0,
+    "pitch_max_deg": 90.0,
+    "wind_ramp_up_kw_s": 40.0,
+    "wind_ramp_down_kw_s": 60.0,
+    "diesel_min_kw": 20.0,
+    "diesel_max_kw": 120.0,
+    "diesel_ramp_up_kw_s": 30.0,
+    "diesel_ramp_down_kw_s": 40.0,
+}
+UNIFIED_DISPATCH = {"wind_min_kw": 0.0, "wind_max_kw": 100.0, "diesel_max_kw": 120.0, "reserve_kw": 10.0}
+UNIFIED_RUNTIME = {"poll_period_s": 1.0, "dispatch_period_s": 5.0, "closed_loop": 1, "command_timeout_s": 3.0}
 
 
 def utc_now() -> str:
@@ -112,18 +145,42 @@ class EMSRepository:
             conn.execute("ALTER TABLE dispatch_commands ADD COLUMN ack_received_at_utc TEXT")
         conn.execute("INSERT INTO schema_meta(key,value) VALUES ('schema_version','3') ON CONFLICT(key) DO UPDATE SET value='3'")
 
+    def _migrate_to_v4(self, conn: sqlite3.Connection) -> None:
+        cols = self._columns(conn, "physical_parameters")
+        if not cols:
+            conn.executescript("""
+            CREATE TABLE IF NOT EXISTS physical_parameters (
+                id INTEGER PRIMARY KEY CHECK (id = 1), wind_rated_kw REAL NOT NULL DEFAULT 100.0,
+                wind_cut_in_mps REAL NOT NULL DEFAULT 3.0, wind_rated_speed_mps REAL NOT NULL DEFAULT 12.0,
+                wind_cut_out_mps REAL NOT NULL DEFAULT 25.0, pitch_min_deg REAL NOT NULL DEFAULT 0.0,
+                pitch_max_deg REAL NOT NULL DEFAULT 90.0, wind_ramp_up_kw_s REAL NOT NULL DEFAULT 40.0,
+                wind_ramp_down_kw_s REAL NOT NULL DEFAULT 60.0, diesel_min_kw REAL NOT NULL DEFAULT 20.0,
+                diesel_max_kw REAL NOT NULL DEFAULT 120.0, diesel_ramp_up_kw_s REAL NOT NULL DEFAULT 30.0,
+                diesel_ramp_down_kw_s REAL NOT NULL DEFAULT 40.0, updated_at TEXT NOT NULL
+            );
+            """)
+        conn.execute("INSERT INTO schema_meta(key,value) VALUES ('schema_version','4') ON CONFLICT(key) DO UPDATE SET value='4'")
+
     def initialize(self) -> None:
         with self.connection() as conn:
             conn.executescript(SCHEMA)
-            version = conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
-            if version is None or int(version[0]) < 3:
+            version_row = conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
+            version = 0 if version_row is None else int(version_row[0])
+            if version < 3:
                 self._migrate_to_v3(conn)
+            if version < 4:
+                self._migrate_to_v4(conn)
             now = utc_now()
+            cols = ", ".join(UNIFIED_PHYSICAL.keys())
+            placeholders = ", ".join("?" for _ in UNIFIED_PHYSICAL)
+            values = tuple(UNIFIED_PHYSICAL.values()) + (now,)
+            updates = ", ".join(f"{k}=excluded.{k}" for k in UNIFIED_PHYSICAL)
+            conn.execute(f"INSERT INTO physical_parameters(id,{cols},updated_at) VALUES(1,{placeholders},?) ON CONFLICT(id) DO UPDATE SET {updates},updated_at=excluded.updated_at", values)
             conn.execute(
                 """INSERT INTO dispatch_parameters
                    (id, wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw, updated_at)
                    VALUES (1, 0.0, 100.0, 120.0, 10.0, ?)
-                   ON CONFLICT(id) DO UPDATE SET wind_min_kw=100.0*0.0,
+                   ON CONFLICT(id) DO UPDATE SET wind_min_kw=0.0,
                    wind_max_kw=100.0, diesel_max_kw=120.0, reserve_kw=10.0, updated_at=excluded.updated_at""",
                 (now,),
             )
@@ -132,23 +189,16 @@ class EMSRepository:
                    (id, poll_period_s, dispatch_period_s, closed_loop, command_timeout_s, updated_at)
                    VALUES (1, 1.0, 5.0, 1, 3.0, ?)
                    ON CONFLICT(id) DO UPDATE SET poll_period_s=1.0,
-                   dispatch_period_s=5.0, command_timeout_s=3.0, updated_at=excluded.updated_at""",
+                   dispatch_period_s=5.0, closed_loop=1, command_timeout_s=3.0, updated_at=excluded.updated_at""",
                 (now,),
             )
+            conn.execute("INSERT INTO schema_meta(key,value) VALUES ('schema_version','4') ON CONFLICT(key) DO UPDATE SET value='4'")
 
     def set_parameters(self, *, wind_min_kw: float, wind_max_kw: float, diesel_max_kw: float, reserve_kw: float = 10.0) -> None:
-        if wind_max_kw < wind_min_kw or min(wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw) < 0:
-            raise ValueError("invalid dispatch parameters")
-        if diesel_max_kw < reserve_kw:
-            raise ValueError("diesel_max_kw must be >= reserve_kw")
-        with self.connection() as conn:
-            conn.execute(
-                """INSERT INTO dispatch_parameters(id,wind_min_kw,wind_max_kw,diesel_max_kw,reserve_kw,updated_at)
-                   VALUES(1,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET wind_min_kw=excluded.wind_min_kw,
-                   wind_max_kw=excluded.wind_max_kw,diesel_max_kw=excluded.diesel_max_kw,
-                   reserve_kw=excluded.reserve_kw,updated_at=excluded.updated_at""",
-                (wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw, utc_now()),
-            )
+        requested = {"wind_min_kw": float(wind_min_kw), "wind_max_kw": float(wind_max_kw), "diesel_max_kw": float(diesel_max_kw), "reserve_kw": float(reserve_kw)}
+        if requested != UNIFIED_DISPATCH:
+            raise ValueError("EMS dispatch parameters are fixed to the unified project baseline")
+        self.initialize()
 
     def get_parameters(self) -> sqlite3.Row:
         with self.connection() as conn:
@@ -157,18 +207,22 @@ class EMSRepository:
             raise RuntimeError("dispatch parameters are not initialized")
         return row
 
+    def get_physical_parameters(self) -> sqlite3.Row:
+        with self.connection() as conn:
+            row = conn.execute("SELECT * FROM physical_parameters WHERE id=1").fetchone()
+        if row is None:
+            raise RuntimeError("physical parameters are not initialized")
+        return row
+
     def set_runtime_config(self, *, poll_period_s: float = 1.0, dispatch_period_s: float = 5.0,
                            closed_loop: bool = True, command_timeout_s: Optional[float] = 3.0) -> None:
-        if poll_period_s <= 0 or dispatch_period_s <= 0 or (command_timeout_s is not None and command_timeout_s <= 0):
-            raise ValueError("runtime periods and timeout must be positive")
-        with self.connection() as conn:
-            conn.execute(
-                """INSERT INTO ems_runtime_config(id,poll_period_s,dispatch_period_s,closed_loop,command_timeout_s,updated_at)
-                   VALUES(1,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET poll_period_s=excluded.poll_period_s,
-                   dispatch_period_s=excluded.dispatch_period_s,closed_loop=excluded.closed_loop,
-                   command_timeout_s=excluded.command_timeout_s,updated_at=excluded.updated_at""",
-                (poll_period_s, dispatch_period_s, int(closed_loop), command_timeout_s, utc_now()),
-            )
+        requested = {
+            "poll_period_s": float(poll_period_s), "dispatch_period_s": float(dispatch_period_s),
+            "closed_loop": int(closed_loop), "command_timeout_s": None if command_timeout_s is None else float(command_timeout_s),
+        }
+        if requested != UNIFIED_RUNTIME:
+            raise ValueError("EMS runtime configuration is fixed to the unified project baseline")
+        self.initialize()
 
     def get_runtime_config(self) -> sqlite3.Row:
         with self.connection() as conn:
