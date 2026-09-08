@@ -24,17 +24,21 @@ CREATE TABLE IF NOT EXISTS ems_runtime_config (
 CREATE TABLE IF NOT EXISTS current_state (
     id INTEGER PRIMARY KEY CHECK (id = 1), session_id TEXT NOT NULL, step INTEGER NOT NULL CHECK (step >= 0),
     sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0), wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0),
+    wind_available_kw REAL NOT NULL CHECK (wind_available_kw >= 0),
+    wind_operating_limit_kw REAL NOT NULL CHECK (wind_operating_limit_kw >= 0 AND wind_operating_limit_kw <= wind_available_kw),
     load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
     diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
-    pitch_actual_deg REAL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
+    pitch_actual_deg REAL NOT NULL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
     sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 CREATE TABLE IF NOT EXISTS state_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, step INTEGER NOT NULL CHECK (step >= 0),
     sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0), wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0),
+    wind_available_kw REAL NOT NULL CHECK (wind_available_kw >= 0),
+    wind_operating_limit_kw REAL NOT NULL CHECK (wind_operating_limit_kw >= 0 AND wind_operating_limit_kw <= wind_available_kw),
     load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
     diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
-    pitch_actual_deg REAL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
+    pitch_actual_deg REAL NOT NULL, wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
     sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
 );
 CREATE TABLE IF NOT EXISTS dispatch_commands (
@@ -42,7 +46,8 @@ CREATE TABLE IF NOT EXISTS dispatch_commands (
     sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0), source TEXT NOT NULL, seq INTEGER NOT NULL CHECK (seq >= 0),
     wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0), diesel_target_kw REAL NOT NULL CHECK (diesel_target_kw >= 0),
     wind_enable INTEGER NOT NULL CHECK (wind_enable IN (0,1)), diesel_enable INTEGER NOT NULL CHECK (diesel_enable IN (0,1)),
-    status TEXT NOT NULL, reason TEXT NOT NULL, created_at_utc TEXT NOT NULL, UNIQUE(session_id, source, seq)
+    status TEXT NOT NULL, reason TEXT NOT NULL, ack_accepted INTEGER CHECK (ack_accepted IN (0,1)),
+    ack_reason TEXT, ack_received_at_utc TEXT, created_at_utc TEXT NOT NULL, UNIQUE(session_id, source, seq)
 );
 CREATE TABLE IF NOT EXISTS dispatch_evaluation (
     id INTEGER PRIMARY KEY AUTOINCREMENT, command_id INTEGER NOT NULL REFERENCES dispatch_commands(id),
@@ -82,10 +87,36 @@ class EMSRepository:
         finally:
             conn.close()
 
+    @staticmethod
+    def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+    def _migrate_to_v3(self, conn: sqlite3.Connection) -> None:
+        current = self._columns(conn, "current_state")
+        if "wind_available_kw" not in current:
+            conn.execute("ALTER TABLE current_state ADD COLUMN wind_available_kw REAL NOT NULL DEFAULT 0.0")
+        if "wind_operating_limit_kw" not in current:
+            conn.execute("ALTER TABLE current_state ADD COLUMN wind_operating_limit_kw REAL NOT NULL DEFAULT 0.0")
+        history = self._columns(conn, "state_history")
+        if "wind_available_kw" not in history:
+            conn.execute("ALTER TABLE state_history ADD COLUMN wind_available_kw REAL NOT NULL DEFAULT 0.0")
+        if "wind_operating_limit_kw" not in history:
+            conn.execute("ALTER TABLE state_history ADD COLUMN wind_operating_limit_kw REAL NOT NULL DEFAULT 0.0")
+        commands = self._columns(conn, "dispatch_commands")
+        if "ack_accepted" not in commands:
+            conn.execute("ALTER TABLE dispatch_commands ADD COLUMN ack_accepted INTEGER CHECK (ack_accepted IN (0,1))")
+        if "ack_reason" not in commands:
+            conn.execute("ALTER TABLE dispatch_commands ADD COLUMN ack_reason TEXT")
+        if "ack_received_at_utc" not in commands:
+            conn.execute("ALTER TABLE dispatch_commands ADD COLUMN ack_received_at_utc TEXT")
+        conn.execute("INSERT INTO schema_meta(key,value) VALUES ('schema_version','3') ON CONFLICT(key) DO UPDATE SET value='3'")
+
     def initialize(self) -> None:
         with self.connection() as conn:
             conn.executescript(SCHEMA)
-            conn.execute("INSERT OR IGNORE INTO schema_meta(key,value) VALUES (?,?)", ("schema_version", "2"))
+            version = conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
+            if version is None or int(version[0]) < 3:
+                self._migrate_to_v3(conn)
             conn.execute("INSERT OR IGNORE INTO ems_runtime_config(id,updated_at) VALUES (1,?)", (utc_now(),))
 
     def set_parameters(self, *, wind_min_kw: float, wind_max_kw: float, diesel_max_kw: float, reserve_kw: float = 10.0) -> None:
@@ -130,30 +161,36 @@ class EMSRepository:
         return row
 
     def save_state(self, state: Mapping[str, object]) -> None:
-        required = ("session_id", "step", "sim_time_s", "wind_speed_mps", "load_power_kw", "wind_actual_kw",
-                    "diesel_actual_kw", "wind_target_kw", "wind_running", "fault", "sampled_at_utc",
-                    "received_at_utc", "received_age_s")
+        required = (
+            "session_id", "step", "sim_time_s", "wind_speed_mps", "wind_available_kw",
+            "wind_operating_limit_kw", "load_power_kw", "wind_actual_kw", "diesel_actual_kw",
+            "wind_target_kw", "wind_running", "fault", "sampled_at_utc", "received_at_utc", "received_age_s",
+        )
         missing = [key for key in required if key not in state]
         if missing:
             raise ValueError(f"missing state fields: {', '.join(missing)}")
         values = tuple(state[key] for key in required)
         pitch = state.get("pitch_actual_deg")
-        db_values = values[:8] + (pitch,) + values[8:]
+        if pitch is None:
+            raise ValueError("pitch_actual_deg is required by the current TCP state contract")
+        db_values = values[:10] + (pitch,) + values[10:]
         with self.connection() as conn:
             conn.execute(
-                """INSERT INTO current_state(id,session_id,step,sim_time_s,wind_speed_mps,load_power_kw,wind_actual_kw,
-                   diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,sampled_at_utc,received_at_utc,received_age_s)
-                   VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id,
+                """INSERT INTO current_state(id,session_id,step,sim_time_s,wind_speed_mps,wind_available_kw,wind_operating_limit_kw,
+                   load_power_kw,wind_actual_kw,diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,
+                   sampled_at_utc,received_at_utc,received_age_s)
+                   VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id,
                    step=excluded.step,sim_time_s=excluded.sim_time_s,wind_speed_mps=excluded.wind_speed_mps,
+                   wind_available_kw=excluded.wind_available_kw,wind_operating_limit_kw=excluded.wind_operating_limit_kw,
                    load_power_kw=excluded.load_power_kw,wind_actual_kw=excluded.wind_actual_kw,diesel_actual_kw=excluded.diesel_actual_kw,
                    wind_target_kw=excluded.wind_target_kw,pitch_actual_deg=excluded.pitch_actual_deg,wind_running=excluded.wind_running,
                    fault=excluded.fault,sampled_at_utc=excluded.sampled_at_utc,received_at_utc=excluded.received_at_utc,received_age_s=excluded.received_age_s""",
                 db_values,
             )
             conn.execute(
-                """INSERT INTO state_history(session_id,step,sim_time_s,wind_speed_mps,load_power_kw,wind_actual_kw,
-                   diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,sampled_at_utc,received_at_utc,received_age_s)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                """INSERT INTO state_history(session_id,step,sim_time_s,wind_speed_mps,wind_available_kw,wind_operating_limit_kw,
+                   load_power_kw,wind_actual_kw,diesel_actual_kw,wind_target_kw,pitch_actual_deg,wind_running,fault,
+                   sampled_at_utc,received_at_utc,received_age_s) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 db_values,
             )
 
@@ -165,10 +202,12 @@ class EMSRepository:
         with self.connection() as conn:
             cur = conn.execute(
                 """INSERT INTO dispatch_commands(session_id,step,sim_time_s,source,seq,wind_target_kw,diesel_target_kw,
-                   wind_enable,diesel_enable,status,reason,created_at_utc) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   wind_enable,diesel_enable,status,reason,ack_accepted,ack_reason,ack_received_at_utc,created_at_utc)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (command["session_id"], command["step"], command["sim_time_s"], command.get("source", "B"), command["seq"],
                  command["wind_target_kw"], command["diesel_target_kw"], int(command["wind_enable"]), int(command["diesel_enable"]),
-                 command.get("status", "generated"), command.get("reason", ""), command.get("created_at_utc", utc_now())),
+                 command.get("status", "generated"), command.get("reason", ""), command.get("ack_accepted"),
+                 command.get("ack_reason"), command.get("ack_received_at_utc"), command.get("created_at_utc", utc_now())),
             )
             return int(cur.lastrowid)
 
