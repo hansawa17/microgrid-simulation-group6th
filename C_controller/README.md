@@ -88,10 +88,12 @@ python main.py
 
 ## 下一步（与 A/B 联调）
 
-1. STM32→A 联调：A 需解析 `wind_action` 四字段并据此算 `wind_actual_kw`；C 侧已按冻结职责
-   计算并上报（100 kW / 三次曲线 / 桨距 0-90°）。
-2. 冻结并扩展 C 串口协议（补 `session_id/step/sim_time_s/sampled_at_utc`）。
-3. 联调顺序：A/B 先跑通 socket → STM32→A → C 上位机 UART。
-4. 环境统一 Python 3.11 + `PyQt6==6.11.0`；连 A 端口（当前 5005，与仓库草案 5000 需统一）。
+1. **端口统一**：C `wifi_config.h` 当前 `5005`，A/common 默认 `5000` —— 联调前改一端统一。
+2. STM32→A 实机联调：A 已解析 `wind_action` 四字段并据此算 `wind_actual_kw`（代码就绪），
+   C 侧也已按冻结职责计算并上报；跑通 state_request/state/wind_action/ack 全链路即可。
+3. C 补 `parameter_update` 转发：A 已支持 `parameter_update`（C 参数回写），C 固件/上位机需把
+   C 上位机编辑的风机参数经 STM32 转发给 A。
+4. 冻结并扩展 C 串口协议（补 `session_id/step/sim_time_s/sampled_at_utc`）。
+5. 联调顺序：A/B 先跑通 socket → STM32→A → C 上位机 UART。
 
 完整计算职责和统一公式见 `docs/parameter-ownership.md`。
