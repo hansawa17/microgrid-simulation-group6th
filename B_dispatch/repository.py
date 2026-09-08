@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS dispatch_parameters (
 CREATE TABLE IF NOT EXISTS ems_runtime_config (
     id INTEGER PRIMARY KEY CHECK (id = 1), poll_period_s REAL NOT NULL DEFAULT 1.0 CHECK (poll_period_s > 0),
     dispatch_period_s REAL NOT NULL DEFAULT 5.0 CHECK (dispatch_period_s > 0), closed_loop INTEGER NOT NULL DEFAULT 1 CHECK (closed_loop IN (0, 1)),
-    command_timeout_s REAL CHECK (command_timeout_s IS NULL OR command_timeout_s > 0), updated_at TEXT NOT NULL
+    command_timeout_s REAL DEFAULT 3.0 CHECK (command_timeout_s IS NULL OR command_timeout_s > 0), updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS current_state (
     id INTEGER PRIMARY KEY CHECK (id = 1), session_id TEXT NOT NULL, step INTEGER NOT NULL CHECK (step >= 0),
@@ -118,7 +118,19 @@ class EMSRepository:
             version = conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
             if version is None or int(version[0]) < 3:
                 self._migrate_to_v3(conn)
-            conn.execute("INSERT OR IGNORE INTO ems_runtime_config(id,updated_at) VALUES (1,?)", (utc_now(),))
+            now = utc_now()
+            conn.execute(
+                """INSERT OR IGNORE INTO dispatch_parameters
+                   (id, wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw, updated_at)
+                   VALUES (1, 0.0, 100.0, 120.0, 10.0, ?)""",
+                (now,),
+            )
+            conn.execute(
+                """INSERT OR IGNORE INTO ems_runtime_config
+                   (id, poll_period_s, dispatch_period_s, closed_loop, command_timeout_s, updated_at)
+                   VALUES (1, 1.0, 5.0, 1, 3.0, ?)""",
+                (now,),
+            )
 
     def set_parameters(self, *, wind_min_kw: float, wind_max_kw: float, diesel_max_kw: float, reserve_kw: float = 10.0) -> None:
         if wind_max_kw < wind_min_kw or min(wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw) < 0:
@@ -142,7 +154,7 @@ class EMSRepository:
         return row
 
     def set_runtime_config(self, *, poll_period_s: float = 1.0, dispatch_period_s: float = 5.0,
-                           closed_loop: bool = True, command_timeout_s: Optional[float] = None) -> None:
+                           closed_loop: bool = True, command_timeout_s: Optional[float] = 3.0) -> None:
         if poll_period_s <= 0 or dispatch_period_s <= 0 or (command_timeout_s is not None and command_timeout_s <= 0):
             raise ValueError("runtime periods and timeout must be positive")
         with self.connection() as conn:
