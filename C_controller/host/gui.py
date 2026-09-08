@@ -427,7 +427,7 @@ class MainWindow(QtWidgets.QMainWindow):
         chart_row.setSpacing(14)
         self.windChart = build_wind_curve()
         self.powerChart = build_power_curve()
-        wind_card = self._wrap_chart_card("实时风速曲线", "timestamp → wind_speed (m/s)", self.windChart)
+        wind_card = self._wrap_chart_card("实时风速曲线", "timestamp → wind_speed_mps (m/s)", self.windChart)
         power_card = self._wrap_chart_card("实时功率曲线", "可用 / 目标 / 实际功率 (kW)", self.powerChart)
         chart_row.addWidget(wind_card, 1)
         chart_row.addWidget(power_card, 1)
@@ -545,8 +545,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.rtPowerChart = build_power_curve()
         self.rtWindChart.setMinimumHeight(300)
         self.rtPowerChart.setMinimumHeight(300)
-        wind_card = self._wrap_chart_card("实时风速曲线", "wind_speed / m/s", self.rtWindChart)
-        power_card = self._wrap_chart_card("实时功率曲线", "power_available / power_set / power_actual (kW)", self.rtPowerChart)
+        wind_card = self._wrap_chart_card("实时风速曲线", "wind_speed_mps / m/s", self.rtWindChart)
+        power_card = self._wrap_chart_card("实时功率曲线", "wind_available_kw / wind_target_kw / wind_actual_kw (kW)", self.rtPowerChart)
         v.addWidget(wind_card, 1)
         v.addWidget(power_card, 1)
 
@@ -614,7 +614,7 @@ class MainWindow(QtWidgets.QMainWindow):
         rl.setSpacing(4)
         t = QtWidgets.QLabel("ⓘ 不可修改的实时数据（仅显示）")
         t.setProperty("role", "cardTitle")
-        d = QtWidgets.QLabel("wind_speed · power_available · power_set · power_actual · status · deg · cycle · timestamp · communication_status")
+        d = QtWidgets.QLabel("wind_speed_mps · wind_available_kw · wind_operating_limit_kw · wind_target_kw · wind_actual_kw · wind_running · pitch_target_deg · cycle · timestamp · communication_status")
         d.setProperty("role", "source")
         rl.addWidget(t)
         rl.addWidget(d)
@@ -881,12 +881,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def append_curves(self, data, t=None):
         t = t if t is not None else time.time()
-        self.windChart.append_multi(t, {"wind_speed": data.get("wind_speed")})
-        self.rtWindChart.append_multi(t, {"wind_speed": data.get("wind_speed")})
+        self.windChart.append_multi(t, {"wind_speed_mps": data.get("wind_speed_mps")})
+        self.rtWindChart.append_multi(t, {"wind_speed_mps": data.get("wind_speed_mps")})
         pw = {
-            "power_available": data.get("power_available"),
-            "power_set": data.get("power_set"),
-            "power_actual": data.get("power_actual"),
+            "wind_available_kw": data.get("wind_available_kw"),
+            "wind_target_kw": data.get("wind_target_kw"),
+            "wind_actual_kw": data.get("wind_actual_kw"),
         }
         self.powerChart.append_multi(t, pw)
         self.rtPowerChart.append_multi(t, pw)

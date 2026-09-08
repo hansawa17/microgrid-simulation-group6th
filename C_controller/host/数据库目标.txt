@@ -1,0 +1,686 @@
+
+
+先把 `wind.db` 定成 **8 张核心表**，但不要把所有实时数据都拆得过细。核心原则是：
+
+> **当前参数看 `parameter`，历史运行状态看 `telemetry`，每轮闭环过程看 `control_history`，用户操作看 `remote_command / remote_adjust`，通信和故障看日志。**
+
+---
+
+# 1. `device`：设备基本信息
+
+这一张相当于风机的“身份证”。
+
+| 字段            | SQLite类型 | 主键 | NULL | 来源 | 说明           |
+| ------------- | -------- | -: | ---: | -- | ------------ |
+| `device_id`   | INTEGER  |  ✓ |   NO | 系统 | 设备ID         |
+| `device_name` | TEXT     |    |   NO | 系统 | 如 `WT001`    |
+| `device_type` | TEXT     |    |   NO | 系统 | Wind Turbine |
+| `model`       | TEXT     |    |  YES | 配置 | 型号           |
+| `location`    | TEXT     |    |  YES | 配置 | 安装位置         |
+| `rated_power` | REAL     |    |   NO | 参数 | 额定功率，kW      |
+| `create_time` | TEXT     |    |   NO | 系统 | 创建时间         |
+| `update_time` | TEXT     |    |   NO | 系统 | 最后修改时间       |
+
+你现在虽然只有一台风机，但仍然建议有：
+
+```text
+device_id = 1
+device_name = WT001
+```
+
+这样程序不要到处写死 `"WT001"`。
+
+---
+
+# 2. `parameter`：当前运行参数
+
+这是你 C 最重要的一张配置表。
+
+| 字段                      | 类型      | 主键 | NULL | 来源      | 单位  |
+| ----------------------- | ------- | -: | ---: | ------- | --- |
+| `param_id`              | INTEGER |  ✓ |   NO | 系统      |     |
+| `device_id`             | INTEGER |    |   NO | 系统      |     |
+| `cut_in_speed`          | REAL    |    |   NO | GUI     | m/s |
+| `rated_speed`           | REAL    |    |   NO | GUI     | m/s |
+| `cut_out_speed`         | REAL    |    |   NO | GUI     | m/s |
+| `rated_power`           | REAL    |    |   NO | GUI     | kW  |
+| `deg_max`               | REAL    |    |   NO | GUI     | °   |
+| `control_period`        | REAL    |    |   NO | GUI     | s   |
+| `communication_timeout` | REAL    |    |   NO | GUI     | s   |
+| `control_mode`          | INTEGER |    |   NO | GUI/EMS | 0/1 |
+| `update_time`           | TEXT    |    |   NO | 系统      |     |
+
+例如当前：
+
+```text
+cut_in_speed = 3
+rated_speed = 12
+cut_out_speed = 25
+rated_power = 1000
+deg_max = 20
+control_period = 1
+communication_timeout = 3
+control_mode = 1
+```
+
+---
+
+## 为什么 `control_period` 和 `communication_timeout` 也建议放这里？
+
+因为我们前面已经讨论了：
+
+```text
+控制周期 = 1s
+通信超时 = 3s
+```
+
+以后如果你们实验时需要调整：
+
+```text
+1s → 500ms
+```
+
+或者：
+
+```text
+3s → 5s
+```
+
+就不需要重新修改程序。
+
+GUI 可以直接修改。
+
+---
+
+# 3. `telemetry`：实时数据历史
+
+这是**数据量最大的一张表**。
+
+建议保存每个采样/控制周期的重要运行状态。
+
+| 字段                     | 类型      | 主键 | NULL | 来源    | 单位  |
+| ---------------------- | ------- | -: | ---: | ----- | --- |
+| `id`                   | INTEGER |  ✓ |   NO | 系统    |     |
+| `device_id`            | INTEGER |    |   NO | 系统    |     |
+| `cycle`                | INTEGER |    |   NO | A/系统  |     |
+| `timestamp`            | TEXT    |    |   NO | 系统    |     |
+| `wind_speed`           | REAL    |    |   NO | A/TCP | m/s |
+| `power_available`      | REAL    |    |   NO | STM32 | kW  |
+| `power_set`            | REAL    |    |   NO | A/B   | kW  |
+| `power_actual`         | REAL    |    |  YES | A     | kW  |
+| `status`               | INTEGER |    |   NO | STM32 | 0/1 |
+| `deg`                  | REAL    |    |  YES | STM32 | °   |
+| `control_mode`         | INTEGER |    |   NO | 系统    | 0/1 |
+| `communication_status` | INTEGER |    |   NO | 系统    | 0/1 |
+
+这张表以后就是 GUI 的主要数据来源之一。
+
+---
+
+# 4. 为什么 `telemetry` 要同时存三个功率？
+
+非常重要：
+
+```text
+power_available
+power_set
+power_actual
+```
+
+它们分别代表：
+
+```text
+power_available
+↓
+当前风能最多能提供多少
+
+power_set
+↓
+EMS要求风机提供多少
+
+power_actual
+↓
+最终实际提供多少
+```
+
+例如：
+
+```text
+时间       可用       目标       实际
+10:00:01   700       500        500
+10:00:02   720       500        500
+10:00:03   680       600        600
+```
+
+以后 GUI 可以直接画：
+
+```text
+功率
+ ↑
+ │       available
+ │      ╱╲
+ │     ╱  ╲
+ │────target────────
+ │   actual
+ └────────────────→ 时间
+```
+
+这对你们的闭环展示非常有价值。
+
+---
+
+# 5. `control_history`：闭环控制历史
+
+这张表和 `telemetry` 看起来很像，但它的目的不同。
+
+`telemetry`：
+
+> “风机当时是什么状态？”
+
+`control_history`：
+
+> “这一轮控制到底发生了什么？”
+
+建议：
+
+| 字段                 | 类型      | 主键 | 来源     | 说明   |
+| ------------------ | ------- | -: | ------ | ---- |
+| `id`               | INTEGER |  ✓ | 系统     |      |
+| `cycle`            | INTEGER |    | 系统     | 控制周期 |
+| `timestamp`        | TEXT    |    | 系统     | 周期时间 |
+| `wind_speed`       | REAL    |    | A      | m/s  |
+| `power_available`  | REAL    |    | STM32  | kW   |
+| `power_set`        | REAL    |    | EMS    | kW   |
+| `deg`              | REAL    |    | STM32  | °    |
+| `power_actual`     | REAL    |    | A      | kW   |
+| `status`           | INTEGER |    | STM32  |      |
+| `power_diesel_set` | REAL    |    | B      | kW   |
+| `load`             | REAL    |    | A      | kW   |
+| `decision_status`  | TEXT    |    | EMS/系统 | 决策结果 |
+
+例如：
+
+```text
+cycle = 105
+wind_speed = 9.0
+power_available = 666.7
+power_set = 500
+deg = 5
+power_actual = 500
+load = 1500
+power_diesel_set = 1000
+```
+
+这条记录就完整描述了：
+
+> **这一轮微电网闭环控制发生了什么。**
+
+---
+
+# 6. `remote_command`：遥控历史
+
+这一张记录 GUI 的按钮操作。
+
+例如：
+
+```text
+启动
+停止
+复位
+切换闭环
+切换开环
+```
+
+字段：
+
+| 字段              | 类型         | 说明                |
+| --------------- | ---------- | ----------------- |
+| `command_id`    | INTEGER PK | 命令编号              |
+| `device_id`     | INTEGER    | 目标设备              |
+| `command_type`  | TEXT       | START/STOP/RESET等 |
+| `command_value` | TEXT       | 命令参数              |
+| `send_time`     | TEXT       | 发送时间              |
+| `execute_time`  | TEXT       | 执行时间              |
+| `result`        | INTEGER    | 成功/失败             |
+| `error_code`    | TEXT       | 错误码               |
+| `source`        | TEXT       | GUI/EMS/系统        |
+
+例如：
+
+```text
+command_type = START
+send_time = 10:15:20.125
+execute_time = 10:15:20.138
+result = 1
+```
+
+---
+
+# 7. `remote_adjust`：遥调历史
+
+遥调和遥控一定要分开。
+
+例如用户在 GUI 修改：
+
+```text
+切入风速
+额定风速
+切出风速
+额定功率
+最大桨距角
+```
+
+那么记录：
+
+| 字段               | 类型         | 说明   |
+| ---------------- | ---------- | ---- |
+| `adjust_id`      | INTEGER PK |      |
+| `device_id`      | INTEGER    |      |
+| `parameter_name` | TEXT       | 参数名  |
+| `old_value`      | REAL       | 原值   |
+| `new_value`      | REAL       | 新值   |
+| `unit`           | TEXT       | 单位   |
+| `adjust_time`    | TEXT       | 修改时间 |
+| `source`         | TEXT       | GUI  |
+| `result`         | INTEGER    | 是否成功 |
+| `error_code`     | TEXT       | 错误信息 |
+
+例如：
+
+```text
+parameter_name = rated_power
+old_value = 1000
+new_value = 1200
+unit = kW
+```
+
+这样以后你可以追踪：
+
+> 谁/什么时候把额定功率从1000改成了1200。
+
+---
+
+# 8. `communication_log`：通信记录
+
+这个对于你们项目尤其有意义。
+
+因为 C 有两条通信链：
+
+```text
+A ←→ PC-C       TCP/WiFi
+PC-C ←→ STM32   UART
+```
+
+可以统一记录。
+
+| 字段             | 类型         | 说明       |
+| -------------- | ---------- | -------- |
+| `id`           | INTEGER PK |          |
+| `timestamp`    | TEXT       | 时间       |
+| `interface`    | TEXT       | TCP/UART |
+| `direction`    | TEXT       | TX/RX    |
+| `message_type` | TEXT       | 消息类型     |
+| `cycle`        | INTEGER    | 周期号      |
+| `data_length`  | INTEGER    | 数据长度     |
+| `result`       | INTEGER    | 成功/失败    |
+| `latency`      | REAL       | 延迟       |
+| `error_code`   | TEXT       | 错误码      |
+| `description`  | TEXT       | 描述       |
+
+例如：
+
+```text
+10:00:01.025
+TCP
+RX
+wind_control
+cycle=105
+latency=15ms
+SUCCESS
+```
+
+---
+
+# 9. `system_log`：系统事件/故障日志
+
+这是最通用的一张。
+
+建议：
+
+| 字段            | 类型         | 说明                   |
+| ------------- | ---------- | -------------------- |
+| `id`          | INTEGER PK |                      |
+| `timestamp`   | TEXT       | 时间                   |
+| `level`       | TEXT       | INFO/WARNING/ERROR   |
+| `event_type`  | TEXT       | 事件类型                 |
+| `event_code`  | TEXT       | 事件编号                 |
+| `description` | TEXT       | 描述                   |
+| `source`      | TEXT       | GUI/STM32/TCP/System |
+| `cycle`       | INTEGER    | 相关周期                 |
+| `status`      | INTEGER    | 是否处理完成               |
+
+比如：
+
+```text
+INFO
+SYSTEM_START
+```
+
+或者：
+
+```text
+WARNING
+WIND_BELOW_CUT_IN
+```
+
+或者：
+
+```text
+ERROR
+TCP_TIMEOUT
+```
+
+---
+
+# 10. 还有一张我建议“可选”的：`parameter_history`
+
+如果你们想让数据库更专业，可以把参数当前值和参数历史分开。
+
+例如：
+
+```text
+parameter
+```
+
+只保存：
+
+> **当前参数**
+
+而：
+
+```text
+parameter_history
+```
+
+保存：
+
+> **过去所有修改记录**
+
+结构：
+
+| 字段               | 类型         |
+| ---------------- | ---------- |
+| `id`             | INTEGER PK |
+| `device_id`      | INTEGER    |
+| `parameter_name` | TEXT       |
+| `old_value`      | REAL       |
+| `new_value`      | REAL       |
+| `change_time`    | TEXT       |
+| `source`         | TEXT       |
+
+不过因为我们已经有：
+
+```text
+remote_adjust
+```
+
+所以如果不想让数据库过于复杂，**可以不单独建立这张表。**
+
+---
+
+# 11. 最终我建议你的 wind.db 采用这个版本
+
+如果考虑：
+
+* 功能完整
+* 不过度设计
+* 课程项目实现难度
+* GUI需求
+* 最终答辩
+* 闭环可追溯
+
+我建议最终采用：
+
+```text
+wind.db
+│
+├── device
+│
+├── parameter
+│
+├── telemetry
+│
+├── control_history
+│
+├── remote_command
+│
+├── remote_adjust
+│
+├── communication_log
+│
+└── system_log
+```
+
+**8张表足够完整。**
+
+---
+
+# 12. 表之间的关系
+
+可以理解成：
+
+```text
+                 device
+                   │
+                   │
+        ┌──────────┼───────────┐
+        ↓          ↓           ↓
+    parameter   telemetry   remote_command
+                   │
+                   ↓
+            control_history
+
+        remote_adjust
+              │
+              ↓
+          parameter
+
+     communication_log
+
+          system_log
+```
+
+其中：
+
+```text
+device_id
+```
+
+是很多表的关联字段。
+
+---
+
+# 13. 哪些表是“高频写入”的？
+
+这个问题对 SQLite 很重要。
+
+### 高频：
+
+```text
+telemetry
+control_history
+```
+
+如果你设：
+
+```text
+1秒一周期
+```
+
+那么一年下来：
+
+$$
+365\times24\times3600
+=
+31,536,000
+$$
+
+如果每秒写一条，一年就是三千多万条。
+
+不过你们课程项目一般不会真的连续运行一年，所以没什么问题。
+
+---
+
+### 低频：
+
+```text
+remote_command
+remote_adjust
+system_log
+communication_log
+```
+
+通常不会成为数据库压力。
+
+---
+
+# 14. 所以索引也要考虑
+
+最重要的是：
+
+```text
+telemetry(timestamp)
+telemetry(cycle)
+control_history(timestamp)
+control_history(cycle)
+communication_log(timestamp)
+system_log(timestamp)
+```
+
+因为 GUI 最常见的查询就是：
+
+> “给我最近10分钟的数据。”
+
+而不是：
+
+> “给我数据库里所有数据。”
+
+所以 `timestamp` 非常值得建立索引。
+
+---
+
+# 15. SQLite 时间建议统一
+
+我们前面一直强调时间戳。
+
+数据库里面建议统一存：
+
+```text
+TEXT
+```
+
+例如：
+
+```text
+2026-09-07 10:30:15.125
+```
+
+或者使用 Unix timestamp。
+
+如果你们三个人最终决定 TCP 使用 Unix 时间戳，那么数据库也可以使用：
+
+```text
+REAL
+```
+
+例如：
+
+```text
+1757208615.125
+```
+
+**这个需要和 A/B 最后统一。**
+
+我个人更推荐：
+
+> **TCP协议使用 Unix 时间戳；数据库可以额外转换成可读时间。**
+
+因为 Unix 时间戳非常适合计算时间差。
+
+---
+
+# 16. 这里有一个很重要的“来源”原则
+
+你以后设计数据库的时候，一定要记住：
+
+**不要认为 PC-C 产生的数据都是 PC-C 自己计算的。**
+
+例如：
+
+```text
+wind_speed
+```
+
+来源：
+
+```text
+A
+```
+
+而：
+
+```text
+power_available
+deg
+status
+```
+
+来源：
+
+```text
+STM32
+```
+
+而：
+
+```text
+power_set
+power_diesel_set
+```
+
+来源：
+
+```text
+B → A → C
+```
+
+所以数据库只是：
+
+> **把整个 C 模块收到/产生的重要信息集中保存下来。**
+
+这会让你的数据流非常清楚。
+
+---
+
+# 17. 最后形成一张“数据来源表”
+
+这个我强烈建议你之后拿去和 A/B 讨论。
+
+| 数据                 | 最初产生者      | C是否保存 | C是否计算 |
+| ------------------ | ---------- | ----: | ----: |
+| `wind_speed`       | A          |     ✓ |     ✗ |
+| `power_set`        | B          |     ✓ |     ✗ |
+| `power_available`  | C/STM32    |     ✓ |     ✓ |
+| `power_actual`     | A          |     ✓ |     ✗ |
+| `status`           | C/STM32    |     ✓ |     ✓ |
+| `deg`              | C/STM32    |     ✓ |     ✓ |
+| `power_diesel_set` | B          |     ✓ |     ✗ |
+| `cut_in_speed`     | C参数        |     ✓ |     ✗ |
+| `rated_speed`      | C参数        |     ✓ |     ✗ |
+| `cut_out_speed`    | C参数        |     ✓ |     ✗ |
+| `rated_power`      | C参数        |     ✓ |     ✗ |
+| `control_mode`     | GUI/系统/EMS |     ✓ |     ✗ |
+| `cycle`            | 系统         |     ✓ |     ✗ |
+| `timestamp`        | 系统         |     ✓ |     ✗ |
+
+这张表实际上已经把你的 C 模块的数据边界划得非常清楚了。
