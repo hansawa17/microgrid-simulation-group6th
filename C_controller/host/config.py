@@ -40,7 +40,7 @@ DEFAULT_PARAMS = {
     "rated_speed": 12.0,          # 额定风速   m/s
     "cut_out_speed": 25.0,        # 切出风速   m/s
     "rated_power": 100.0,         # 额定功率   kW（小组统一基准）
-    "deg_max": 90.0,              # 最大顺桨角 °（0° 满功率，90° 完全顺桨）
+    "deg_max": 90.0,              # 最大顺桨角 °
     "control_period": 1.0,        # 控制周期   s
     "communication_timeout": 3.0, # 通信超时   s
     "control_mode": 1,            # 控制模式 0开环/1闭环
@@ -58,14 +58,15 @@ PARAM_FIELDS = [
     "control_mode",
 ]
 
-# 遥测帧（$WIND）中的字段顺序（线格式与 MCU 发送顺序一致，保持不变）。
+# 遥测帧（$WIND）中的字段顺序（与固件 wind_turbine.c 发送顺序一致，9 字段）。
 # Python 侧字段名已对齐 A/B 仓库 state.payload 命名（见 common/protocol.md）：
-#   wind_speed      -> wind_speed_mps
-#   power_available -> wind_available_kw
-#   power_set       -> wind_target_kw   （这是 B 下发的调度目标，联调前由本地随机生成）
-#   power_actual    -> wind_actual_kw   （A 计算；联调前本地计算）
-#   status          -> wind_running     （bool）
-#   deg             -> pitch_target_deg
+#   wind_speed            -> wind_speed_mps
+#   power_available       -> wind_available_kw
+#   power_operating_limit -> wind_operating_limit_kw   （联调后由 A 计算）
+#   power_set             -> wind_target_kw            （B 下发的调度目标）
+#   power_actual          -> wind_actual_kw            （A 计算）
+#   status                -> wind_running              （bool）
+#   deg                   -> pitch_target_deg
 WIND_FIELDS = [
     "cycle",
     "wind_speed_mps",

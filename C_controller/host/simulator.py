@@ -8,10 +8,9 @@
 
 说明：
   - wind_speed_mps / wind_target_kw 在联调前由本地随机游走生成（联调后由 A 的 state 提供）。
-  - wind_available_kw   —— C 按统一三次功率曲线计算的资源可用功率。
-  - wind_operating_limit_kw —— C 在 wind_available_kw 基础上考虑运行许可/保护后的稳态上限；
-        不考虑 B 目标、桨距目标或实际爬坡，避免目标反馈锁死。
-  - wind_actual_kw      —— 实际输出；联调前本地计算（min(目标, 稳态上限)，暂不含爬坡），联调后交还 A。
+  - wind_available_kw   —— 资源可用功率（三次方曲线，与 A 一致）。
+  - wind_operating_limit_kw —— 运行许可且无保护时 = wind_available_kw，否则 0（不扣桨距/目标）。
+  - wind_actual_kw      —— 实际输出；联调前本地估算（min(目标, 稳态上限)），联调后由 A 计算。
 """
 
 import random
@@ -31,7 +30,7 @@ class Simulator(QThread):
         self.params = dict(config.DEFAULT_PARAMS)
         self.run_enable = True
         self.wind_speed_mps = 9.0
-        self.wind_target_kw = 50.0
+        self.wind_target_kw = 60.0
         self.cycle = 0
         self._running = False
 
@@ -50,7 +49,7 @@ class Simulator(QThread):
             self.params = dict(config.DEFAULT_PARAMS)
             self.run_enable = True
             self.wind_speed_mps = 9.0
-            self.wind_target_kw = 50.0
+            self.wind_target_kw = 60.0
             self.cycle = 0
         elif cmd == "AUTO":
             self.params["control_mode"] = 1
@@ -72,7 +71,7 @@ class Simulator(QThread):
     #  控制计算（与 MCU 一致，字段名对齐仓库）
     # ------------------------------------------------------------------ #
     def _wind_available_kw(self):
-        """风速 -> 资源可用功率（统一分段三次曲线）。"""
+        """风速 -> 资源可用功率（三次方曲线，与 A 一致）。"""
         w = self.wind_speed_mps
         cut_in = self.params["cut_in_speed"]
         rated = self.params["rated_speed"]
@@ -82,7 +81,7 @@ class Simulator(QThread):
             return 0.0
         if w < rated:
             fraction = (w - cut_in) / (rated - cut_in)
-            return rated_power * fraction**3
+            return rated_power * fraction ** 3
         if w < cut_out:
             return rated_power
         return 0.0
@@ -91,7 +90,7 @@ class Simulator(QThread):
         # 输入模拟：随机游走（联调前本地生成，联调后由 A 的 state 提供）
         self.wind_speed_mps += random.uniform(-1.5, 1.5)
         self.wind_speed_mps = max(0.0, min(30.0, self.wind_speed_mps))
-        self.wind_target_kw += random.uniform(-8.0, 8.0)
+        self.wind_target_kw += random.uniform(-20.0, 20.0)
         self.wind_target_kw = max(0.0, min(self.params["rated_power"], self.wind_target_kw))
 
         cut_in = self.params["cut_in_speed"]
@@ -102,11 +101,11 @@ class Simulator(QThread):
         wind_available_kw = self._wind_available_kw()
 
         # 2) 启停状态（C 的启停许可 + 风速区间）
-        wind_running = self.run_enable and cut_in <= self.wind_speed_mps < cut_out
+        wind_running = self.run_enable and cut_in <= self.wind_speed_mps <= cut_out
 
-        # 3) 桨距目标（C 闭环限功率；本地线性变桨模型，deg_max 对应完全顺桨）
-        if not wind_running:
-            pitch_target_deg = self.params["deg_max"]
+        # 3) 桨距目标（0-90°：停机/无可用功率→顺桨 90°，开环→0°，闭环按目标限功率）
+        if not wind_running or wind_available_kw <= 0.0:
+            pitch_target_deg = self.params["deg_max"]   # 顺桨
         elif mode == 0:  # 开环：最大功率捕获
             pitch_target_deg = 0.0
         else:  # 闭环
@@ -115,12 +114,9 @@ class Simulator(QThread):
             else:
                 pitch_target_deg = self.params["deg_max"] * (1.0 - self.wind_target_kw / wind_available_kw)
 
-        # 4) 稳态运行上限 wind_operating_limit_kw：
-        #    扣 C 启停许可 / 保护 / 设备上限，不扣 B 目标、桨距目标或爬坡。
-        if not wind_running:
-            wind_operating_limit_kw = 0.0
-        else:
-            wind_operating_limit_kw = min(self.params["rated_power"], wind_available_kw)
+        # 4) 稳态运行上限 wind_operating_limit_kw：运行许可且无保护时 = 可用功率，否则 0
+        #    （不扣桨距/目标，避免 B 限功率自锁）
+        wind_operating_limit_kw = wind_available_kw if wind_running else 0.0
 
         # 5) 实际功率 wind_actual_kw（联调前本地计算，联调后交还 A；暂不含爬坡）
         if not wind_running:

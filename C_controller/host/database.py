@@ -185,7 +185,7 @@ class Database:
                 cur.execute(
                     "INSERT INTO device (device_id, device_name, device_type, model, location, rated_power, create_time, update_time) "
                     "VALUES (?,?,?,?,?,?,?,?)",
-                    (1, "WT001", "Wind Turbine", "SG-1.0MW", "南极考察站", 1000.0, ts, ts),
+                    (1, "WT001", "Wind Turbine", "WT-100kW", "南极考察站", 100.0, ts, ts),
                 )
             cur.execute("SELECT COUNT(*) FROM parameter")
             if cur.fetchone()[0] == 0:

@@ -3,22 +3,21 @@
   * @file    wind_turbine.c
   * @brief   风力发电机控制器 —— 控制计算与串口协议实现
   ******************************************************************************
-  * 控制规则：
-  *   1) 可用功率 power_available 由风速按分段线性映射得到：
+  * 控制规则（与 A/B 冻结参数一致，见 docs/parameter-ownership.md）：
+  *   1) 可用功率 power_available 由风速按三次方曲线得到：
   *        [0, cut_in)              -> 0（停机）
-  *        [cut_in, rated)          -> 0 ~ rated_power 线性增加
-  *        [rated, cut_out]         -> rated_power 恒定
-  *        (cut_out, +inf)          -> 0（停机）
+  *        [cut_in, rated)          -> rated_power * fraction^3
+  *        [rated, cut_out)         -> rated_power 恒定
+  *        [cut_out, +inf)          -> 0（停机）
   *   2) 启停状态 status：
-  *        run_enable 且 cut_in <= wind <= cut_out -> 运行(1)，否则停止(0)
-  *   3) 桨距角 deg（闭环）：power_set < power_available 时线性变桨限功率，
-  *      deg = deg_max * (1 - power_set / power_available)；
-  *      power_set >= power_available 或开环/停机时 deg = 0。
-  *   4) 实际功率 power_actual：
-  *        停机 -> 0；开环 -> power_available；闭环 -> min(power_available, power_set)
+  *        run_enable 且 cut_in <= wind < cut_out -> 运行(1)，否则停止(0)
+  *   3) 桨距角 deg（0-90° 顺桨）：停机/无可用功率 -> 90°；开环 -> 0°；
+  *      闭环 -> deg_max * (1 - power_set / power_available)，deg_max=90。
+  *   4) 稳态运行上限 power_operating_limit：运行 -> power_available；停机/保护 -> 0。
+  *   5) 实际功率 power_actual：联调后由 A 计算；本地兜底 min(available, set)。
   *
-  * 本阶段：风速 / 有功设定（原本经 Wi-Fi 由 A 电网模拟器下发）由内部随机模拟，
-  *        控制模式默认闭环，可由上位机下发切换。
+  * 联调时：风速 / B 目标经 Wi-Fi 来自 A；可用功率/稳态上限/桨距由 C 计算后随
+  * wind_action 上报 A；实际功率回读 A。
   ******************************************************************************
   */
 #include "wind_turbine.h"
@@ -155,7 +154,7 @@ static float wt_power_available(void)
     }
     else if (w < wt.rated_speed)
     {
-        /* 切入~额定：按归一化风速的三次方增加 */
+        /* 切入~额定：按归一化风速的三次方增加（与 A 一致） */
         float fraction = (w - wt.cut_in_speed) / (wt.rated_speed - wt.cut_in_speed);
         return wt.rated_power * fraction * fraction * fraction;
     }
@@ -183,9 +182,9 @@ static void wt_compute_status_pitch(void)
         wt.status = WT_STATUS_STOP;
     }
 
-    if (wt.status == WT_STATUS_STOP)
+    if (wt.status == WT_STATUS_STOP || wt.power_available <= 0.0f)
     {
-        wt.deg = 0.0f;
+        wt.deg = wt.deg_max;                 /* 停机/无可用功率：顺桨 */
     }
     else if (wt.control_mode == WT_MODE_OPEN_LOOP)
     {
@@ -204,11 +203,25 @@ static void wt_compute_status_pitch(void)
     }
 }
 
-/* 本地完整计算（WiFi 未连 A 时的兜底）：可用 + 启停 + 桨距 + 实际 + 稳态上限 */
+/* 稳态运行上限：运行许可且无保护时 = 可用功率，否则 0（不扣桨距/目标，避免 B 限功率自锁） */
+static void wt_compute_operating_limit(void)
+{
+    if (wt.status == WT_STATUS_RUN)
+    {
+        wt.power_operating_limit = wt.power_available;
+    }
+    else
+    {
+        wt.power_operating_limit = 0.0f;
+    }
+}
+
+/* 本地完整计算（WiFi 未连 A 时的兜底）：可用 + 启停 + 桨距 + 稳态上限 + 实际 */
 static void wt_compute_local(void)
 {
     wt.power_available = wt_power_available();
     wt_compute_status_pitch();
+    wt_compute_operating_limit();
 
     if (wt.status == WT_STATUS_STOP)
     {
@@ -221,19 +234,6 @@ static void wt_compute_local(void)
     else
     {
         wt.power_actual = (wt.power_set < wt.power_available) ? wt.power_set : wt.power_available;
-    }
-
-    /* 稳态运行上限：扣启停/桨距/设备上限（与 A 语义一致） */
-    if (wt.status != WT_STATUS_RUN)
-    {
-        wt.power_operating_limit = 0.0f;
-    }
-    else
-    {
-        float f = (wt.deg_max > 0.0f) ? (1.0f - wt.deg / wt.deg_max) : 1.0f;
-        if (f < 0.0f) f = 0.0f;
-        wt.power_operating_limit = wt.power_available * f;
-        if (wt.power_operating_limit > wt.rated_power) wt.power_operating_limit = wt.rated_power;
     }
 }
 
@@ -248,7 +248,7 @@ static void wt_simulate_inputs(void)
     if (wt.wind_speed > 30.0f) wt.wind_speed = 30.0f;
 
     /* 有功设定：随机游走，范围 [0, rated_power] kW */
-    wt.power_set += wt_randf(-80.0f, 80.0f);
+    wt.power_set += wt_randf(-20.0f, 20.0f);
     if (wt.power_set < 0.0f)              wt.power_set = 0.0f;
     if (wt.power_set > wt.rated_power)    wt.power_set = wt.rated_power;
 }
@@ -259,7 +259,7 @@ static void wt_simulate_inputs(void)
 static void wt_reset_defaults(void)
 {
     wt.wind_speed      = 9.0f;
-    wt.power_set       = 500.0f;
+    wt.power_set       = 60.0f;
     wt.control_mode    = WT_MODE_CLOSED_LOOP;
     wt.cut_in_speed    = WT_DEFAULT_CUT_IN_SPEED;
     wt.rated_speed     = WT_DEFAULT_RATED_SPEED;
@@ -348,15 +348,20 @@ void WindTurbine_PeriodicTask(void)
 {
     if (WifiClient_IsOnline() && WifiClient_HasState())
     {
-        /* 联调：从 A 读取风速/目标/可用/稳态上限/实际，不再本地随机 */
-        wt.wind_speed            = WifiClient_GetWindSpeedMps();
-        wt.power_set             = WifiClient_GetWindTargetKw();
-        wt.power_available       = WifiClient_GetWindAvailableKw();
-        wt.power_operating_limit = WifiClient_GetWindOperatingLimitKw();
-        wt.power_actual          = WifiClient_GetWindActualKw();
+        /* 联调：从 A 读风速 + B 目标；可用/稳态上限/桨距由 C 计算 */
+        wt.wind_speed = WifiClient_GetWindSpeedMps();
+        wt.power_set  = WifiClient_GetWindTargetKw();
 
-        wt_compute_status_pitch();   /* 只算启停 + 桨距 */
-        WifiClient_SendWindAction(wt.run_enable, wt.deg);
+        wt.power_available = wt_power_available();   /* C 计算可用功率（三次方） */
+        wt_compute_status_pitch();                   /* 算启停 + 桨距（0-90°） */
+        wt_compute_operating_limit();                /* 算稳态上限 */
+
+        /* 发 wind_action：启停 + 桨距 + 可用功率 + 稳态上限 */
+        WifiClient_SendWindAction(wt.run_enable, wt.deg,
+                                  wt.power_available, wt.power_operating_limit);
+
+        /* 实际功率由 A 计算，回读 */
+        wt.power_actual = WifiClient_GetWindActualKw();
     }
     else
     {

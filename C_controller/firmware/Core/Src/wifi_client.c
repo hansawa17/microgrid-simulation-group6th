@@ -316,14 +316,18 @@ void WifiClient_Task(void)
     }
 }
 
-void WifiClient_SendWindAction(uint8_t wind_enable, float pitch_target_deg)
+void WifiClient_SendWindAction(uint8_t wind_enable, float pitch_target_deg,
+                               float wind_available_kw, float wind_operating_limit_kw)
 {
     if (wf_state != WF_ONLINE) return;
-    char payload[64];
-    char p[16];
+    char payload[128];
+    char p[16], a[16], o[16];
     ftoa2(p, pitch_target_deg);
-    snprintf(payload, sizeof(payload), "{\"wind_enable\":%s,\"pitch_target_deg\":%s}",
-             wind_enable ? "true" : "false", p);
+    ftoa2(a, wind_available_kw);
+    ftoa2(o, wind_operating_limit_kw);
+    snprintf(payload, sizeof(payload),
+             "{\"wind_enable\":%s,\"pitch_target_deg\":%s,\"wind_available_kw\":%s,\"wind_operating_limit_kw\":%s}",
+             wind_enable ? "true" : "false", p, a, o);
     wf_send_envelope("wind_action", payload);
 }
 

@@ -575,7 +575,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("额定风速",  "rated_speed",            "12.0",   "m/s"),
             ("切出风速",  "cut_out_speed",          "25.0",   "m/s"),
             ("额定功率",  "rated_power",            "100.0",  "kW"),
-            ("最大桨距角", "deg_max",                "90.0",   "°"),
+            ("最大顺桨角", "deg_max",                "90.0",   "°"),
             ("控制周期",  "control_period",         "1.0",    "s"),
             ("通信超时",  "communication_timeout",  "3.0",    "s"),
         ]
