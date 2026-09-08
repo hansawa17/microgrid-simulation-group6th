@@ -98,4 +98,6 @@
 - 停止或完成的仿真可创建新会话：生成新的 `session_id`，从场景起点恢复为 ready，清零目标与实际出力、停止设备并完全顺桨；旧会话状态历史、场景和已确认参数保留，A 的服务端响应序号不倒退。
 - 同值 `parameter_update` 视为幂等同步并返回成功，但不改写参数来源/更新时间、不追加 `parameter_history`。损坏或不可迁移的 `grid.db` 不自动覆盖，A GUI 显示异常状态，由操作员备份后另建数据库。
 - 状态历史以数据库写入顺序读取，实时曲线只画当前 `session_id`，历史页通过会话选择器查看旧会话，禁止跨会话连线。计算子进程意外退出且数据库仍为 running 时，A GUI 自动转为 paused 并记录告警，允许人工检查后继续。
+- A UI 固定按 UTC+8 北京时间显示顶部时钟、实时/历史横轴和各类时间列；`sampled_at_utc/received_at_utc/created_at_utc` 的名称、UTC 存储与 TCP 内容不变，时区换算不参与控制排序。
+- 历史页的 SQLite 查询由单独工作线程和独立短连接执行，快速切换筛选时只保留最新请求；曲线读取用户选择的记录窗口，状态和日志表各最多创建最近 1000 行控件，避免主线程因大批量 `QTableWidgetItem` 和 `ResizeToContents` 阻塞。
 - 受影响：A GUI/数据库/TCP、`common/protocol.md`、`docs/time-interface.md`、A 与根 README、启动脚本。

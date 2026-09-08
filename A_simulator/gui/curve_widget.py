@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import math
 from typing import Mapping, Sequence
 
@@ -23,14 +23,25 @@ def format_sim_time(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
-def format_utc_time(value: str) -> str:
-    """Return a compact UTC wall-clock label for a RFC 3339 timestamp."""
+BEIJING_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def format_beijing_time(value: str) -> str:
+    """Return a compact UTC+8 label for a RFC 3339 UTC timestamp."""
 
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return str(value)
-    return parsed.strftime("%H:%M:%S")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(BEIJING_TIMEZONE).strftime("%H:%M:%S")
+
+
+def format_utc_time(value: str) -> str:
+    """Backward-compatible alias; UI timestamps are now displayed in UTC+8."""
+
+    return format_beijing_time(value)
 
 
 class CurveEditor(QWidget):
@@ -330,7 +341,7 @@ class CurveEditor(QWidget):
 
 
 class TimeSeriesChart(QWidget):
-    """Compact, read-only multi-series chart with a real UTC x-axis."""
+    """Compact chart backed by UTC timestamps and displayed in UTC+8."""
 
     def __init__(
         self,
@@ -435,7 +446,7 @@ class TimeSeriesChart(QWidget):
         painter.drawText(
             QRectF(self.width() - 240, 8, 225, 24),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            f"sampled_at_utc  ·  {self.unit}",
+            f"sampled_at_utc（UTC+8 显示） ·  {self.unit}",
         )
 
         rect = self.plot_rect()
@@ -443,7 +454,7 @@ class TimeSeriesChart(QWidget):
         painter.drawRoundedRect(rect, 4, 4)
         if not self._timestamps or not self._series:
             painter.setPen(QColor("#8b9caf"))
-            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "等待 UTC 遥测数据")
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "等待 UTC+8 遥测数据")
             return
 
         bounds = self._bounds()
@@ -466,7 +477,7 @@ class TimeSeriesChart(QWidget):
             painter.drawText(
                 QRectF(x - 40, rect.bottom() + 7, 80, 20),
                 Qt.AlignmentFlag.AlignCenter,
-                datetime.fromtimestamp(tick_time, timezone.utc).strftime("%H:%M:%S"),
+                datetime.fromtimestamp(tick_time, BEIJING_TIMEZONE).strftime("%H:%M:%S"),
             )
 
         painter.save()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 
 
@@ -49,6 +50,14 @@ class SimulatorWindowTests(unittest.TestCase):
         self.window.deleteLater()
         self.app.processEvents()
         self.directory.cleanup()
+
+    def _wait_for_history(self) -> None:
+        deadline = time.monotonic() + 3.0
+        while self.window._history_loading and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(0.01)
+        self.app.processEvents()
+        self.assertFalse(self.window._history_loading, "history worker did not finish")
 
     def test_dashboard_pages_endpoint_and_owner_editors(self) -> None:
         self.assertEqual(self.window.pageStack.count(), 4)
@@ -119,10 +128,10 @@ class SimulatorWindowTests(unittest.TestCase):
         self.assertEqual(self.window.powerTrend._timestamps, [state.sampled_at_utc])
 
         self.window.refresh_history()
+        self._wait_for_history()
         self.assertEqual(self.window.historyTrend._timestamps, [state.sampled_at_utc])
-        self.assertEqual(
-            self.window.historyTable.item(0, 0).text(), state.sampled_at_utc
-        )
+        self.assertTrue(self.window.historyTable.item(0, 0).text().endswith("UTC+8"))
+        self.assertIn("UTC+8 北京时间", self.window.clockLabel.text())
         self.assertEqual(
             len(self.window.wind_editor._time_labels),
             len(self.window.wind_editor.times_s()),
@@ -145,6 +154,7 @@ class SimulatorWindowTests(unittest.TestCase):
         self.window._refresh_live_charts(state)
         self.assertEqual(self.window.windTrend._timestamps, [state.sampled_at_utc])
         self.window.refresh_history()
+        self._wait_for_history()
         self.assertEqual(self.window.historySessionCombo.count(), 2)
         self.assertEqual(
             self.window.historySessionCombo.currentData(), state.session_id
@@ -157,6 +167,7 @@ class SimulatorWindowTests(unittest.TestCase):
             self.assertIsNotNone(self.repository.step_once())
         self.repository.set_status("pause")
         self.window.refresh_history()
+        self._wait_for_history()
         self.assertEqual(self.window.historySessionCombo.count(), 2)
         self.assertEqual(self.window.historyTable.rowCount(), 10)
 
