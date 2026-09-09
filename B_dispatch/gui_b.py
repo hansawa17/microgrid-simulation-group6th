@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import csv
 import math
+import queue
 import socket
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -23,12 +26,12 @@ try:
     from B_dispatch.models import DispatchConfig, GridState
     from B_dispatch.operator_core import EMSCore
     from B_dispatch.repository import EMSRepository
-    from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError
+    from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError, parse_endpoint
 except ImportError:
     from .models import DispatchConfig, GridState
     from .operator_core import EMSCore
     from .repository import EMSRepository
-    from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError
+    from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError, parse_endpoint
 
 BLUE = '#2f6fd6'
 BG = '#e9eff6'
@@ -176,6 +179,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_lines: list[str] = []
         # Manual dispatch is queued instead of rejected when a state_request is outstanding.
         self._manual_dispatch_pending = False
+        self._connection_desired = False
+        self._connection_endpoint: tuple[str, int] | None = None
+        self._connection_generation = 0
+        self._connect_in_progress = False
+        self._connect_results: queue.Queue[tuple[int, EMSTcpClient, Exception | None]] = queue.Queue()
+        self._reconnect_attempt = 0
+        self._reconnect_due = 0.0
         self._building = True
         self.build_ui()
         self.load_db_config()
@@ -243,7 +253,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def connection_card(self) -> QtWidgets.QFrame:
         c = self.make_card(); g = QtWidgets.QGridLayout(c); g.setContentsMargins(14,10,14,10)
         g.addWidget(QtWidgets.QLabel('A 服务器连接'),0,0,1,2)
-        g.addWidget(QtWidgets.QLabel('A 可达 IP'),1,0); self.host = QtWidgets.QLineEdit('127.0.0.1'); self.host.setPlaceholderText('如 192.168.1.100'); g.addWidget(self.host,1,1)
+        g.addWidget(QtWidgets.QLabel('A 可达地址'),1,0); self.host = QtWidgets.QLineEdit('127.0.0.1'); self.host.setPlaceholderText('192.168.1.100 或 public.example:38243'); g.addWidget(self.host,1,1)
         g.addWidget(QtWidgets.QLabel('TCP 端口'),1,2); self.port = QtWidgets.QSpinBox(); self.port.setRange(1,65535); self.port.setValue(5000); g.addWidget(self.port,1,3)
         self.connect_btn = QtWidgets.QPushButton('连接 A 服务器'); self.connect_btn.setProperty('kind','success'); self.connect_btn.clicked.connect(self.toggle_connection); g.addWidget(self.connect_btn,1,4)
         self.request_btn = QtWidgets.QPushButton('请求状态'); self.request_btn.setProperty('kind','primary'); self.request_btn.clicked.connect(self.request_state); g.addWidget(self.request_btn,1,5)
@@ -362,17 +372,102 @@ class MainWindow(QtWidgets.QMainWindow):
             self.send_btn.setText('下发当前调度')
         self.update_comm_diag()
 
+    def _set_connecting_state(self, detail: str) -> None:
+        self.a_status.setText(detail)
+        self.mode_status.setText('TCP 重连中')
+        self.connect_btn.setText('取消连接')
+        self.connect_btn.setProperty('kind','danger')
+        self.connect_btn.style().unpolish(self.connect_btn); self.connect_btn.style().polish(self.connect_btn)
+
+    def _begin_connection(self) -> None:
+        if not self._connection_desired or self._connect_in_progress or self._connection_endpoint is None:
+            return
+        host, port = self._connection_endpoint
+        self._connect_in_progress = True
+        self._connection_generation += 1
+        generation = self._connection_generation
+        candidate = EMSTcpClient(
+            host,
+            port,
+            timeout_s=0.5,
+            connect_timeout_s=5.0,
+            state_response_timeout_s=6.0,
+            state_poll_period_s=self.params['poll_period_s'],
+        )
+        self._set_connecting_state(f'正在连接 A（第 {self._reconnect_attempt + 1} 次）')
+        self.log(f'尝试连接 A：{host}:{port}（建连超时 5 s）')
+
+        def connect_in_background() -> None:
+            error: Exception | None = None
+            try:
+                candidate.connect()
+            except Exception as exc:
+                error = exc
+                candidate.close()
+            self._connect_results.put((generation, candidate, error))
+
+        threading.Thread(target=connect_in_background, name='B-A-connect', daemon=True).start()
+
+    def _schedule_reconnect(self, reason: str) -> None:
+        if not self._connection_desired:
+            return
+        self._reconnect_attempt += 1
+        delay = min(15.0, float(2 ** min(self._reconnect_attempt - 1, 4)))
+        self._reconnect_due = time.monotonic() + delay
+        self.set_connection_state(False)
+        self._set_connecting_state(f'A 已断开，{delay:g} s 后重连')
+        self.log(f'{reason}；{delay:g} s 后自动重连')
+
+    def _progress_connection(self) -> None:
+        while True:
+            try:
+                generation, candidate, error = self._connect_results.get_nowait()
+            except queue.Empty:
+                break
+            if generation != self._connection_generation or not self._connection_desired:
+                candidate.close()
+                continue
+            self._connect_in_progress = False
+            if error is not None:
+                self._schedule_reconnect(f'连接失败：{error}')
+                continue
+            self.client = candidate
+            self._reconnect_attempt = 0
+            self._reconnect_due = 0.0
+            self.set_connection_state(True)
+            self.log(f'已连接 A：{candidate.host}:{candidate.port}，等待全量 state')
+
+        if (
+            self._connection_desired
+            and not self._connect_in_progress
+            and (not self.client or not self.client.connected)
+            and time.monotonic() >= self._reconnect_due
+        ):
+            self._begin_connection()
+
+    def _handle_connection_loss(self, reason: str) -> None:
+        if self.client:
+            self.client.close()
+        self.client = None
+        self._schedule_reconnect(reason)
+
     def toggle_connection(self) -> None:
-        if self.client and self.client.connected:
-            self.client.close(); self.client=None; self.set_connection_state(False); self.log('已断开 A server'); return
-        host = self.host.text().strip()
-        if not host or host == '0.0.0.0':
-            QtWidgets.QMessageBox.warning(self,'IP 配置错误','B 是 TCP client，目标必须是 A 的可达 IP，不能填写 0.0.0.0。'); return
+        if self._connection_desired or (self.client and self.client.connected):
+            self._connection_desired = False
+            self._connection_generation += 1
+            self._connect_in_progress = False
+            if self.client: self.client.close()
+            self.client=None; self.set_connection_state(False); self.log('已手动断开 A server，并停止自动重连'); return
         try:
-            self.client = EMSTcpClient(host, int(self.port.value()), timeout_s=0.25)
-            self.client.connect(); self.set_connection_state(True); self.log(f'连接 A：{host}:{self.port.value()}')
+            host, port = parse_endpoint(self.host.text(), int(self.port.value()))
         except Exception as exc:
-            self.client=None; self.set_connection_state(False); self.log(f'连接失败：{exc}'); QtWidgets.QMessageBox.critical(self,'TCP 连接失败',str(exc))
+            self.set_connection_state(False); self.log(f'地址无效：{exc}'); QtWidgets.QMessageBox.warning(self,'TCP 地址错误',str(exc)); return
+        self.host.setText(host); self.port.setValue(port)
+        self._connection_endpoint = (host, port)
+        self._connection_desired = True
+        self._reconnect_attempt = 0
+        self._reconnect_due = 0.0
+        self._begin_connection()
 
     def request_state(self) -> None:
         if not self.client or not self.client.connected:
@@ -380,13 +475,14 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             seq = self.client.request_state(full=self.client.needs_full_sync); self.log(f'发送 state_request seq={seq}')
         except Exception as exc:
-            self.log(f'state_request 失败：{exc}')
+            self._handle_connection_loss(f'state_request 失败：{exc}')
 
     def poll_socket(self) -> None:
+        self._progress_connection()
         c = self.client
         if not c or not c.connected: return
         try:
-            results = c.receive_once()
+            results = c.receive_available()
             got_state = False
             got_ack = False
             for result in results:
@@ -404,11 +500,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._try_send_queued_dispatch()
             elif got_ack and self._manual_dispatch_pending and c._pending_state_request_seq is None and c._pending_ack_seq is None:
                 self._try_send_queued_dispatch()
-        except (TimeoutError, socket.timeout):
-            return
         except Exception as exc:
-            self.log(f'TCP 接收异常：{exc}')
-            c.close(); self.set_connection_state(False)
+            self._handle_connection_loss(f'TCP 接收异常：{exc}')
 
     def set_state_snapshot(self, state: GridState) -> None:
         self.state = state; self.demo_mode=False if self.client and self.client.connected else True; self.refresh_state_views(); self.save_state_best_effort()
@@ -667,6 +760,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self.auto_dispatch=False
         self._manual_dispatch_pending=False
+        self._connection_desired=False
+        self._connection_generation += 1
         if self.client: self.client.close()
         event.accept()
 

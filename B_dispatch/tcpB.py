@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import math
+import select
 import socket
 import threading
 import time
@@ -17,6 +18,8 @@ MAX_FRAME_BYTES = 4096
 PROTOCOL_VERSION = 1
 B_STATE_POLL_PERIOD_S = 1.0
 B_DISPATCH_ACK_TIMEOUT_S = 2.0
+B_CONNECT_TIMEOUT_S = 5.0
+B_STATE_RESPONSE_TIMEOUT_S = 6.0
 
 _SEQUENCE_LOCK = threading.Lock()
 _LAST_DEFAULT_SEQUENCE = -1
@@ -42,6 +45,63 @@ class DispatchDeliveryUnknown(ConnectionError):
     def __init__(self, seq: int, message: str) -> None:
         super().__init__(message)
         self.seq = seq
+
+
+def parse_endpoint(host_text: str, default_port: int) -> tuple[str, int]:
+    """Accept a bare host or a convenient ``host:port`` endpoint."""
+    text = host_text.strip()
+    if not text:
+        raise ValueError("A server host must not be empty")
+    if "://" in text or "/" in text or "\\" in text:
+        raise ValueError("enter a host or IP only; URL schemes and paths are not supported")
+
+    host = text
+    port = default_port
+    if text.startswith("["):
+        closing = text.find("]")
+        if closing < 0:
+            raise ValueError("invalid bracketed IPv6 endpoint")
+        host = text[1:closing]
+        suffix = text[closing + 1 :]
+        if suffix:
+            if not suffix.startswith(":") or not suffix[1:].isdigit():
+                raise ValueError("invalid port in endpoint")
+            port = int(suffix[1:])
+    elif text.count(":") == 1:
+        candidate_host, candidate_port = text.rsplit(":", 1)
+        if not candidate_port.isdigit():
+            raise ValueError("invalid port in endpoint")
+        host, port = candidate_host.strip(), int(candidate_port)
+
+    if not host or host in {"0.0.0.0", "::"}:
+        raise ValueError("client host must be A's reachable address, not a wildcard address")
+    if not 1 <= port <= 65535:
+        raise ValueError("TCP port must be in [1, 65535]")
+    return host, port
+
+
+def _configure_connected_socket(sock: socket.socket) -> None:
+    """Enable low-cost TCP liveness options without assuming one operating system."""
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except (AttributeError, OSError):
+        return
+
+    # Windows defaults to a multi-hour keepalive. Make half-open tunnel failures
+    # observable within a useful time while state_request remains the primary heartbeat.
+    try:
+        sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, 10_000, 3_000))
+        return
+    except (AttributeError, OSError):
+        pass
+    for option_name, value in (("TCP_KEEPIDLE", 10), ("TCP_KEEPINTVL", 3), ("TCP_KEEPCNT", 3)):
+        option = getattr(socket, option_name, None)
+        if option is not None:
+            try:
+                sock.setsockopt(socket.IPPROTO_TCP, option, value)
+            except OSError:
+                pass
 
 
 def utc_now() -> str:
@@ -147,16 +207,18 @@ class Ack:
 class EMSTcpClient:
     """Blocking B client with framing, periodic state polling, timeout and ACK safeguards."""
 
-    def __init__(self, host: str, port: int = 5000, *, timeout_s: float = 2.0, socket_factory: Callable[..., socket.socket] = socket.create_connection, initial_seq: int | None = None, state_poll_period_s: float = B_STATE_POLL_PERIOD_S) -> None:
-        if not host or host == "0.0.0.0":
-            raise ValueError("client host must be A's reachable address, not 0.0.0.0")
-        if not 1 <= port <= 65535 or timeout_s <= 0:
+    def __init__(self, host: str, port: int = 5000, *, timeout_s: float = 2.0, connect_timeout_s: float = B_CONNECT_TIMEOUT_S, state_response_timeout_s: float = B_STATE_RESPONSE_TIMEOUT_S, socket_factory: Callable[..., socket.socket] = socket.create_connection, initial_seq: int | None = None, state_poll_period_s: float = B_STATE_POLL_PERIOD_S) -> None:
+        host, port = parse_endpoint(host, port)
+        timeouts = (timeout_s, connect_timeout_s, state_response_timeout_s)
+        if any(not math.isfinite(value) or value <= 0 for value in timeouts):
             raise ValueError("invalid TCP endpoint or timeout")
         if initial_seq is not None and (not isinstance(initial_seq, int) or isinstance(initial_seq, bool) or initial_seq < 0):
             raise ValueError("initial_seq must be a non-negative integer or None")
         if not math.isfinite(state_poll_period_s) or state_poll_period_s <= 0:
             raise ValueError("state_poll_period_s must be a positive finite number")
-        self.host, self.port, self.timeout_s = host, port, timeout_s
+        self.host, self.port, self.timeout_s = host, port, float(timeout_s)
+        self.connect_timeout_s = float(connect_timeout_s)
+        self.state_response_timeout_s = float(state_response_timeout_s)
         self.socket_factory = socket_factory
         self.state_poll_period_s = float(state_poll_period_s)
         self.sock: socket.socket | None = None
@@ -169,6 +231,7 @@ class EMSTcpClient:
         self._received_acks: dict[int, Ack] = {}
         self._uncertain_dispatch_seq: int | None = None
         self._last_state_request_monotonic = 0.0
+        self._pending_state_request_started_at: float | None = None
         self.session_id: str | None = None
         self.latest_state: GridState | None = None
         self.needs_full_sync = True
@@ -179,7 +242,8 @@ class EMSTcpClient:
 
     def connect(self) -> None:
         self.close()
-        self.sock = self.socket_factory((self.host, self.port), self.timeout_s)
+        self.sock = self.socket_factory((self.host, self.port), self.connect_timeout_s)
+        _configure_connected_socket(self.sock)
         self.sock.settimeout(self.timeout_s)
         self.framer = JsonLineFramer()
         self._last_incoming_seq = None
@@ -188,6 +252,7 @@ class EMSTcpClient:
         self._received_acks.clear()
         self._uncertain_dispatch_seq = None
         self._last_state_request_monotonic = 0.0
+        self._pending_state_request_started_at = None
         self.needs_full_sync = True
         self.request_state(full=True)
 
@@ -198,6 +263,7 @@ class EMSTcpClient:
             finally:
                 self.sock = None
         self._pending_state_request_seq = None
+        self._pending_state_request_started_at = None
         self._pending_ack_seq = None
         self._received_acks.clear()
 
@@ -229,7 +295,19 @@ class EMSTcpClient:
         self._send(message)
         self._pending_state_request_seq = int(message["seq"])
         self._last_state_request_monotonic = time.monotonic()
+        self._pending_state_request_started_at = self._last_state_request_monotonic
         return int(message["seq"])
+
+    def _check_state_response_deadline(self) -> None:
+        started = self._pending_state_request_started_at
+        if started is None or time.monotonic() - started <= self.state_response_timeout_s:
+            return
+        seq = self._pending_state_request_seq
+        self.close()
+        raise TimeoutError(
+            f"A did not answer state_request seq={seq} within "
+            f"{self.state_response_timeout_s:g}s"
+        )
 
     def _maybe_poll_state(self) -> None:
         if self.sock is None or self._pending_state_request_seq is not None or self._pending_ack_seq is not None:
@@ -288,6 +366,7 @@ class EMSTcpClient:
         if self.sock is None:
             raise ConnectionError("B is not connected to A")
         self._maybe_poll_state()
+        self._check_state_response_deadline()
         try:
             data = self.sock.recv(4096)
         except socket.timeout:
@@ -299,6 +378,24 @@ class EMSTcpClient:
             self.close()
             raise ConnectionError("A closed the TCP connection")
         return self.receive(data)
+
+    def receive_available(self) -> list[GridState | Ack]:
+        """Poll an already-connected socket without blocking a GUI event loop."""
+        if self.sock is None:
+            raise ConnectionError("B is not connected to A")
+        self._maybe_poll_state()
+        self._check_state_response_deadline()
+        try:
+            readable, _, exceptional = select.select([self.sock], [], [self.sock], 0)
+        except (OSError, ValueError):
+            self.close()
+            raise
+        if exceptional:
+            self.close()
+            raise ConnectionError("A TCP socket entered an exceptional state")
+        if not readable:
+            return []
+        return self.receive_once()
 
     def receive(self, data: bytes) -> list[GridState | Ack]:
         results: list[GridState | Ack] = []
@@ -315,12 +412,14 @@ class EMSTcpClient:
                     self.latest_state = None
                     self.session_id = state.session_id
                     self._pending_state_request_seq = None
+                    self._pending_state_request_started_at = None
                     self.needs_full_sync = True
                     self.request_state(full=True)
                     continue
                 if self.latest_state is not None and state.session_id == self.latest_state.session_id and state.step < self.latest_state.step:
                     self.latest_state = None
                     self._pending_state_request_seq = None
+                    self._pending_state_request_started_at = None
                     self.needs_full_sync = True
                     self.request_state(full=True)
                     continue
@@ -328,6 +427,7 @@ class EMSTcpClient:
                 self.latest_state = state
                 self.needs_full_sync = False
                 self._pending_state_request_seq = None
+                self._pending_state_request_started_at = None
                 results.append(state)
             elif message["type"] == "ack":
                 payload = message["payload"]
@@ -357,8 +457,9 @@ class EMSTcpClient:
                 raise ProtocolError(f"invalid non-negative numeric field: {key}")
         if payload["wind_operating_limit_kw"] > payload["wind_available_kw"]:
             raise ProtocolError("wind_operating_limit_kw must be <= wind_available_kw")
-        if payload["wind_target_kw"] > payload["wind_operating_limit_kw"]:
-            raise ProtocolError("wind_target_kw must be <= wind_operating_limit_kw")
+        # B's last target and C's current operating limit are independent state
+        # fields. During startup, a C fault, or a limit transition the old target
+        # may legitimately exceed the new limit until B computes its next dispatch.
         sampled_at_utc = _validate_rfc3339_utc(payload["sampled_at_utc"], "sampled_at_utc")
         if not isinstance(payload["wind_running"], bool) or not isinstance(payload["fault"], bool):
             raise ProtocolError("wind_running and fault must be JSON booleans")

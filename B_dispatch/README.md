@@ -52,6 +52,14 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 - 原先 GUI 使用 `timeout_s=0.25`，A 虽然已经收到并执行 dispatch，但 SQLite/仿真处理稍慢时可能超过 250 ms，B 会误判为 ACK unknown、主动关闭 socket；这正是“**A 已更新、B 弹 ACK 错误并断连，但主页仍显示已连接**”的主要原因。
 - 本次修复保留 delivery-unknown 的安全原则：真正超过 ACK 等待窗口仍不得自动换新 seq 重发。
 
+## A/B 长连接稳定性处理（2026-09-09）
+
+- A 的 `wind_target_kw` 是 B 上次下发目标，`wind_operating_limit_kw` 是 C 当前限制。启动、C 故障或限制切换时前者可暂时高于后者；B 只校验各字段自身范围及 `operating limit <= available`，收到这种合法过渡状态时不再误断 TCP。
+- GUI 建连在后台线程执行，公网/域名建连使用独立 5 s 窗口；已连接 socket 由 Qt 定时器做非阻塞读取，不再每 250 ms 阻塞主线程。
+- 首个或后续 `state_request` 连续 6 s 无响应时判定半开连接；意外 EOF、socket 错误或响应超时后按 1/2/4/8/15 s 上限退避重连，重连后自动发送 `full=true`。
+- 地址框既可填写局域网 IP/域名并在端口框填端口，也可直接填写 `host:port`；不要填写 `tcp://`、路径或 `0.0.0.0`。
+- A/B 两端启用 TCP keepalive；A 的应用层空闲断线窗口为 30 s。公网隧道仍必须是 raw TCP 长连接映射，且需另行检查端点有效性和防火墙放行。
+
 ## 本地运行
 
 Python 统一为 **3.11.x**，Qt 使用 **PyQt6**。

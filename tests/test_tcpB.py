@@ -3,10 +3,11 @@
 import json
 import socket
 import unittest
+from unittest.mock import patch
 
 from B_dispatch.models import DispatchConfig, GridState
 from B_dispatch.operator_core import EMSCore
-from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, JsonLineFramer, ProtocolError, encode_frame
+from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, JsonLineFramer, ProtocolError, encode_frame, parse_endpoint
 
 
 class FakeSocket:
@@ -64,6 +65,13 @@ def ready_state():
 
 
 class TcpBTests(unittest.TestCase):
+    def test_endpoint_parser_accepts_public_host_with_inline_port(self):
+        self.assertEqual(parse_endpoint("frp.example.com:38243", 5000), ("frp.example.com", 38243))
+        self.assertEqual(parse_endpoint("192.168.1.20", 5000), ("192.168.1.20", 5000))
+        self.assertEqual(parse_endpoint("[2001:db8::1]:5005", 5000), ("2001:db8::1", 5005))
+        with self.assertRaises(ValueError):
+            parse_endpoint("tcp://frp.example.com:38243", 5000)
+
     def test_framer_handles_split_and_multiple_frames(self):
         first = encode_frame(state_message())
         second = encode_frame(state_message(step=6, seq=11))
@@ -89,6 +97,38 @@ class TcpBTests(unittest.TestCase):
         message = json.loads(fake.sent[0])
         self.assertEqual(message["type"], "state_request")
         self.assertTrue(message["payload"]["full"])
+
+    def test_client_uses_separate_five_second_connect_timeout(self):
+        fake = FakeSocket()
+        calls = []
+        client = EMSTcpClient(
+            "frp.example.com", 38243, timeout_s=0.25,
+            socket_factory=lambda endpoint, timeout: calls.append((endpoint, timeout)) or fake,
+        )
+        client.connect()
+        self.assertEqual(calls, [(('frp.example.com', 38243), 5.0)])
+        self.assertEqual(fake.timeout, 0.25)
+
+    def test_receive_available_does_not_block_when_socket_has_no_data(self):
+        fake = FakeSocket()
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
+        client.connect()
+        with patch("B_dispatch.tcpB.select.select", return_value=([], [], [])):
+            self.assertEqual(client.receive_available(), [])
+
+    def test_missing_state_response_closes_half_open_connection(self):
+        fake = FakeSocket()
+        client = EMSTcpClient(
+            "192.168.1.20", state_response_timeout_s=2.0,
+            socket_factory=lambda *args: fake,
+        )
+        client.connect()
+        client._pending_state_request_started_at = 10.0
+        with patch("B_dispatch.tcpB.time.monotonic", return_value=12.1):
+            with self.assertRaisesRegex(TimeoutError, "did not answer state_request"):
+                client._check_state_response_deadline()
+        self.assertFalse(client.connected)
+        self.assertTrue(fake.closed)
 
     def test_default_sequence_does_not_go_backwards_across_new_clients(self):
         first_socket = FakeSocket()
@@ -139,6 +179,16 @@ class TcpBTests(unittest.TestCase):
         client.connect()
         with self.assertRaises(ProtocolError):
             client.receive(encode_frame(state_message(wind_operating_limit_kw=71.0)))
+
+    def test_state_accepts_previous_target_above_current_c_limit(self):
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: FakeSocket())
+        client.connect()
+        result = client.receive(encode_frame(state_message(
+            wind_operating_limit_kw=0.0,
+            wind_target_kw=100.0,
+        )))
+        self.assertEqual(result[0].wind_operating_limit_kw, 0.0)
+        self.assertEqual(result[0].wind_target_kw, 100.0)
 
     def test_state_rejects_invalid_timestamp(self):
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: FakeSocket())

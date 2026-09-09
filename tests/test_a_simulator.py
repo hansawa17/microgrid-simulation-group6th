@@ -35,6 +35,8 @@ from A_simulator.server import (
     decode_frame,
     encode_frame,
 )
+from B_dispatch.models import GridState
+from B_dispatch.tcpB import EMSTcpClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -556,6 +558,41 @@ class ProtocolTests(unittest.TestCase):
                 self.assertEqual(state_after_reconnect["type"], "state")
                 self.assertEqual(state_after_reconnect["session_id"], session_id)
             finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_real_b_client_keeps_polling_past_three_seconds(self):
+        """B must accept startup states where the previous target exceeds C's limit."""
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            server = SimulatorTCPServer(("127.0.0.1", 0), repo, 4096)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            client = EMSTcpClient(
+                server.server_address[0],
+                server.server_address[1],
+                timeout_s=0.2,
+                state_poll_period_s=0.2,
+                state_response_timeout_s=2.0,
+            )
+            try:
+                client.connect()
+                states = 0
+                deadline = time.monotonic() + 3.2
+                while time.monotonic() < deadline:
+                    states += sum(
+                        isinstance(item, GridState)
+                        for item in client.receive_available()
+                    )
+                    time.sleep(0.01)
+                self.assertTrue(client.connected)
+                self.assertGreaterEqual(states, 10)
+                self.assertTrue(repo.connection_statuses()["B"]["connected"])
+            finally:
+                client.close()
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=2)

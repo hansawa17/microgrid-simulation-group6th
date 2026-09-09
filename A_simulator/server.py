@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import socket
 import socketserver
 import threading
 
@@ -155,6 +156,12 @@ class _RequestHandler(socketserver.StreamRequestHandler):
 
     def setup(self) -> None:
         super().setup()
+        try:
+            self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self.connection.ioctl(socket.SIO_KEEPALIVE_VALS, (1, 10_000, 3_000))
+        except (AttributeError, OSError):
+            pass
         self.connection.settimeout(self.server.idle_timeout_s)
 
     def handle(self) -> None:
@@ -210,13 +217,14 @@ class _RequestHandler(socketserver.StreamRequestHandler):
 class SimulatorTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    request_queue_size = 16
 
     def __init__(
         self,
         address: tuple[str, int],
         repository: Repository,
         max_frame_bytes: int,
-        idle_timeout_s: float = 10.0,
+        idle_timeout_s: float = 30.0,
     ):
         if not math.isfinite(idle_timeout_s) or idle_timeout_s <= 0:
             raise ValueError("idle_timeout_s must be a positive finite number")

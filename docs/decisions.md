@@ -111,3 +111,11 @@
 - A UI 固定按 UTC+8 北京时间显示顶部时钟、实时/历史横轴和各类时间列；`sampled_at_utc/received_at_utc/created_at_utc` 的名称、UTC 存储与 TCP 内容不变，时区换算不参与控制排序。
 - 历史页的 SQLite 查询由单独工作线程和独立短连接执行，快速切换筛选时只保留最新请求；曲线读取用户选择的记录窗口，状态和日志表各最多创建最近 1000 行控件，避免主线程因大批量 `QTableWidgetItem` 和 `ResizeToContents` 阻塞。
 - 受影响：A GUI/数据库/TCP、`common/protocol.md`、`docs/time-interface.md`、A 与根 README、启动脚本。
+
+## 2026-09-09：A/B 合法过渡状态与长连接恢复
+
+- 现场 `grid.db` 显示 A 的启动状态为 `wind_operating_limit_kw=0`、`wind_target_kw=100`；A 日志同时显示 B 在短时间内反复连接后由客户端关闭，且没有 `frame_rejected` 或 `peer_timeout`。根因是 B 错把 `wind_target_kw <= wind_operating_limit_kw` 当作 state 不变量。
+- `wind_target_kw` 是 B 上次目标，`wind_operating_limit_kw` 是 C 当前限制。启动、C 故障或限制突变后两者允许暂时不一致，B 应接收该状态并根据当前限制产生下一条调度；本次不修改协议字段或计算所有权。
+- B 的 TCP 建连使用独立 5 s 超时，状态请求 6 s 无响应视为半开连接；GUI 非阻塞收包，异常后按 1/2/4/8/15 s 上限退避自动重连并先请求全量状态。地址输入兼容 `host:port`，但不接受 URL。
+- A/B 已连接 socket 启用 TCP keepalive/TCP_NODELAY；A 已识别客户端空闲窗口由 10 s 调整为 30 s，监听积压队列为 16。B 的周期 `state_request` 仍是主要应用层心跳。
+- 本次只修改 A、B、测试和说明，没有修改 C。软件回归覆盖真实 loopback A server + B client 连续轮询超过 3 s；公网隧道、跨电脑防火墙和硬件链路必须另行实测。
