@@ -45,6 +45,13 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 - A 已实现接收 B 所有权参数 `reserve_kw/b_poll_s/b_dispatch_s` 的 `parameter_update`；B GUI 的参数发送入口尚未接入，当前不能宣称 B 已完成参数发布。
 - 本机软件测试覆盖两个独立 B 客户端连续连接与 dispatch ACK；公网三机、系统时钟异常及 STM32 仍需联调。
 
+## Dispatch ACK 超时处理（2026-09-09）
+
+- B GUI 的 TCP polling timeout 可以保持较短，但 `dispatch` 不再复用该短 timeout 等待 ACK。
+- `B_dispatch/tcpB.py` 为 dispatch ACK 单独设置至少 **2 s** 的等待窗口；收到 ACK 后恢复普通 state polling timeout。
+- 原先 GUI 使用 `timeout_s=0.25`，A 虽然已经收到并执行 dispatch，但 SQLite/仿真处理稍慢时可能超过 250 ms，B 会误判为 ACK unknown、主动关闭 socket；这正是“**A 已更新、B 弹 ACK 错误并断连，但主页仍显示已连接**”的主要原因。
+- 本次修复保留 delivery-unknown 的安全原则：真正超过 ACK 等待窗口仍不得自动换新 seq 重发。
+
 ## 本地运行
 
 Python 统一为 **3.11.x**，Qt 使用 **PyQt6**。
