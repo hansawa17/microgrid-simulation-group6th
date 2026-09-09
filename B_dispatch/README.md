@@ -13,7 +13,36 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 - **EMS 调度**：手动计算并发送 dispatch；可开启自动闭环；显示 target unserved、target surplus、reason 和 ACK；保留 delivery-unknown 禁止盲目重发的安全边界。
 - **历史数据**：读取 `ems.db/state_history`，按 session 过滤并支持 CSV 导出。
 - **通信诊断**：TCP 状态、pending state request、full-sync、最近入站 seq、最近 ACK 和 GUI 事件日志。
-- **报警与评价**：状态过期、C fault、delivery unknown 等事件；从 `dispatch_evaluation` 和 `dispatch_commands` 汇总目标缺电、目标过剩和 ACK 接受率。
+- **报警与评价**：保留原有状态过期、C fault、delivery unknown 等报警，同时增加只读的 EMS 调度评价：综合评分、EMS 调度评分、系统运行评分、六项分项评分、评价时间范围和明细指标。
+
+## EMS 调度评价
+
+`B_dispatch/evaluation.py` 是独立的**只读评价模块**。它只读取 `state_history`、`dispatch_commands` 等已经存在的运行数据，不发送 TCP、不修改 dispatch、不改变 A/B/C 控制链路。
+
+评价范围支持：
+
+- 最近 1 分钟
+- 最近 5 分钟
+- 本次 Session
+- 全部历史
+
+六项指标及评分：
+
+1. **供需平衡**：平均功率不平衡，误差越小得分越高。
+2. **风能利用**：实际风电相对可利用风电的利用率。
+3. **柴油经济性**：柴油实际功率占负荷的比例，柴油使用越少通常得分越高。
+4. **运行约束**：检查风电实际功率与 `wind_operating_limit_kw / wind_available_kw` 的边界关系。
+5. **调度跟踪**：已确认 dispatch 的目标与同 `session_id + step` 状态实际值的平均偏差。
+6. **响应性能**：结合 ACK 成功率与 ACK 平均响应时间评价。
+
+界面同时显示两个辅助结果：
+
+- **EMS 调度评分**：更关注柴油调度、约束、目标跟踪和通信响应。
+- **系统运行评分**：更关注供需平衡、风能利用、柴油经济性和约束满足。
+
+最终综合评价为两者的平均值，并给出“优秀 / 良好 / 合格 / 需改进”等级。评价中的原始指标也会同时展示，避免只显示一个无法解释的总分。
+
+> 注意：评价模块不会把 C 的保护限制造成的风电下降简单判定为 B 调度错误；`wind_operating_limit_kw` 仍被视为 A/C 提供给 B 的运行约束。
 
 ## 参数与计算职责基线
 
@@ -68,7 +97,7 @@ Python 统一为 **3.11.x**，Qt 使用 **PyQt6**。
 ```bash
 python -m B_dispatch
 python -m B_dispatch gui
-python B_dispatch/gui_b.py
+python -m B_dispatch.gui_b
 ```
 
 初始化/重新对齐数据库：
@@ -88,6 +117,7 @@ python -m unittest discover -s tests -v
 ## 当前边界
 
 - GUI 的本地场景输入只用于 B 算法演示，不能替代 A 的 CSV 场景。
+- 评价模块是只读分析，不参与 B dispatch 计算，不修改 A 状态，不发送 C 控制指令。
 - A/B/C socket、STM32/Wi-Fi/串口实机联调仍需单独验收；GUI 能显示通信状态不等于实机联调完成。
 - 自动闭环默认关闭，只有连接 A 并明确开启后才会发送 dispatch。
 - B 只发送 `wind_target_kw / diesel_target_kw / wind_enable / diesel_enable`，不发送 `pitch_target_deg`。
