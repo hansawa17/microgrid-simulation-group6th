@@ -136,7 +136,8 @@ STM32 将 `source` 改为 `C`。当前 A 对 `full=true/false` 都返回完整�
     "wind_target_kw": 45.0,
     "pitch_actual_deg": 0.0,
     "wind_running": true,
-    "fault": false
+    "fault": false,
+    "next_command_seq": 10
   }
 }
 ```
@@ -295,6 +296,7 @@ sequenceDiagram
 - 完全相同 type 与规范化 payload 的命令重发不得再次执行；A 返回 `duplicate_accepted` ACK。
 - 同一序号携带不同 type 或 payload 时拒绝为 `seq_conflict`；同会话中未出现过但小于已处理最大序号的命令拒绝为 `out_of_order`。
 - A 当前在 B/C 响应之间使用全局服务端序号，单个客户端看到跳号是正常现象。
+- A 在 `state.payload.next_command_seq` 返回当前会话、当前请求方的命令序号高水位；STM32 重启后先全量同步再提升本地序号，避免同一 A 会话内从 0 重放。
 
 ## 8. 断线、超时与重连
 
@@ -336,8 +338,8 @@ DISCONNECTED -> CONNECTING -> SYNCING -> ONLINE
 - B 已实现单未决状态请求、持续消费到新 `state`、发送 dispatch 后等待匹配 ACK，避免响应积压。
 - B 尚需把 ACK 最终结果完整回写命令记录，并用单调时钟维护状态新鲜度。
 - B/C 尚需实现各自 `parameter_update` 的发送入口并完成跨机联调；A UI 已按 owner/source 展示本地参数和收到的只读副本。
-- STM32 Wi-Fi TCP 客户端和 C UART 协议尚未完成，硬件结果必须明确标注实机或 mock。
-- A/B 软件已适配 `wind_available_kw` 和 `wind_operating_limit_kw`；STM32 Wi-Fi 客户端仍待实现，在真实三方联调前不得宣称字段闭环完成。
+- STM32 Wi-Fi TCP 客户端已修复单连接 `+IPD,<len>` 分帧、非阻塞 `CIPSEND`、周期状态事务、ACK 匹配和重连序号恢复；仍须在真实 ESP8266/STM32 上完成验证。C UART 协议尚未冻结，硬件结果必须明确标注实机或 mock。
+- A/B/C 软件已适配 `wind_available_kw` 和 `wind_operating_limit_kw`；在真实三方联调前不得宣称字段闭环完成。
 - A 对命令允许滞后的最大 step/秒数尚未冻结。
 
 ## 12. 联调步骤

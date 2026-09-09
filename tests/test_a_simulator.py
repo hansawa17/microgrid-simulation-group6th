@@ -28,7 +28,13 @@ from A_simulator.scenario import (
     load_scenario_csv,
     save_scenario_csv,
 )
-from A_simulator.server import ProtocolError, SimulatorTCPServer, decode_frame
+from A_simulator.server import (
+    MessageProcessor,
+    ProtocolError,
+    SimulatorTCPServer,
+    decode_frame,
+    encode_frame,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -441,6 +447,7 @@ class ProtocolTests(unittest.TestCase):
                                 "wind_actual_kw", "diesel_actual_kw", "wind_target_kw",
                                 "diesel_target_kw", "pitch_actual_deg", "wind_running",
                                 "diesel_running", "fault", "power_imbalance_kw",
+                                "next_command_seq",
                             },
                         )
 
@@ -545,6 +552,21 @@ class ProtocolTests(unittest.TestCase):
             }
             result = repo.apply_command(message)
             self.assertTrue(result.accepted)
+
+            state_request = {
+                "version": 1,
+                "type": "state_request",
+                "source": "C",
+                "target": "A",
+                "session_id": session_id,
+                "seq": 0,
+                "step": 0,
+                "sim_time_s": 0.0,
+                "payload": {"full": True},
+            }
+            state_response = MessageProcessor(repo).process(state_request)
+            self.assertEqual(state_response["payload"]["next_command_seq"], 2)
+            self.assertLessEqual(len(encode_frame(state_response, 4096)), 1024)
 
             import sqlite3
             with closing(sqlite3.connect(db)) as connection:

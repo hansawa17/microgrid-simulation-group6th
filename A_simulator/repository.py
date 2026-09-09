@@ -1274,6 +1274,24 @@ class Repository:
                 "SELECT server_seq FROM simulation_control WHERE singleton_id=1"
             ).fetchone()[0]
 
+    def next_client_command_seq(self, source: str, session_id: str) -> int:
+        """Return a safe lower bound for the client's next command sequence.
+
+        STM32 has no trustworthy wall clock and may reboot while A keeps the
+        same simulation session. Returning the persisted high-water mark in a
+        state response lets C resume without weakening duplicate detection.
+        """
+        if source not in {"B", "C"}:
+            raise ValueError("invalid client source")
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT MAX(seq) FROM commands WHERE session_id=? AND source=?",
+                (session_id, source),
+            ).fetchone()
+        highest = row[0] if row is not None else None
+        return 0 if highest is None else int(highest) + 1
+
     def apply_command(self, message: dict[str, object]) -> CommandResult:
         self._ensure_exists()
         payload = message["payload"]

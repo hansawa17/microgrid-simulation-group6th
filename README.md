@@ -90,6 +90,13 @@ B 的 TCP/服务文件统一使用 `*B` 后缀，避免和其他成员冲突。
 - 保留 delivery-unknown 安全边界：真正超时仍禁止自动换新 seq 盲目重发。
 - 这同时解释并修复了“**A 端 dispatch 已更新、B 弹 ACK 错误并断连，但主页仍显示已连接**”这一现象的主要来源。
 
+### 2026-09-09 · A/C TCP 收包与重连闭环修复
+
+- 修复 ESP8266 单连接 `+IPD,<len>` 长度漏读首位导致 A 的 state 被截断、C 只连接不发 `wind_action` 的问题。
+- C 改为环形接收缓冲和非阻塞 `CIPSEND`，按 `state_request → state → wind_action → ack` 单未决事务运行。
+- A 在 state 中返回当前会话、当前 source 的 `next_command_seq`，供 STM32 重启后恢复发送序号；普通 TCP 重连不再清零 seq。
+- A/B Python 逻辑与 GUI 回归已通过；ESP8266/STM32 实机、热点断线和上电恢复仍需硬件验证。
+
 ### 2026-09-08 · B GUI 手动调度等待最新状态后自动下发
 
 - 修复 `B_dispatch/gui_b.py` 点击“下发当前调度”时遇到未完成 `state_request` 直接失败的问题。

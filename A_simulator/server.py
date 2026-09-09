@@ -95,6 +95,10 @@ class MessageProcessor:
             if set(payload) != {"full"} or type(payload["full"]) is not bool:
                 raise ProtocolError("invalid_full")
             state = self.repository.get_state()
+            state_payload = state.protocol_payload()
+            state_payload["next_command_seq"] = self.repository.next_client_command_seq(
+                source, state.session_id
+            )
             return {
                 "version": 1,
                 "type": "state",
@@ -104,7 +108,7 @@ class MessageProcessor:
                 "seq": self.repository.next_server_seq(),
                 "step": state.step,
                 "sim_time_s": state.sim_time_s,
-                "payload": state.protocol_payload(),
+                "payload": state_payload,
             }
         if message_type not in {"dispatch", "wind_action", "parameter_update"}:
             raise ProtocolError("unsupported_message_type")

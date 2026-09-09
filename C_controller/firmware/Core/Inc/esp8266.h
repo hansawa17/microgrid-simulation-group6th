@@ -23,6 +23,7 @@
 #define ESP_EVT_PROMPT          (1u<<10)   /* CIPSEND 的 '>' 提示 */
 #define ESP_EVT_READY           (1u<<11)   /* 上电 'ready' */
 #define ESP_EVT_BUSY            (1u<<12)   /* busy ... */
+#define ESP_EVT_RX_OVERFLOW     (1u<<13)   /* USART/TCP 接收缓冲溢出 */
 
 /* USART1 中断接收（由 HAL_UART_RxCpltCallback 分发调用） */
 void     Esp8266_StartRx(void);
@@ -39,6 +40,9 @@ uint32_t Esp8266_Poll(void);
 
 /* 读取累积的 TCP 数据（+IPD 载荷），消费式；返回读到的字节数 */
 int      Esp8266_ReadData(uint8_t *dst, uint16_t max_len);
+
+/* 丢弃尚未被上层消费的 TCP 数据；协议错误或重连时调用 */
+void     Esp8266_DiscardData(void);
 
 /* 连接状态 */
 int      Esp8266_IsWifiConnected(void);

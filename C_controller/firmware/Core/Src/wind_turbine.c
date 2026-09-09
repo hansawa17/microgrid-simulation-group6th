@@ -292,32 +292,29 @@ uint32_t WindTurbine_GetPeriodMs(void)
 
 void WindTurbine_PeriodicTask(void)
 {
-    /* 先清零：未连 A 或未收到 state 时，不本地生成任何风速/功率数据 */
-    wt.wind_speed = 0.0f;
-    wt.power_set  = 0.0f;
-    wt.power_available       = 0.0f;
-    wt.power_operating_limit = 0.0f;
-    wt.power_actual          = 0.0f;
-    wt.deg                   = 0.0f;
-    wt.status                = WT_STATUS_STOP;
-
-    if (WifiClient_IsOnline())
+    if (!WifiClient_IsOnline())
     {
-        /* 每周期请求状态：保持连接活跃（A 的 idle timeout 是 10s）+ 拉取最新风速/目标/实际 */
-        WifiClient_RequestState();
-
-        if (WifiClient_HasState())
-        {
-            wt.wind_speed = WifiClient_GetWindSpeedMps();
-            wt.power_set  = WifiClient_GetWindTargetKw();
-            wt.power_available = wt_power_available();   /* C 计算可用功率（三次方） */
-            wt_compute_status_pitch();                   /* 算启停 + 桨距（0-90°） */
-            wt_compute_operating_limit();                /* 算稳态上限 */
-            WifiClient_SendWindAction(wt.run_enable, wt.deg,
-                                      wt.power_available, wt.power_operating_limit);
-            wt.power_actual = WifiClient_GetWindActualKw();
-        }
+        /* 未连接 A 时不生成伪造的风速/功率数据。 */
+        wt.wind_speed = 0.0f;
+        wt.power_set  = 0.0f;
+        wt.power_available       = 0.0f;
+        wt.power_operating_limit = 0.0f;
+        wt.power_actual          = 0.0f;
+        wt.deg                   = 0.0f;
+        wt.status                = WT_STATUS_STOP;
     }
+    else if (WifiClient_HasState())
+    {
+        wt.wind_speed = WifiClient_GetWindSpeedMps();
+        wt.power_set  = WifiClient_GetWindTargetKw();
+        wt.power_available = wt_power_available();   /* C 计算可用功率（三次方） */
+        wt_compute_status_pitch();                   /* 算启停 + 桨距（0-90°） */
+        wt_compute_operating_limit();                /* 算稳态上限 */
+        WifiClient_SendWindAction(wt.run_enable, wt.deg,
+                                  wt.power_available, wt.power_operating_limit);
+        wt.power_actual = WifiClient_GetWindActualKw();
+    }
+    /* 在线但等待 state/ack 时保持上一状态；Wi-Fi 状态机继续推进事务。 */
 
     wt_send_telemetry();
     wt.cycle++;

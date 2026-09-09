@@ -6,8 +6,8 @@
   * 说明：
   *  - 本模块负责"风电子站"单片机侧的完整控制闭环：
   *      输入(风速/有功设定/控制模式) -> 计算(可用功率/启停/桨距角) -> 输出(串口上报)
-  *  - USART1 (PA9/PA10) 保留给 Wi-Fi 模块（本阶段暂不接入 A 电网模拟器）。
-  *  - USART2 (PA2/PA3)  与 PC 上位机通过串口通信（本阶段的数据通路）。
+  *  - USART1 (PA9/PA10) 连接 ESP8266，作为 A 电网模拟器的 TCP 客户端。
+  *  - USART2 (PA2/PA3)  与 PC 上位机通过串口通信。
   *
   *  串口帧格式（ASCII，\r\n 结尾，字段以 , 分隔）：
   *     MCU -> PC 遥测:  $WIND,<cycle>,<wind_speed>,<power_available>,<power_set>,<power_actual>,<status>,<deg>,<control_mode>\r\n

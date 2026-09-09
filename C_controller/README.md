@@ -56,6 +56,9 @@ C_controller/
 - 连接流程：`AT → ATE0 → CWMODE=1 → CWJAP → CIPSTART → state_request(full=true) → ONLINE`，断线自动重连。
 - 联调时 STM32 读 A 的 `state`（风速 + B 目标），算可用功率/稳态上限/启停/桨距并发
   `wind_action{wind_enable,pitch_target_deg,wind_available_kw,wind_operating_limit_kw}`；串口 `$WIND` 扩为 9 字段。
+- 已修复 ESP8266 单连接 `+IPD,<len>` 把三位长度漏掉首位的问题；收包改为 ISR/主循环环形缓冲，支持跨多次串口接收的 `+IPD` 载荷。
+- TCP 应用层按 `state_request → state → wind_action → ack` 单未决事务运行；`CIPSEND` 非阻塞等待提示符与 `SEND OK`，ACK 未知时保留同序号命令，重连先全量同步。
+- A 在 state 中返回 `next_command_seq`，STM32 据此恢复当前 A 会话的发送序号，避免 MCU 重启后被判为 `out_of_order`。
 - 配置项在 `Core/Inc/wifi_config.h`（SSID / 密码 / A 的 IP:端口）。
 
 ## 尚未完成 / 待确认
@@ -66,7 +69,7 @@ C_controller/
 - **串口协议未冻结**：`$WIND` 现为 9 个功率字段，仍需扩展 `session_id/step/sim_time_s/sampled_at_utc`。
 - 物理参数已统一（见 `docs/parameter-ownership.md`）：额定 100 kW、切入/额定/切出风速
   3/12/25 m/s、三次功率曲线、桨距 0-90 deg；这些是小组配置，不是课程原文指定数值。
-- 未接真实 STM32；当前结果均属软件 mock，不等同于真实硬件联调。
+- 尚未用真实 ESP8266/STM32 验证上述 TCP 修复；当前代码检查和 PC 测试不等同于硬件联调。
 
 ## 快速运行（上位机）
 
