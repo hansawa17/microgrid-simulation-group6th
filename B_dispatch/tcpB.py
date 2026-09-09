@@ -16,6 +16,7 @@ from .operator_core import EMSDecision
 MAX_FRAME_BYTES = 4096
 PROTOCOL_VERSION = 1
 B_STATE_POLL_PERIOD_S = 1.0
+B_DISPATCH_ACK_TIMEOUT_S = 2.0
 
 _SEQUENCE_LOCK = threading.Lock()
 _LAST_DEFAULT_SEQUENCE = -1
@@ -264,6 +265,8 @@ class EMSTcpClient:
         self._send(message)
         self._pending_ack_seq = seq
         try:
+            if self.sock is not None:
+                self.sock.settimeout(max(self.timeout_s, B_DISPATCH_ACK_TIMEOUT_S))
             while self._pending_ack_seq is not None:
                 results = self.receive_once()
                 if any(isinstance(result, Ack) and result.ack_seq == seq for result in results):
@@ -273,6 +276,12 @@ class EMSTcpClient:
             self._uncertain_dispatch_seq = seq
             self._pending_ack_seq = None
             raise DispatchDeliveryUnknown(seq, f"dispatch seq {seq} sent but ACK is unknown: {exc}") from exc
+        finally:
+            if self.sock is not None:
+                try:
+                    self.sock.settimeout(self.timeout_s)
+                except OSError:
+                    pass
         return seq
 
     def receive_once(self) -> list[GridState | Ack]:
