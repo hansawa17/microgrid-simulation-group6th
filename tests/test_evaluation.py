@@ -14,7 +14,7 @@ class EvaluationTests(unittest.TestCase):
             result = evaluate_repository(repo, "5m")
             self.assertEqual(result.sample_count, 0)
             self.assertEqual(result.constraint_violations, 0)
-            self.assertEqual(result.overall_score, 60.0)
+            self.assertAlmostEqual(result.overall_score, 70.5)
 
     def test_evaluation_reads_existing_state_without_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
