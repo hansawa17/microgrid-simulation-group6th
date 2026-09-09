@@ -26,6 +26,14 @@
 #define WF_SEND_OK_TIMEOUT_MS     2000u
 #define WF_RESPONSE_TIMEOUT_MS    3000u
 
+/* ------------------------------------------------------------------ */
+/*  A 服务端地址/端口（运行期可配，默认值来自 wifi_config.h）           */
+/* ------------------------------------------------------------------ */
+#define WF_HOST_LEN                48u
+static char     g_server_ip[WF_HOST_LEN] = WIFI_SERVER_IP;
+static uint16_t g_server_port            = WIFI_SERVER_PORT;
+static volatile uint8_t g_reconnect_requested = 0u;
+
 typedef enum {
     WF_AT_SYNC,
     WF_ECHO_OFF,
@@ -198,7 +206,7 @@ static void wf_enter(wf_state_t state)
         break;
     case WF_CONNECT_TCP:
         snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"TCP\",\"%s\",%u",
-                 WIFI_SERVER_IP, (unsigned)WIFI_SERVER_PORT);
+                 g_server_ip, (unsigned)g_server_port);
         Esp8266_SendCmd(cmd);
         break;
     case WF_CLOSE_TCP:
@@ -451,6 +459,14 @@ void WifiClient_Task(void)
     uint32_t events = Esp8266_Poll();
     uint32_t now = HAL_GetTick();
 
+    /* 上位机刚下发了新的 A 地址/端口：在主循环安全点断开并按新配置重连 */
+    if (g_reconnect_requested)
+    {
+        g_reconnect_requested = 0u;
+        wf_reconnect();
+        return;
+    }
+
     if (events & ESP_EVT_WIFI_DISCONN)
     {
         wf_reset_transport();
@@ -571,6 +587,18 @@ void WifiClient_SendWindAction(uint8_t wind_enable, float pitch_target_deg,
     else
         wf_pending_valid = 0u;
 }
+
+void WifiClient_SetServer(const char *ip, uint16_t port)
+{
+    if (ip == NULL || ip[0] == '\0' || port == 0u) return;
+    strncpy(g_server_ip, ip, WF_HOST_LEN - 1u);
+    g_server_ip[WF_HOST_LEN - 1u] = '\0';
+    g_server_port = port;
+    g_reconnect_requested = 1u;   /* 延迟到主循环 WifiClient_Task 执行重连，避免在 UART 中断里发 AT */
+}
+
+const char *WifiClient_GetServerIp(void)   { return g_server_ip; }
+uint16_t    WifiClient_GetServerPort(void) { return g_server_port; }
 
 int WifiClient_IsOnline(void)                    { return (wf_state == WF_ONLINE) ? 1 : 0; }
 int WifiClient_HasState(void)                    { return (wf.got_state != 0u) ? 1 : 0; }

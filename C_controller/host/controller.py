@@ -70,6 +70,7 @@ class Controller(QObject):
         ui.disconnectSerialButton.clicked.connect(self.disconnect_serial)
         ui.refreshPortsButton.clicked.connect(self._refresh_port_list)
         ui.simulateButton.clicked.connect(self.toggle_simulator)
+        ui.applyWifiButton.clicked.connect(self.apply_wifi)
 
         # 参数
         ui.applyParamsButton.clicked.connect(self.apply_params)
@@ -132,6 +133,7 @@ class Controller(QObject):
         if ok:
             self.ui.status_message("STM32 串口已连接")
             self.db.insert_system_log("INFO", "UART_CONNECT", "STM32 串口连接成功", source="UART")
+            self.query_wifi_config()   # 回填当前 A 服务器地址/端口
 
     def _on_serial_error(self, msg):
         self.ui.status_message(msg)
@@ -171,7 +173,14 @@ class Controller(QObject):
             self._on_telemetry(payload)
         elif kind == "ack":
             atype, ok = payload
-            self.ui.status_message(f"MCU 应答：{atype} {'成功' if ok else '失败'}")
+            if atype == "WIFI":
+                self.ui.status_message("Wi-Fi 地址/端口已" + ("下发，MCU 正在重连 A" if ok else "下发失败（校验未通过）"))
+            else:
+                self.ui.status_message(f"MCU 应答：{atype} {'成功' if ok else '失败'}")
+        elif kind == "wifiget":
+            ip, port = payload
+            self.ui.set_wifi_form(ip, port)
+            self.ui.status_message(f"当前 A 服务器：{ip}:{port}")
 
     @staticmethod
     def _msg_type(text):
@@ -290,6 +299,37 @@ class Controller(QObject):
         else:
             self.ui.status_message(f"命令 {label} 未发送：无可用数据源（请连接 STM32 或启动本地仿真）")
             self.db.insert_system_log("WARNING", f"CMD_{cmd}", f"命令 {label} 无数据源未发送", source="GUI")
+
+    # ------------------------------------------------------------------ #
+    #  Wi-Fi / A 服务器 配置
+    # ------------------------------------------------------------------ #
+    def apply_wifi(self):
+        try:
+            ip, port = self.ui.read_wifi_form()
+        except ValueError as e:
+            QMessageBox.warning(self.ui, "地址错误", str(e))
+            return
+
+        if self.serial is None or not self.serial.is_open():
+            self.ui.status_message("未连接 STM32 串口，无法下发 Wi-Fi 设置")
+            self.db.insert_system_log("WARNING", "WIFI_APPLY", "无串口数据源，未下发 Wi-Fi 设置", source="GUI")
+            return
+
+        frame = protocol.build_wifi_frame(ip, port)
+        ok = self.serial.send(frame)
+        self.db.insert_communication_log("UART", "TX", "WIFI", data_length=len(frame), result=1 if ok else 0)
+        if ok:
+            self.ui.status_message(f"已下发 A 服务器 {ip}:{port}，MCU 正在重连…")
+            self.db.insert_system_log("INFO", "WIFI_APPLY", f"下发 A 服务器地址 {ip}:{port}", source="GUI")
+        else:
+            self.ui.status_message("Wi-Fi 设置发送失败")
+            self.db.insert_system_log("WARNING", "WIFI_APPLY", "Wi-Fi 设置发送失败", source="GUI")
+
+    def query_wifi_config(self):
+        if self.serial is not None and self.serial.is_open():
+            frame = protocol.build_wifi_query_frame()
+            self.serial.send(frame)
+            self.db.insert_communication_log("UART", "TX", "WIFI?", data_length=len(frame), result=1)
 
     # ------------------------------------------------------------------ #
     #  历史数据

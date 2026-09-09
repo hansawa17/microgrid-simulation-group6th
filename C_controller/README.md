@@ -61,6 +61,16 @@ C_controller/
 - A 在 state 中返回 `next_command_seq`，STM32 据此恢复当前 A 会话的发送序号，避免 MCU 重启后被判为 `out_of_order`。
 - 配置项在 `Core/Inc/wifi_config.h`（SSID / 密码 / A 的 IP:端口）。
 
+### 2026-09-09 · Wi-Fi 地址/端口运行期可配（上位机下发）
+
+- A 服务器地址/端口从固件 `wifi_config.h` 写死改为「上电默认值 + 运行期可改」：
+  - `wifi_client.c` 新增 `WifiClient_SetServer()` / `GetServerIp/Port()`，`AT+CIPSTART` 改用运行期变量；
+  - USART2 新增 `$WIFI,<ip>,<port>`（改地址并自动重连）与 `$WIFI?`（查询，回 `$WIFIGET,<ip>,<port>`）。
+- 上位机「运行监控」连接卡片新增「A 服务器 (Wi-Fi)」：IP 输入框 + 端口 + 「应用并连接」按钮；
+  连上串口自动 `$WIFI?` 回填当前值，点击后经 `$WIFI` 下发并触发 MCU 重连。
+- SSID / 密码仍为固件编译期常量，真实值仅本地烧录、不提交；IP/端口默认值用占位符。
+- 验证范围：MCU↔PC 串口与 Wi-Fi↔A 链路已跑通；运行期改地址/端口重连为 PC 端代码检查，实机重连仍需验证。
+
 ## 尚未完成 / 待确认
 
 - **C 已对齐冻结参数**：额定 100 kW、三次曲线、桨距 0-90°；C 计算 `wind_available_kw`/

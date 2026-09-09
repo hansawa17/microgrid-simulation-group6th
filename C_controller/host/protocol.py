@@ -36,6 +36,16 @@ def build_cmd_frame(command):
     return f"$CMD,{command}\r\n".encode("ascii")
 
 
+def build_wifi_frame(ip, port):
+    """生成 $WIFI,<ip>,<port> 设置帧（bytes），让 MCU 更新 A 地址/端口并重连。"""
+    return f"$WIFI,{ip},{int(port)}\r\n".encode("ascii")
+
+
+def build_wifi_query_frame():
+    """生成 $WIFI? 查询帧（bytes），查询 MCU 当前 A 地址/端口。"""
+    return b"$WIFI?\r\n"
+
+
 def parse_frame(line):
     """解析一帧，返回 (类型, 内容) 或 None。
 
@@ -89,6 +99,12 @@ def parse_frame(line):
         return ("cmd", rest)
     if kind == "PARAM":
         return ("param", rest)
+
+    if kind == "WIFIGET":
+        fields = rest.split(",")
+        if len(fields) >= 2:
+            return ("wifiget", (fields[0], fields[1]))
+        return None
 
     return ("other", body)
 

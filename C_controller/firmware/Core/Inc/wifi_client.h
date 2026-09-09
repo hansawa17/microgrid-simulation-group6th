@@ -28,4 +28,9 @@ float WifiClient_GetWindOperatingLimitKw(void);
 float WifiClient_GetWindTargetKw(void);
 float WifiClient_GetWindActualKw(void);
 
+/* 运行期修改 A 服务端地址/端口（PC-C 上位机经 USART2 的 $WIFI 下发），并触发重连 */
+void        WifiClient_SetServer(const char *ip, uint16_t port);
+const char *WifiClient_GetServerIp(void);
+uint16_t    WifiClient_GetServerPort(void);
+
 #endif /* __WIFI_CLIENT_H */

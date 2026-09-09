@@ -10,10 +10,13 @@
   *  - USART2 (PA2/PA3)  与 PC 上位机通过串口通信。
   *
   *  串口帧格式（ASCII，\r\n 结尾，字段以 , 分隔）：
-  *     MCU -> PC 遥测:  $WIND,<cycle>,<wind_speed>,<power_available>,<power_set>,<power_actual>,<status>,<deg>,<control_mode>\r\n
+  *     MCU -> PC 遥测:  $WIND,<cycle>,<wind_speed>,<power_available>,<power_operating_limit>,<power_set>,<power_actual>,<status>,<deg>,<control_mode>,<online>\r\n
   *     PC  -> MCU 参数: $PARAM,<cut_in_speed_mps>,<rated_speed_mps>,<cut_out_speed_mps>,<wind_rated_power_kw>,<pitch_feather_deg>,<c_control_s>,<c_timeout_s>,<control_mode>\r\n
   *     PC  -> MCU 命令: $CMD,START|STOP|RESET|AUTO|MANUAL\r\n
-  *     MCU -> PC  应答: $ACK,<PARAM|CMD>,<0|1>\r\n
+  *     PC  -> MCU WiFi: $WIFI,<ip>,<port>      run-time set A addr/port + reconnect\r\n
+  *                      $WIFI?                 query A addr/port\r\n
+  *     MCU -> PC  应答: $ACK,<PARAM|CMD|WIFI>,<0|1>\r\n
+  *                      $WIFIGET,<ip>,<port>   reply to $WIFI?\r\n
   ******************************************************************************
   */
 #ifndef __WIND_TURBINE_H

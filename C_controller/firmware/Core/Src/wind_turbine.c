@@ -266,6 +266,38 @@ static void wt_parse_line(char *line)
         else if (strcmp(cmd, "MANUAL") == 0) { wt.control_mode = WT_MODE_OPEN_LOOP;   wt_send_ack("CMD", 1u); }
         else                                { wt_send_ack("CMD", 0u); }
     }
+    else if (strcmp(p, "$WIFI") == 0)
+    {
+        /* 上位机下发 A 服务端地址/端口：$WIFI,<ip>,<port>，改后自动重连 */
+        char *ip = strtok(NULL, ",");
+        char *port_s = strtok(NULL, ",");
+        if (ip != NULL && port_s != NULL && ip[0] != '\0')
+        {
+            char *end = NULL;
+            unsigned long port = strtoul(port_s, &end, 10);
+            if (end != port_s && port >= 1ul && port <= 65535ul)
+            {
+                WifiClient_SetServer(ip, (uint16_t)port);
+                wt_send_ack("WIFI", 1u);
+            }
+            else
+            {
+                wt_send_ack("WIFI", 0u);
+            }
+        }
+        else
+        {
+            wt_send_ack("WIFI", 0u);
+        }
+    }
+    else if (strcmp(p, "$WIFI?") == 0)
+    {
+        /* 查询当前 A 服务端地址/端口：应答 $WIFIGET,<ip>,<port> */
+        char buf[96];
+        sprintf(buf, "$WIFIGET,%s,%u\r\n",
+                WifiClient_GetServerIp(), (unsigned)WifiClient_GetServerPort());
+        wt_send(buf);
+    }
 }
 
 /* ------------------------------------------------------------------ */

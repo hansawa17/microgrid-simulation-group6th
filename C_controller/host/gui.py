@@ -105,8 +105,8 @@ QPushButton[role="secondary"] {{ background: #eef3f8; color: #33516d; border: 1p
 QPushButton[role="secondary"]:hover {{ background: #e2ebf3; }}
 
 /* ---------- 输入控件 ---------- */
-QLineEdit, QComboBox, QDateTimeEdit {{ background: #ffffff; border: 1px solid #c9d8e6; border-radius: 5px; padding: 6px 8px; color: {COLORS['text']}; min-height: 20px; }}
-QLineEdit:focus, QComboBox:focus, QDateTimeEdit:focus {{ border: 1px solid {COLORS['primary']}; }}
+QLineEdit, QComboBox, QDateTimeEdit, QSpinBox {{ background: #ffffff; border: 1px solid #c9d8e6; border-radius: 5px; padding: 6px 8px; color: {COLORS['text']}; min-height: 20px; }}
+QLineEdit:focus, QComboBox:focus, QDateTimeEdit:focus, QSpinBox:focus {{ border: 1px solid {COLORS['primary']}; }}
 
 /* ---------- 表格 ---------- */
 QTableWidget {{ background: #ffffff; border: 1px solid #d5e2ed; gridline-color: #e4ecf3; color: #2c4359; alternate-background-color: #f7fafd; }}
@@ -346,6 +346,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dbStatusLabel = QtWidgets.QLabel("已连接 wind.db")
         self.dbStatusLabel.setProperty("state", "good")
         grid.addWidget(self.dbStatusLabel, 0, 8)
+
+        # A 服务器（STM32/Wi-Fi 作为 TCP 客户端）
+        grid.addWidget(QtWidgets.QLabel("A 服务器 (Wi-Fi)"), 1, 0)
+        self.wifiIpEdit = QtWidgets.QLineEdit(config.WIFI_DEFAULT_IP)
+        self.wifiIpEdit.setPlaceholderText("IP / 域名")
+        grid.addWidget(self.wifiIpEdit, 1, 1)
+        self.wifiPortSpin = QtWidgets.QSpinBox()
+        self.wifiPortSpin.setRange(1, 65535)
+        self.wifiPortSpin.setValue(config.WIFI_DEFAULT_PORT)
+        grid.addWidget(self.wifiPortSpin, 1, 2)
+        self.applyWifiButton = self._button("应用并连接", "success")
+        grid.addWidget(self.applyWifiButton, 1, 3)
+        self.wifiStatusLabel = QtWidgets.QLabel(
+            f"上电默认 {config.WIFI_DEFAULT_IP}:{config.WIFI_DEFAULT_PORT}")
+        self.wifiStatusLabel.setProperty("role", "source")
+        grid.addWidget(self.wifiStatusLabel, 1, 4, 1, 5)
 
         grid.setColumnStretch(1, 1)
         return card
@@ -817,6 +833,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 raise ValueError(f"参数“{config.PARAM_LABELS[key][0]}”不是有效数字")
         params["control_mode"] = 1 if self.controlModeCombo.currentIndex() == 0 else 0
         return params
+
+    def read_wifi_form(self):
+        ip = self.wifiIpEdit.text().strip()
+        if not ip:
+            raise ValueError("A 服务器地址不能为空")
+        port = int(self.wifiPortSpin.value())
+        return ip, port
+
+    def set_wifi_form(self, ip, port):
+        self.wifiIpEdit.setText(str(ip))
+        try:
+            self.wifiPortSpin.setValue(int(port))
+        except (ValueError, TypeError):
+            pass
 
     def update_kpi(self, wind_speed, power_available, power_set, power_actual):
         self.windSpeedValue.setText(f"{wind_speed:.1f}")
