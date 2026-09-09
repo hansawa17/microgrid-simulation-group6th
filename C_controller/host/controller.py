@@ -200,7 +200,7 @@ class Controller(QObject):
                            data["wind_target_kw"], data["wind_actual_kw"])
         self.ui.update_status(status=data["wind_running"], control_mode=data["control_mode"],
                               cycle=data["cycle"])
-        self.ui.set_comm_pills(pca_online=None, stm32_online=True)
+        self.ui.set_comm_pills(pca_online=bool(data.get("link_status", 0)), stm32_online=True)
         self.ui.append_curves(data)
 
     # ------------------------------------------------------------------ #

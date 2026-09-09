@@ -14,8 +14,9 @@
 
 void WifiClient_Init(void);       /* USART1 启动后调用 */
 void WifiClient_Task(void);       /* 主循环周期性调用（非阻塞） */
-int  WifiClient_IsOnline(void);   /* 是否已连上 A */
+int  WifiClient_IsOnline(void);   /* 是否已连上 A（TCP 已建立） */
 int  WifiClient_HasState(void);   /* 是否已收到 A 的 state（可读取其字段） */
+void WifiClient_RequestState(void); /* 请求 A 全量状态（每周期调用，保持连接活跃） */
 
 /* 上报风机动作（C 的启停许可 + 桨距目标 + 可用功率 + 稳态上限），仅在线时有效 */
 void WifiClient_SendWindAction(uint8_t wind_enable, float pitch_target_deg,

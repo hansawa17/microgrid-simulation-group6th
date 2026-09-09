@@ -63,22 +63,6 @@ typedef struct
 static WT_State_t wt;
 
 /* ------------------------------------------------------------------ */
-/*  简单伪随机数（LCG，不依赖 rand() 库，便于确定性调试）              */
-/* ------------------------------------------------------------------ */
-static uint32_t lcg_seed = 1u;
-
-static uint32_t wt_rand(void)
-{
-    lcg_seed = lcg_seed * 1103515245UL + 12345UL;
-    return (lcg_seed >> 16) & 0x7FFFu;      /* 0 .. 32767 */
-}
-
-static float wt_randf(float lo, float hi)
-{
-    return lo + (hi - lo) * ((float)wt_rand() / 32767.0f);
-}
-
-/* ------------------------------------------------------------------ */
 /*  串口接收行缓冲                                                     */
 /* ------------------------------------------------------------------ */
 static uint8_t  rx_byte;
@@ -133,12 +117,13 @@ static void wt_send_telemetry(void)
     wt_ftoa2(f5, wt.power_actual);
     wt_ftoa2(f6, wt.deg);
 
-    sprintf(buf, "$WIND,%lu,%s,%s,%s,%s,%s,%u,%s,%u\r\n",
+    sprintf(buf, "$WIND,%lu,%s,%s,%s,%s,%s,%u,%s,%u,%u\r\n",
             (unsigned long)wt.cycle,
             f1, f2, f3, f4, f5,
             (unsigned)wt.status,
             f6,
-            (unsigned)wt.control_mode);
+            (unsigned)wt.control_mode,
+            (unsigned)(WifiClient_IsOnline() ? 1u : 0u));
     wt_send(buf);
 }
 
@@ -216,50 +201,13 @@ static void wt_compute_operating_limit(void)
     }
 }
 
-/* 本地完整计算（WiFi 未连 A 时的兜底）：可用 + 启停 + 桨距 + 稳态上限 + 实际 */
-static void wt_compute_local(void)
-{
-    wt.power_available = wt_power_available();
-    wt_compute_status_pitch();
-    wt_compute_operating_limit();
-
-    if (wt.status == WT_STATUS_STOP)
-    {
-        wt.power_actual = 0.0f;
-    }
-    else if (wt.control_mode == WT_MODE_OPEN_LOOP)
-    {
-        wt.power_actual = wt.power_available;
-    }
-    else
-    {
-        wt.power_actual = (wt.power_set < wt.power_available) ? wt.power_set : wt.power_available;
-    }
-}
-
-/* ------------------------------------------------------------------ */
-/*  输入模拟（替代 Wi-Fi 来自 A 的数据）                                */
-/* ------------------------------------------------------------------ */
-static void wt_simulate_inputs(void)
-{
-    /* 风速：随机游走，覆盖 [0,30] m/s，可跨越切入/额定/切出全区间 */
-    wt.wind_speed += wt_randf(-1.5f, 1.5f);
-    if (wt.wind_speed < 0.0f)  wt.wind_speed = 0.0f;
-    if (wt.wind_speed > 30.0f) wt.wind_speed = 30.0f;
-
-    /* 有功设定：随机游走，范围 [0, wind_rated_power_kw] kW */
-    wt.power_set += wt_randf(-20.0f, 20.0f);
-    if (wt.power_set < 0.0f)              wt.power_set = 0.0f;
-    if (wt.power_set > wt.wind_rated_power_kw)    wt.power_set = wt.wind_rated_power_kw;
-}
-
 /* ------------------------------------------------------------------ */
 /*  复位默认值（不打断串口接收）                                       */
 /* ------------------------------------------------------------------ */
 static void wt_reset_defaults(void)
 {
-    wt.wind_speed      = 9.0f;
-    wt.power_set       = 60.0f;
+    wt.wind_speed      = 0.0f;
+    wt.power_set       = 0.0f;
     wt.control_mode    = WT_MODE_CLOSED_LOOP;
     wt.cut_in_speed_mps    = WT_DEFAULT_CUT_IN_SPEED_MPS;
     wt.rated_speed_mps     = WT_DEFAULT_RATED_SPEED_MPS;
@@ -326,8 +274,6 @@ static void wt_parse_line(char *line)
 void WindTurbine_Init(void)
 {
     wt_reset_defaults();
-    lcg_seed = HAL_GetTick() + 0x5A5A5A5AUL;
-    if (lcg_seed == 0u) lcg_seed = 1u;
     wt_send_banner();
 }
 
@@ -346,28 +292,31 @@ uint32_t WindTurbine_GetPeriodMs(void)
 
 void WindTurbine_PeriodicTask(void)
 {
-    if (WifiClient_IsOnline() && WifiClient_HasState())
+    /* 先清零：未连 A 或未收到 state 时，不本地生成任何风速/功率数据 */
+    wt.wind_speed = 0.0f;
+    wt.power_set  = 0.0f;
+    wt.power_available       = 0.0f;
+    wt.power_operating_limit = 0.0f;
+    wt.power_actual          = 0.0f;
+    wt.deg                   = 0.0f;
+    wt.status                = WT_STATUS_STOP;
+
+    if (WifiClient_IsOnline())
     {
-        /* 联调：从 A 读风速 + B 目标；可用/稳态上限/桨距由 C 计算 */
-        wt.wind_speed = WifiClient_GetWindSpeedMps();
-        wt.power_set  = WifiClient_GetWindTargetKw();
+        /* 每周期请求状态：保持连接活跃（A 的 idle timeout 是 10s）+ 拉取最新风速/目标/实际 */
+        WifiClient_RequestState();
 
-        wt.power_available = wt_power_available();   /* C 计算可用功率（三次方） */
-        wt_compute_status_pitch();                   /* 算启停 + 桨距（0-90°） */
-        wt_compute_operating_limit();                /* 算稳态上限 */
-
-        /* 发 wind_action：启停 + 桨距 + 可用功率 + 稳态上限 */
-        WifiClient_SendWindAction(wt.run_enable, wt.deg,
-                                  wt.power_available, wt.power_operating_limit);
-
-        /* 实际功率由 A 计算，回读 */
-        wt.power_actual = WifiClient_GetWindActualKw();
-    }
-    else
-    {
-        /* WiFi 未连 A 时：本地随机模拟（兜底） */
-        wt_simulate_inputs();
-        wt_compute_local();
+        if (WifiClient_HasState())
+        {
+            wt.wind_speed = WifiClient_GetWindSpeedMps();
+            wt.power_set  = WifiClient_GetWindTargetKw();
+            wt.power_available = wt_power_available();   /* C 计算可用功率（三次方） */
+            wt_compute_status_pitch();                   /* 算启停 + 桨距（0-90°） */
+            wt_compute_operating_limit();                /* 算稳态上限 */
+            WifiClient_SendWindAction(wt.run_enable, wt.deg,
+                                      wt.power_available, wt.power_operating_limit);
+            wt.power_actual = WifiClient_GetWindActualKw();
+        }
     }
 
     wt_send_telemetry();

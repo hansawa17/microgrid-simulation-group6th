@@ -336,6 +336,14 @@ int WifiClient_IsOnline(void)
     return (wf_state == WF_ONLINE) ? 1 : 0;
 }
 
+void WifiClient_RequestState(void)
+{
+    if (wf_state == WF_ONLINE)
+    {
+        wf_send_state_request();
+    }
+}
+
 int   WifiClient_HasState(void)                  { return (wf.got_state != 0u) ? 1 : 0; }
 float WifiClient_GetWindSpeedMps(void)           { return wf.wind_speed_mps; }
 float WifiClient_GetWindAvailableKw(void)        { return wf.wind_available_kw; }

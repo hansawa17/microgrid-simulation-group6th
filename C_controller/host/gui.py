@@ -227,7 +227,7 @@ class MainWindow(QtWidgets.QMainWindow):
         lay.addSpacing(6)
 
         # 三个状态胶囊
-        self.pcADot, self.pcAStatus = self._status_pill(lay, "PC-A 在线", COLORS["good"])
+        self.pcADot, self.pcAStatus = self._status_pill(lay, "A 在线", COLORS["good"])
         self.stmDot, self.stmStatus = self._status_pill(lay, "STM32 正常", COLORS["good"])
         self.pcCDot, self.pcCStatus = self._status_pill(lay, "PC-C 正常", COLORS["good"])
 
@@ -385,9 +385,9 @@ class MainWindow(QtWidgets.QMainWindow):
         status_defs = [
             ("风机状态",      "●  运行", "good", "status = 1 → 运行　　0 → 停止"),
             ("控制模式",      "●  闭环", "good", "0 → 开环　　1 → 闭环"),
-            ("PC-A 通信",     "●  在线", "good", "TCP 连接：正常　最后通信：14:25:03"),
+            ("A 通信",        "●  在线", "good", "STM32↔A 通信：正常　最后通信：14:25:03"),
             ("STM32 状态",    "●  正常", "good", "UART 通信：正常　最后数据：14:25:03"),
-            ("PC-C 自身状态", "●  正常", "good", "PC-A 在线　TCP 正常　UART 正常"),
+            ("PC-C 自身状态", "●  正常", "good", "A 在线　STM32↔A 正常　UART 正常"),
         ]
         state_row = QtWidgets.QHBoxLayout()
         state_row.setSpacing(14)
@@ -850,11 +850,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if pca_online is not None:
             color = COLORS["good"] if pca_online else COLORS["bad"]
             self.pcADot.setStyleSheet(f"background: {color}; border-radius: 5px;")
-            self.pcAStatus.setText("PC-A 在线" if pca_online else "PC-A 离线")
+            self.pcAStatus.setText("A 在线" if pca_online else "A 离线")
             self._set_state_label(self.pcACommValue, "good" if pca_online else "bad",
                                   "●  在线" if pca_online else "●  离线")
             self.statusDetails[2].setText(
-                f"TCP 连接：{'正常' if pca_online else '断开'}　最后通信：{now}")
+                f"STM32↔A 通信：{'正常' if pca_online else '断开'}　最后通信：{now}")
         if stm32_online is not None:
             color = COLORS["good"] if stm32_online else COLORS["bad"]
             self.stmDot.setStyleSheet(f"background: {color}; border-radius: 5px;")

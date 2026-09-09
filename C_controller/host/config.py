@@ -82,6 +82,7 @@ WIND_FIELDS = [
     "wind_running",
     "pitch_target_deg",
     "control_mode",
+    "link_status",
 ]
 
 # 参数标签 / 单位（GUI 表单与历史显示用）

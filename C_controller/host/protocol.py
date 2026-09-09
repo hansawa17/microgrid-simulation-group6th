@@ -66,7 +66,7 @@ def parse_frame(line):
         data = {}
         for name, raw in zip(WIND_FIELDS, fields):
             try:
-                if name in ("cycle", "control_mode"):
+                if name in ("cycle", "control_mode", "link_status"):
                     data[name] = int(float(raw))
                 elif name == "wind_running":
                     data[name] = bool(int(float(raw)))
