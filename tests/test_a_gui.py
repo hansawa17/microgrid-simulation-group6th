@@ -7,16 +7,18 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QProcess
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from A_simulator.config import load_config
 from A_simulator.gui.main_window import PARAMETER_NAMES, SimulatorWindow
 from A_simulator.repository import Repository
-from A_simulator.scenario import load_scenario_csv
+from A_simulator.scenario import load_scenario_csv, save_scenario_csv
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +70,13 @@ class SimulatorWindowTests(unittest.TestCase):
         self.assertEqual(self.window.bindCombo.currentText(), "127.0.0.1")
         self.assertEqual(self.window.portSpin.value(), 54321)
         self.assertEqual(len(self.window.kpi_labels), 8)
+
+        self.window._tcp_state_changed(QProcess.ProcessState.Running)
+        self.assertTrue(self.window.portSpin.isEnabled())
+        self.assertTrue(self.window.bindCombo.isEnabled())
+        previous_port = self.window.portSpin.value()
+        self.window.portSpin.stepUp()
+        self.assertEqual(self.window.portSpin.value(), previous_port + 1)
 
         self.window.refresh_parameters(force=True)
         self.assertEqual(self.window.parameterTable.rowCount(), 19)
@@ -191,10 +200,50 @@ class SimulatorWindowTests(unittest.TestCase):
                     "grid.db　异常",
                 )
                 self.assertFalse(window.start_button.isEnabled())
+                self.assertTrue(window.initialize_button.isEnabled())
+                self.assertEqual(window.initialize_button.text(), "修复 grid.db")
+
+                with patch.object(
+                    QMessageBox,
+                    "question",
+                    return_value=QMessageBox.StandardButton.Yes,
+                ):
+                    window.initialize_database()
+                self.app.processEvents()
+                self.assertEqual(Repository(corrupt_db).runtime()["status"], "ready")
+                self.assertEqual(window.dbPill.text(), "grid.db 正常")
+                self.assertEqual(len(list(corrupt_db.parent.glob("grid.db.*.bak"))), 1)
             finally:
                 window.close()
                 window.deleteLater()
                 self.app.processEvents()
+
+    def test_curve_edits_sync_source_csv_and_can_save_as(self) -> None:
+        source = Path(self.directory.name) / "editable.csv"
+        save_scenario_csv(source, load_scenario_csv(SCENARIO))
+        self.window._set_scenario(load_scenario_csv(source), source)
+
+        self.window.wind_editor._values[0] = 7.25
+        self.window.wind_editor.curveChanged.emit(self.window.wind_editor.values())
+        self.assertTrue(self.window._scenario_dirty)
+        self.window.wind_editor.editingFinished.emit()
+        self.app.processEvents()
+        self.assertEqual(load_scenario_csv(source).points[0].wind_speed_mps, 7.25)
+        self.assertFalse(self.window._scenario_dirty)
+
+        self.window.load_editor._values[0] = 88.5
+        self.window.load_editor.curveChanged.emit(self.window.load_editor.values())
+        destination_without_suffix = Path(self.directory.name) / "copy"
+        with patch.object(
+            QFileDialog,
+            "getSaveFileName",
+            return_value=(str(destination_without_suffix), "CSV (*.csv)"),
+        ):
+            self.window.save_csv()
+        destination = destination_without_suffix.with_suffix(".csv")
+        self.assertTrue(destination.is_file())
+        self.assertEqual(load_scenario_csv(destination).points[0].load_power_kw, 88.5)
+        self.assertEqual(self.window._scenario_source_path, destination.resolve())
 
     def test_runner_exit_recovers_running_database_to_paused(self) -> None:
         self.repository.set_status("start")

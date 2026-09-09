@@ -324,6 +324,56 @@ class RepositoryTests(unittest.TestCase):
                 19,
             )
 
+    def test_reinitialize_backs_up_existing_database(self):
+        original_session = self.repo.get_state().session_id
+        config = replace(load_config(CONFIG_PATH), end_s=10.0)
+
+        new_session, backup = self.repo.reinitialize(
+            config, load_scenario_csv(SCENARIO_PATH)
+        )
+
+        self.assertIsNotNone(backup)
+        assert backup is not None
+        self.assertTrue(backup.is_file())
+        self.assertEqual(Repository(backup).get_state().session_id, original_session)
+        self.assertNotEqual(new_session, original_session)
+        self.assertEqual(self.repo.runtime()["status"], "ready")
+
+    def test_failed_reinitialize_restores_existing_database(self):
+        original_session = self.repo.get_state().session_id
+        config = replace(load_config(CONFIG_PATH), end_s=10.0)
+        too_short = ScenarioCurve((ScenarioPoint(0.0, 5.0, 50.0),))
+
+        with self.assertRaises(ValueError):
+            self.repo.reinitialize(config, too_short)
+
+        self.assertEqual(self.repo.get_state().session_id, original_session)
+        self.assertEqual(list(self.db.parent.glob("grid.db.*.bak")), [])
+
+    def test_sidecar_backup_failure_does_not_delete_original_files(self):
+        original_session = self.repo.get_state().session_id
+        wal = Path(f"{self.db}-wal")
+        wal.write_bytes(b"locked wal placeholder")
+        original_replace = Path.replace
+
+        def fail_for_wal(path: Path, target: Path) -> Path:
+            if path == wal:
+                raise PermissionError("WAL is in use")
+            return original_replace(path, target)
+
+        with patch("A_simulator.repository.Path.replace", new=fail_for_wal):
+            with self.assertRaises(PermissionError):
+                self.repo.reinitialize(
+                    replace(load_config(CONFIG_PATH), end_s=10.0),
+                    load_scenario_csv(SCENARIO_PATH),
+                )
+
+        self.assertTrue(self.db.is_file())
+        self.assertEqual(wal.read_bytes(), b"locked wal placeholder")
+        wal.unlink()
+        self.assertEqual(self.repo.get_state().session_id, original_session)
+        self.assertEqual(list(self.db.parent.glob("grid.db.*.bak")), [])
+
     def test_new_session_safely_resets_controls_and_preserves_history(self):
         self.repo.update_a_parameters({"a_poll_s": 0.75})
         self.repo.set_status("start")

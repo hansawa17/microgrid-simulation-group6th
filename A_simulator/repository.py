@@ -523,6 +523,62 @@ class Repository:
             )
         return session_id
 
+    def reinitialize(
+        self, config: SimulationConfig, scenario: ScenarioCurve
+    ) -> tuple[str, Path | None]:
+        """Back up an existing database and create a fresh one safely.
+
+        The original database and its WAL sidecars are restored if creating the
+        replacement fails.  Callers must obtain explicit user confirmation
+        before using this operation on an existing database.
+        """
+
+        existing = [
+            path
+            for path in (
+                self.path,
+                Path(f"{self.path}-wal"),
+                Path(f"{self.path}-shm"),
+            )
+            if path.exists()
+        ]
+        if not existing:
+            return self.initialize(config, scenario), None
+
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup = self.path.with_name(f"{self.path.name}.{stamp}.bak")
+        counter = 1
+        while backup.exists():
+            backup = self.path.with_name(
+                f"{self.path.name}.{stamp}.{counter}.bak"
+            )
+            counter += 1
+
+        moved: list[tuple[Path, Path]] = []
+        replacement_started = False
+        try:
+            for original in existing:
+                suffix = original.name[len(self.path.name):]
+                destination = Path(f"{backup}{suffix}")
+                original.replace(destination)
+                moved.append((original, destination))
+            replacement_started = True
+            session_id = self.initialize(config, scenario)
+        except Exception:
+            if replacement_started:
+                for generated in (
+                    self.path,
+                    Path(f"{self.path}-wal"),
+                    Path(f"{self.path}-shm"),
+                ):
+                    if generated.exists():
+                        generated.unlink()
+            for original, destination in reversed(moved):
+                if destination.exists():
+                    destination.replace(original)
+            raise
+        return session_id, backup
+
     def _ensure_exists(self) -> None:
         if not self.path.is_file():
             raise FileNotFoundError(f"database not initialized: {self.path}")

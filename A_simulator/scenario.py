@@ -6,7 +6,9 @@ from bisect import bisect_right
 import csv
 from dataclasses import dataclass
 import math
+import os
 from pathlib import Path
+import tempfile
 
 
 @dataclass(frozen=True)
@@ -87,13 +89,29 @@ def load_scenario_csv(path: str | Path) -> ScenarioCurve:
 
 
 def save_scenario_csv(path: str | Path, scenario: ScenarioCurve) -> None:
-    """Write the canonical A scenario CSV using UTF-8 BOM for Excel."""
+    """Atomically write the canonical A scenario CSV using UTF-8 BOM."""
 
     path = Path(path)
-    with path.open("w", encoding="utf-8-sig", newline="") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(("step", "sim_time_s", "wind_speed_mps", "load_power_kw"))
-        for step, point in enumerate(scenario.points):
-            writer.writerow(
-                (step, point.sim_time_s, point.wind_speed_mps, point.load_power_kw)
-            )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8-sig",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary_path = Path(stream.name)
+            writer = csv.writer(stream)
+            writer.writerow(("step", "sim_time_s", "wind_speed_mps", "load_power_kw"))
+            for step, point in enumerate(scenario.points):
+                writer.writerow(
+                    (step, point.sim_time_s, point.wind_speed_mps, point.load_power_kw)
+                )
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()

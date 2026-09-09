@@ -348,6 +348,8 @@ class SimulatorWindow(QMainWindow):
         self.config: SimulationConfig = load_config(self.config_path)
         self.repository = Repository(self.db_path)
         self.scenario_path = scenario_path.resolve()
+        self._scenario_source_path: Path | None = None
+        self._scenario_dirty = False
         self._scenario_from_database = False
         self.scenario = self._initial_scenario(self.scenario_path)
         self._scenario_origin_utc = _utc_now()
@@ -368,6 +370,8 @@ class SimulatorWindow(QMainWindow):
         self._database_health = "待检测" if self.db_path.is_file() else "未初始化"
         self._bind_address = bind_address or self.config.server_bind
         self._port = self.config.server_port if port is None else int(port)
+        self._active_bind: str | None = None
+        self._active_port: int | None = None
         if not 1 <= self._port <= 65535:
             raise ValueError("port must be from 1 to 65535")
 
@@ -647,21 +651,25 @@ class SimulatorWindow(QMainWindow):
         self.portSpin = QSpinBox()
         self.portSpin.setRange(1, 65535)
         self.portSpin.setValue(self._port)
+        self.portSpin.setAccelerated(True)
+        self.portSpin.setToolTip("可随时修改；TCP 运行期间的新端口将在下次启动时生效")
         grid.addWidget(self.portSpin, 0, 6)
         self.tcp_button = self._button("启动 TCP 服务", "primary")
         grid.addWidget(self.tcp_button, 0, 7)
 
         self.open_button = self._button("加载 CSV", "secondary")
+        self.sync_button = self._button("保存当前 CSV", "secondary")
         self.save_button = self._button("另存 CSV", "secondary")
         self.initialize_button = self._button("初始化 grid.db", "success")
         grid.addWidget(self.open_button, 1, 0)
-        grid.addWidget(self.save_button, 1, 1)
-        grid.addWidget(self.initialize_button, 1, 2)
+        grid.addWidget(self.sync_button, 1, 1)
+        grid.addWidget(self.save_button, 1, 2)
+        grid.addWidget(self.initialize_button, 1, 3)
         self.source_label = QLabel()
         self.source_label.setProperty("role", "source")
         self.source_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.source_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        grid.addWidget(self.source_label, 1, 3, 1, 3)
+        grid.addWidget(self.source_label, 1, 4, 1, 2)
         self.dbPathLabel = QLabel(f"数据库：{self.db_path}")
         self.dbPathLabel.setProperty("role", "source")
         self.dbPathLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -1010,17 +1018,22 @@ class SimulatorWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         self.open_button.clicked.connect(self.open_csv)
+        self.sync_button.clicked.connect(self.save_csv_in_place)
         self.save_button.clicked.connect(self.save_csv)
         self.initialize_button.clicked.connect(self.initialize_database)
         self.time_slider.valueChanged.connect(self.update_preview)
-        self.wind_editor.curveChanged.connect(self.update_preview)
-        self.load_editor.curveChanged.connect(self.update_preview)
+        self.wind_editor.curveChanged.connect(self._scenario_changed)
+        self.load_editor.curveChanged.connect(self._scenario_changed)
+        self.wind_editor.editingFinished.connect(self._scenario_editing_finished)
+        self.load_editor.editingFinished.connect(self._scenario_editing_finished)
         self.start_button.clicked.connect(lambda: self.control_simulation("start"))
         self.pause_button.clicked.connect(lambda: self.control_simulation("pause"))
         self.resume_button.clicked.connect(lambda: self.control_simulation("resume"))
         self.stop_button.clicked.connect(lambda: self.control_simulation("stop"))
         self.new_session_button.clicked.connect(self.create_new_session)
         self.tcp_button.clicked.connect(self.toggle_tcp_server)
+        self.bindCombo.currentTextChanged.connect(self._update_communication_summary)
+        self.portSpin.valueChanged.connect(self._update_communication_summary)
         self.chartModeGroup.idClicked.connect(self.chartStack.setCurrentIndex)
         self.refreshParametersButton.clicked.connect(lambda: self.refresh_parameters(force=True))
         self.saveParametersButton.clicked.connect(self.save_a_parameters)
@@ -1082,6 +1095,8 @@ class SimulatorWindow(QMainWindow):
     def _set_scenario(self, scenario: ScenarioCurve, source_path: Path | None) -> None:
         self.scenario = scenario
         self._scenario_origin_utc = _utc_now()
+        self._scenario_source_path = source_path.resolve() if source_path else None
+        self._scenario_dirty = False
         if source_path is not None:
             self.scenario_path = source_path.resolve()
         times = [point.sim_time_s for point in scenario.points]
@@ -1094,13 +1109,22 @@ class SimulatorWindow(QMainWindow):
         self.load_editor.set_time_labels(utc_labels)
         self.time_slider.setRange(0, len(times) - 1)
         self.time_slider.setValue(0)
-        if source_path:
-            self.source_label.setText(f"场景：{self.scenario_path.name}")
-            self.source_label.setToolTip(str(self.scenario_path))
-        else:
-            self.source_label.setText("场景：当前 grid.db 快照")
-            self.source_label.setToolTip("场景点来自当前 grid.db")
+        self._update_scenario_source_label()
         self.update_preview()
+
+    def _update_scenario_source_label(self) -> None:
+        if self._scenario_source_path is not None:
+            dirty = "（待同步）" if self._scenario_dirty else ""
+            self.source_label.setText(
+                f"场景：{self._scenario_source_path.name}{dirty}"
+            )
+            self.source_label.setToolTip(str(self._scenario_source_path))
+            self.sync_button.setEnabled(True)
+        else:
+            dirty = "（已修改，请另存 CSV）" if self._scenario_dirty else ""
+            self.source_label.setText(f"场景：当前 grid.db 快照{dirty}")
+            self.source_label.setToolTip("场景点来自当前 grid.db；修改后请另存为 CSV")
+            self.sync_button.setEnabled(False)
 
     def _scenario_from_editors(self) -> ScenarioCurve:
         return ScenarioCurve(tuple(
@@ -1109,6 +1133,45 @@ class SimulatorWindow(QMainWindow):
                 self.wind_editor.times_s(), self.wind_editor.values(), self.load_editor.values()
             )
         ))
+
+    def _scenario_changed(self, *_unused) -> None:
+        self.scenario = self._scenario_from_editors()
+        self._scenario_dirty = True
+        self._update_scenario_source_label()
+        self.update_preview()
+
+    def _write_scenario_csv(self, path: Path, *, message: str) -> None:
+        scenario = self._scenario_from_editors()
+        save_scenario_csv(path, scenario)
+        self.scenario = scenario
+        self.scenario_path = path.resolve()
+        self._scenario_source_path = self.scenario_path
+        self._scenario_dirty = False
+        self._update_scenario_source_label()
+        self.statusBar().showMessage(message, 4000)
+
+    def _scenario_editing_finished(self) -> None:
+        if self._scenario_source_path is None or not self._scenario_dirty:
+            return
+        try:
+            self._write_scenario_csv(
+                self._scenario_source_path,
+                message="曲线修改已同步到当前 CSV",
+            )
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "CSV 同步失败", str(error))
+
+    def save_csv_in_place(self) -> None:
+        if self._scenario_source_path is None:
+            self.save_csv()
+            return
+        try:
+            self._write_scenario_csv(
+                self._scenario_source_path,
+                message="当前 CSV 已保存",
+            )
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "CSV 保存失败", str(error))
 
     def open_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "加载 A 场景 CSV", str(self.scenario_path.parent), "CSV (*.csv)")
@@ -1126,26 +1189,48 @@ class SimulatorWindow(QMainWindow):
             QMessageBox.critical(self, "CSV 加载失败", str(error))
 
     def save_csv(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "另存 A 场景 CSV", str(self.scenario_path), "CSV (*.csv)")
+        suggested = self._scenario_source_path or self.scenario_path
+        path, _ = QFileDialog.getSaveFileName(self, "另存 A 场景 CSV", str(suggested), "CSV (*.csv)")
         if not path:
             return
         try:
-            save_scenario_csv(path, self._scenario_from_editors())
-            self.scenario_path = Path(path).resolve()
-            self.source_label.setText(f"场景：{self.scenario_path.name}")
-            self.source_label.setToolTip(str(self.scenario_path))
-            self.statusBar().showMessage("CSV 已保存", 4000)
+            destination = Path(path)
+            if destination.suffix.lower() != ".csv":
+                destination = destination.with_suffix(".csv")
+            self._write_scenario_csv(destination, message="CSV 已另存")
         except (OSError, ValueError) as error:
             QMessageBox.critical(self, "CSV 保存失败", str(error))
 
     def initialize_database(self) -> None:
+        if any(
+            process.state() != QProcess.ProcessState.NotRunning
+            for process in (self._runner, self._tcp_server)
+        ):
+            QMessageBox.warning(self, "初始化失败", "请先停止仿真和 TCP 服务")
+            return
         try:
-            self.repository.initialize(self.config, self._scenario_from_editors())
+            backup: Path | None = None
+            if self.db_path.exists():
+                answer = QMessageBox.question(
+                    self,
+                    "重新初始化 grid.db",
+                    "现有数据库会先备份，再用当前曲线创建新的 grid.db。是否继续？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                _session_id, backup = self.repository.reinitialize(
+                    self.config, self._scenario_from_editors()
+                )
+            else:
+                self.repository.initialize(self.config, self._scenario_from_editors())
             self._append_ui_event("INFO", "数据库", f"初始化完成：{self.db_path}")
-            self.statusBar().showMessage("grid.db 初始化完成", 4000)
+            detail = f"；原库备份：{backup.name}" if backup else ""
+            self.statusBar().showMessage(f"grid.db 初始化完成{detail}", 7000)
             self.refresh_state()
-        except (FileExistsError, OSError, ValueError, sqlite3.Error) as error:
-            QMessageBox.critical(self, "初始化失败", f"{error}\n\n为保护已有运行数据，本界面不会覆盖现有数据库。")
+        except (FileExistsError, OSError, RuntimeError, ValueError, sqlite3.Error) as error:
+            QMessageBox.critical(self, "初始化失败", str(error))
 
     def update_preview(self, *_unused) -> None:
         times = self.wind_editor.times_s()
@@ -1215,6 +1300,8 @@ class SimulatorWindow(QMainWindow):
             return
         port = self.portSpin.value()
         self._tcp_server.setWorkingDirectory(str(ROOT_DIR))
+        self._active_bind = bind
+        self._active_port = port
         self._tcp_server.start(
             sys.executable,
             [
@@ -1233,8 +1320,13 @@ class SimulatorWindow(QMainWindow):
         running = state != QProcess.ProcessState.NotRunning
         self.tcp_button.setText("停止 TCP 服务" if running else "启动 TCP 服务")
         self._set_button_role(self.tcp_button, "danger" if running else "primary")
-        self.bindCombo.setEnabled(not running)
-        self.portSpin.setEnabled(not running)
+        # Endpoint inputs remain editable while running.  Changes are retained
+        # for the next start instead of presenting disabled spin buttons.
+        self.bindCombo.setEnabled(True)
+        self.portSpin.setEnabled(True)
+        if not running:
+            self._active_bind = None
+            self._active_port = None
         self._set_pill(
             self.tcpDot, self.tcpPill,
             "TCP 运行" if running else "TCP 停止",
@@ -1324,9 +1416,11 @@ class SimulatorWindow(QMainWindow):
             self._set_pill(self.dbDot, self.dbPill, "grid.db 未连接", COLORS["warn"])
             self._set_control_buttons(None)
             self.initialize_button.setEnabled(True)
+            self.initialize_button.setText("初始化 grid.db")
             self.refresh_parameters()
             return
-        self.initialize_button.setEnabled(False)
+        self.initialize_button.setEnabled(True)
+        self.initialize_button.setText("重新初始化 grid.db")
         try:
             runtime = self.repository.runtime()
             state = self.repository.get_state()
@@ -1337,6 +1431,8 @@ class SimulatorWindow(QMainWindow):
             self.runtime_detail.setText(f"数据库读取失败：{error}")
             self._set_pill(self.dbDot, self.dbPill, "grid.db 异常", COLORS["bad"])
             self._set_control_buttons(None)
+            self.initialize_button.setEnabled(True)
+            self.initialize_button.setText("修复 grid.db")
             return
 
         status = str(runtime["status"])
@@ -1833,7 +1929,15 @@ class SimulatorWindow(QMainWindow):
         port = self.portSpin.value()
         running = self._tcp_server.state() != QProcess.ProcessState.NotRunning
         self.communicationLabels["local"].setText(self.localIpEdit.text())
-        self.communicationLabels["endpoint"].setText(f"{bind}:{port}　{'运行' if running else '停止'}")
+        if running and self._active_bind is not None and self._active_port is not None:
+            active = f"{self._active_bind}:{self._active_port}　运行"
+            pending = ""
+            if (bind, port) != (self._active_bind, self._active_port):
+                pending = f"；待下次启动应用 {bind}:{port}"
+            endpoint = active + pending
+        else:
+            endpoint = f"{bind}:{port}　停止"
+        self.communicationLabels["endpoint"].setText(endpoint)
         self.communicationLabels["database"].setText(
             f"{self.db_path.name}　{self._database_health}"
         )
