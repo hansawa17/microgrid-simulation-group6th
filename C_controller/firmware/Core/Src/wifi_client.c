@@ -270,6 +270,8 @@ void WifiClient_Task(void)
         {
             Esp8266_SendCmd("ATE0");          /* 关回显 */
             Esp8266_SendCmd("AT+CWMODE=1");   /* STA 模式 */
+            Esp8266_SendCmd("AT+CIPMUX=0");   /* 单连接（+IPD,<len>: 格式，匹配 AT+CIPSTART 语法） */
+            Esp8266_SendCmd("AT+CIPMODE=0");  /* 普通模式（非透传，AT+CIPSEND=<len> 流程） */
             wf_enter(WF_JOIN_AP);
         }
         else if (HAL_GetTick() - wf_state_tick > 3000u)

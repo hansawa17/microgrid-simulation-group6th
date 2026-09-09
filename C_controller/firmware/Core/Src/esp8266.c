@@ -127,19 +127,20 @@ uint32_t Esp8266_Poll(void)
 
     while (esp_stream_len > 0u)
     {
-        /* 1) +IPD,<id>,<len>:<data> */
+        /* 1) +IPD：CIPMUX=0 是 +IPD,<len>:<data>；CIPMUX=1 是 +IPD,<id>,<len>:<data> */
         if (esp_stream_len >= 5u && memcmp(esp_stream, "+IPD,", 5) == 0)
         {
             uint16_t colon = 5u;
             while (colon < esp_stream_len && esp_stream[colon] != ':') colon++;
             if (colon >= esp_stream_len) break;                  /* 等更多字节 */
 
-            uint16_t last_comma = 5u;
+            /* len 起始：CIPMUX=0 时是第 5 字节；CIPMUX=1 时是最后一个逗号之后 */
+            uint16_t len_start = 5u;
             for (uint16_t k = 5u; k < colon; k++)
-                if (esp_stream[k] == ',') last_comma = k;
+                if (esp_stream[k] == ',') len_start = k + 1u;
 
             uint16_t len = 0u;
-            for (uint16_t k = last_comma + 1u; k < colon; k++)
+            for (uint16_t k = len_start; k < colon; k++)
                 len = len * 10u + (uint16_t)(esp_stream[k] - '0');
 
             if (esp_stream_len < colon + 1u + len) break;         /* 数据未到齐 */
@@ -149,20 +150,21 @@ uint32_t Esp8266_Poll(void)
             continue;
         }
 
-        /* 2) 普通行（以 \n 结尾） */
+        /* 2) CIPSEND 的裸 '>' 提示符（可能不带换行） */
+        if (esp_stream[0] == '>')
+        {
+            ev |= ESP_EVT_PROMPT;
+            esp_consume(1u);
+            continue;
+        }
+
+        /* 3) 普通行（以 \n 结尾） */
         uint16_t nl = 0u;
         while (nl < esp_stream_len && esp_stream[nl] != '\n') nl++;
         if (nl >= esp_stream_len) break;                          /* 等更多字节 */
 
         ev |= esp_handle_line((const char *)esp_stream, nl);
         esp_consume(nl + 1u);
-
-        /* 3) CIPSEND 的裸 '>' 提示符（紧随行后，无换行） */
-        if (esp_stream_len > 0u && esp_stream[0] == '>')
-        {
-            ev |= ESP_EVT_PROMPT;
-            esp_consume(1u);
-        }
     }
 
     return ev;
