@@ -686,7 +686,8 @@ class SimulatorWindow(QMainWindow):
         controls.setContentsMargins(16, 10, 16, 10)
         controls.setSpacing(8)
         controls.addWidget(QLabel("仿真控制"))
-        self.start_button = self._button("▶  启动", "success")
+        self.start_button = self._button("▶  启动（含 TCP）", "success")
+        self.start_button.setToolTip("启动仿真时自动启动上方配置的 A TCP 监听服务")
         self.pause_button = self._button("Ⅱ  暂停", "secondary")
         self.resume_button = self._button("▶  继续", "primary")
         self.stop_button = self._button("■  停止", "danger")
@@ -1252,6 +1253,8 @@ class SimulatorWindow(QMainWindow):
 
     def control_simulation(self, action: str) -> None:
         try:
+            if action in {"start", "resume"} and not self._ensure_tcp_server():
+                return
             status = self.repository.set_status(action)
             if action in {"start", "resume"}:
                 self._ensure_runner()
@@ -1283,21 +1286,27 @@ class SimulatorWindow(QMainWindow):
             # the GUI responsive and escalate to kill only if it is still alive.
             QTimer.singleShot(1200, self._force_stop_tcp)
             return
+        self._ensure_tcp_server()
+
+    def _ensure_tcp_server(self) -> bool:
+        """Start A's TCP child when needed and report whether startup was accepted."""
+        if self._tcp_server.state() != QProcess.ProcessState.NotRunning:
+            return True
         if not self.db_path.is_file():
             QMessageBox.warning(self, "TCP 服务", "请先初始化 grid.db")
-            return
+            return False
         try:
             self.repository.runtime()
         except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
             self._database_health = "异常"
             self._update_communication_summary()
             QMessageBox.warning(self, "TCP 服务", f"grid.db 无法使用：{error}")
-            return
+            return False
         self._database_health = "正常"
         bind = self.bindCombo.currentText().strip()
         if not bind:
             QMessageBox.warning(self, "TCP 服务", "监听地址不能为空")
-            return
+            return False
         port = self.portSpin.value()
         self._tcp_server.setWorkingDirectory(str(ROOT_DIR))
         self._active_bind = bind
@@ -1310,6 +1319,7 @@ class SimulatorWindow(QMainWindow):
             ],
         )
         self._append_ui_event("INFO", "TCP", f"启动监听 {bind}:{port}")
+        return True
 
     def _force_stop_tcp(self) -> None:
         if self._tcp_server.state() != QProcess.ProcessState.NotRunning:

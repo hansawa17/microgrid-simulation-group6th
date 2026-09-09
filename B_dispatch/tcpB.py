@@ -232,6 +232,7 @@ class EMSTcpClient:
         self._uncertain_dispatch_seq: int | None = None
         self._last_state_request_monotonic = 0.0
         self._pending_state_request_started_at: float | None = None
+        self._received_state_on_connection = False
         self.session_id: str | None = None
         self.latest_state: GridState | None = None
         self.needs_full_sync = True
@@ -253,6 +254,7 @@ class EMSTcpClient:
         self._uncertain_dispatch_seq = None
         self._last_state_request_monotonic = 0.0
         self._pending_state_request_started_at = None
+        self._received_state_on_connection = False
         self.needs_full_sync = True
         self.request_state(full=True)
 
@@ -375,7 +377,13 @@ class EMSTcpClient:
             self.close()
             raise
         if not data:
+            received_state = self._received_state_on_connection
             self.close()
+            if not received_state:
+                raise ConnectionError(
+                    "TCP endpoint closed before A returned its first state; "
+                    "check that A TCP service is running and the tunnel backend port matches A"
+                )
             raise ConnectionError("A closed the TCP connection")
         return self.receive(data)
 
@@ -408,6 +416,7 @@ class EMSTcpClient:
             self._last_incoming_seq = seq
             if message["type"] == "state":
                 state = self._parse_state(message)
+                self._received_state_on_connection = True
                 if self.session_id is not None and state.session_id != self.session_id:
                     self.latest_state = None
                     self.session_id = state.session_id

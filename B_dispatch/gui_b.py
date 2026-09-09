@@ -396,6 +396,8 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self._set_connecting_state(f'正在连接 A（第 {self._reconnect_attempt + 1} 次）')
         self.log(f'尝试连接 A：{host}:{port}（建连超时 5 s）')
+        if host in {'127.0.0.1', 'localhost', '::1'}:
+            self.log('提示：回环地址只适用于 A 与 B 在同一台电脑；跨电脑请填写 A 的局域网 IP 或公网隧道地址')
 
         def connect_in_background() -> None:
             error: Exception | None = None

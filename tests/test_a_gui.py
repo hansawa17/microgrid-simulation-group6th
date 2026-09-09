@@ -95,6 +95,25 @@ class SimulatorWindowTests(unittest.TestCase):
         )
         self.assertIn("wind_rated_power_kw", PARAMETER_NAMES)
 
+    def test_starting_simulation_also_ensures_tcp_service(self) -> None:
+        with (
+            patch.object(self.window, "_ensure_tcp_server", return_value=True) as ensure_tcp,
+            patch.object(self.window, "_ensure_runner") as ensure_runner,
+        ):
+            self.window.control_simulation("start")
+        ensure_tcp.assert_called_once_with()
+        ensure_runner.assert_called_once_with()
+        self.assertEqual(self.repository.runtime()["status"], "running")
+
+    def test_simulation_does_not_start_when_tcp_startup_is_rejected(self) -> None:
+        with (
+            patch.object(self.window, "_ensure_tcp_server", return_value=False),
+            patch.object(self.window.repository, "set_status") as set_status,
+        ):
+            self.window.control_simulation("start")
+        set_status.assert_not_called()
+        self.assertEqual(self.repository.runtime()["status"], "ready")
+
     def test_local_parameter_edit_and_remote_read_only_sync(self) -> None:
         self.window.refresh_parameters(force=True)
         editor = self.window._parameter_editors["a_poll_s"]

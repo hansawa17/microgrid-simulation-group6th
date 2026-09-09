@@ -282,9 +282,17 @@ class TcpBTests(unittest.TestCase):
         fake = FakeSocket(recv_data=b"")
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
         client.connect()
-        with self.assertRaises(ConnectionError):
+        with self.assertRaisesRegex(ConnectionError, "before A returned its first state"):
             client.receive_once()
         self.assertFalse(client.connected)
+
+    def test_eof_after_state_uses_normal_disconnect_message(self):
+        fake = FakeSocket([encode_frame(state_message()), b""])
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
+        client.connect()
+        client.receive_once()
+        with self.assertRaisesRegex(ConnectionError, "A closed the TCP connection"):
+            client.receive_once()
 
     def test_client_rejects_zero_bind_address(self):
         with self.assertRaises(ValueError):
