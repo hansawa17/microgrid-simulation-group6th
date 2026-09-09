@@ -6,8 +6,7 @@ It evaluates data already persisted by B/A and is therefore safe to use from the
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-import sqlite3
+from datetime import datetime
 from typing import Optional
 
 
@@ -38,12 +37,9 @@ class EvaluationResult:
 
     @property
     def grade(self) -> str:
-        if self.overall_score >= 90:
-            return "优秀"
-        if self.overall_score >= 80:
-            return "良好"
-        if self.overall_score >= 70:
-            return "合格"
+        if self.overall_score >= 90: return "优秀"
+        if self.overall_score >= 80: return "良好"
+        if self.overall_score >= 70: return "合格"
         return "需改进"
 
 
@@ -80,8 +76,7 @@ def _score_tracking(error: float) -> float:
 
 
 def _score_response(success: float, avg_ms: Optional[float]) -> float:
-    if avg_ms is None:
-        return success
+    if avg_ms is None: return success
     latency = 100.0 if avg_ms <= 100 else 90.0 if avg_ms <= 300 else 75.0 if avg_ms <= 1000 else 50.0
     return 0.7 * success + 0.3 * latency
 
@@ -99,20 +94,20 @@ def evaluate_repository(repo, period: str = "5m") -> EvaluationResult:
             commands = conn.execute("SELECT * FROM dispatch_commands ORDER BY id").fetchall()
             label = "全部历史"
         else:
-            states = conn.execute("SELECT * FROM state_history WHERE received_at_utc >= datetime('now', ?) ORDER BY id", (f"-{minutes} minutes",)).fetchall()
-            commands = conn.execute("SELECT * FROM dispatch_commands WHERE created_at_utc >= datetime('now', ?) ORDER BY id", (f"-{minutes} minutes",)).fetchall()
+            states = conn.execute("SELECT * FROM state_history WHERE julianday(received_at_utc) >= julianday('now', ?) ORDER BY id", (f"-{minutes} minutes",)).fetchall()
+            commands = conn.execute("SELECT * FROM dispatch_commands WHERE julianday(created_at_utc) >= julianday('now', ?) ORDER BY id", (f"-{minutes} minutes",)).fetchall()
             label = f"最近 {minutes} 分钟"
 
         sample_count = len(states)
         if states:
             balance_errors = [abs(float(r['load_power_kw']) - float(r['wind_actual_kw']) - float(r['diesel_actual_kw'])) for r in states]
             avg_balance = sum(balance_errors) / len(balance_errors)
-            available = [float(r['wind_available_kw']) for r in states if float(r['wind_available_kw']) > 1e-9]
-            wind_util = (sum(float(r['wind_actual_kw']) for r in states) / sum(available) * 100.0) if available else 0.0
+            available_total = sum(float(r['wind_available_kw']) for r in states)
+            wind_util = sum(float(r['wind_actual_kw']) for r in states) / available_total * 100.0 if available_total > 1e-9 else 0.0
             load_total = sum(float(r['load_power_kw']) for r in states)
-            diesel_share = (sum(float(r['diesel_actual_kw']) for r in states) / load_total * 100.0) if load_total > 1e-9 else 0.0
-            unserved = sum(max(float(r['load_power_kw']) - float(r['wind_actual_kw']) - float(r['diesel_actual_kw']), 0.0) for r in states) / max(1, len(states))
-            surplus = sum(max(float(r['wind_actual_kw']) + float(r['diesel_actual_kw']) - float(r['load_power_kw']), 0.0) for r in states) / max(1, len(states))
+            diesel_share = sum(float(r['diesel_actual_kw']) for r in states) / load_total * 100.0 if load_total > 1e-9 else 0.0
+            unserved = sum(max(float(r['load_power_kw']) - float(r['wind_actual_kw']) - float(r['diesel_actual_kw']), 0.0) for r in states) / len(states)
+            surplus = sum(max(float(r['wind_actual_kw']) + float(r['diesel_actual_kw']) - float(r['load_power_kw']), 0.0) for r in states) / len(states)
             violations = sum(1 for r in states if float(r['wind_actual_kw']) > float(r['wind_operating_limit_kw']) + 1e-6 or float(r['wind_operating_limit_kw']) > float(r['wind_available_kw']) + 1e-6)
         else:
             avg_balance = wind_util = diesel_share = unserved = surplus = 0.0
@@ -121,32 +116,30 @@ def evaluate_repository(repo, period: str = "5m") -> EvaluationResult:
         ack_rows = [r for r in commands if r['ack_accepted'] is not None]
         accepted = sum(1 for r in ack_rows if int(r['ack_accepted']) == 1)
         success = accepted * 100.0 / len(ack_rows) if ack_rows else 0.0
-        latencies=[]
+        latencies = []
         for r in ack_rows:
             if r['ack_received_at_utc'] and r['created_at_utc']:
                 try:
-                    a=datetime.fromisoformat(str(r['created_at_utc']).replace('Z','+00:00'))
-                    b=datetime.fromisoformat(str(r['ack_received_at_utc']).replace('Z','+00:00'))
-                    latencies.append(max(0.0,(b-a).total_seconds()*1000.0))
-                except ValueError: pass
-        avg_ms=sum(latencies)/len(latencies) if latencies else None
-        max_ms=max(latencies) if latencies else None
+                    a = datetime.fromisoformat(str(r['created_at_utc']).replace('Z', '+00:00'))
+                    b = datetime.fromisoformat(str(r['ack_received_at_utc']).replace('Z', '+00:00'))
+                    latencies.append(max(0.0, (b - a).total_seconds() * 1000.0))
+                except ValueError:
+                    pass
+        avg_ms = sum(latencies) / len(latencies) if latencies else None
+        max_ms = max(latencies) if latencies else None
 
         tracking_rows = conn.execute("""SELECT c.wind_target_kw,c.diesel_target_kw,s.wind_actual_kw,s.diesel_actual_kw
             FROM dispatch_commands c JOIN state_history s ON s.session_id=c.session_id AND s.step=c.step
             WHERE c.ack_accepted=1""").fetchall()
-        if tracking_rows:
-            tracking_error=sum((abs(float(r['wind_target_kw'])-float(r['wind_actual_kw'])) + abs(float(r['diesel_target_kw'])-float(r['diesel_actual_kw'])))/2 for r in tracking_rows)/len(tracking_rows)
-        else:
-            tracking_error=0.0
+        tracking_error = (sum((abs(float(r['wind_target_kw']) - float(r['wind_actual_kw'])) + abs(float(r['diesel_target_kw']) - float(r['diesel_actual_kw']))) / 2 for r in tracking_rows) / len(tracking_rows)) if tracking_rows else 0.0
 
-    balance_score=_score_balance(avg_balance)
-    wind_score=_score_wind(wind_util)
-    diesel_score=_score_diesel(diesel_share)
-    constraint_score=100.0 if violations == 0 else max(0.0, 100.0-10.0*violations)
-    tracking_score=_score_tracking(tracking_error)
-    response_score=_score_response(success,avg_ms)
-    ems_score=0.15*diesel_score+0.15*constraint_score+0.10*tracking_score+0.10*response_score+0.50*(0.5*balance_score+0.5*wind_score)
-    system_score=0.30*balance_score+0.20*wind_score+0.15*diesel_score+0.15*constraint_score+0.10*tracking_score+0.10*response_score
-    overall=0.5*ems_score+0.5*system_score
-    return EvaluationResult(label,sample_count,balance_score,wind_score,diesel_score,constraint_score,tracking_score,response_score,ems_score,system_score,overall,avg_balance,wind_util,diesel_share,violations,tracking_error,len(commands),success,avg_ms,max_ms,unserved,surplus)
+    balance_score = _score_balance(avg_balance)
+    wind_score = _score_wind(wind_util)
+    diesel_score = _score_diesel(diesel_share)
+    constraint_score = 100.0 if violations == 0 else max(0.0, 100.0 - 10.0 * violations)
+    tracking_score = _score_tracking(tracking_error)
+    response_score = _score_response(success, avg_ms)
+    ems_score = 0.15 * diesel_score + 0.15 * constraint_score + 0.10 * tracking_score + 0.10 * response_score + 0.50 * (0.5 * balance_score + 0.5 * wind_score)
+    system_score = 0.30 * balance_score + 0.20 * wind_score + 0.15 * diesel_score + 0.15 * constraint_score + 0.10 * tracking_score + 0.10 * response_score
+    overall = 0.5 * ems_score + 0.5 * system_score
+    return EvaluationResult(label, sample_count, balance_score, wind_score, diesel_score, constraint_score, tracking_score, response_score, ems_score, system_score, overall, avg_balance, wind_util, diesel_share, violations, tracking_error, len(commands), success, avg_ms, max_ms, unserved, surplus)
