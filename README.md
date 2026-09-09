@@ -83,6 +83,13 @@ B 的 TCP/服务文件统一使用 `*B` 后缀，避免和其他成员冲突。
 
 ## 开发时间节点 / 功能增量
 
+### 2026-09-09 · B Dispatch ACK 超时与连接状态修复
+
+- 定位到 B GUI 使用 `timeout_s=0.25`，而 `EMSTcpClient.send_dispatch()` 原先直接复用这个短 socket timeout 等待 A 的 ACK；A 已经收到 dispatch 后，只要处理超过 250 ms，B 就会错误进入 `DispatchDeliveryUnknown` 并主动关闭 TCP。
+- `B_dispatch/tcpB.py` 现在为 dispatch ACK 使用独立的至少 **2 s** 等待窗口，普通 state polling 仍可保持短 timeout，ACK 成功后恢复普通 polling timeout。
+- 保留 delivery-unknown 安全边界：真正超时仍禁止自动换新 seq 盲目重发。
+- 这同时解释并修复了“**A 端 dispatch 已更新、B 弹 ACK 错误并断连，但主页仍显示已连接**”这一现象的主要来源。
+
 ### 2026-09-08 · B GUI 手动调度等待最新状态后自动下发
 
 - 修复 `B_dispatch/gui_b.py` 点击“下发当前调度”时遇到未完成 `state_request` 直接失败的问题。
