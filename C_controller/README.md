@@ -71,6 +71,17 @@ C_controller/
 - SSID / 密码仍为固件编译期常量，真实值仅本地烧录、不提交；IP/端口默认值用占位符。
 - 验证范围：MCU↔PC 串口与 Wi-Fi↔A 链路已跑通；运行期改地址/端口重连为 PC 端代码检查，实机重连仍需验证。
 
+### 2026-09-10 · 参数设置运行期可调 + 只读实时展示
+
+- 修复「应用参数」后界面卡死：`database.py` 的 `Lock` 改为可重入 `RLock`，消除
+  `update_params` 内再调 `get_params` 的同线程死锁（连接 A 与本地仿真均受影响）。
+- 本地仿真参数运行期可调：`simulator.py` 的 `set_params` 增加数值转换与越界钳位，
+  切入/额定/切出风速、额定功率、最大顺桨角、控制周期、通信超时、控制模式均可在运行中
+  修改并即时生效；风速→功率的三次方曲线框架不变。
+- 新建本地仿真时继承数据库当前参数，不再退回默认值。
+- 「参数设置」页改为实时只读网格，展示风速/可用功率/运行上限/目标功率/实际功率/桨距角/
+  运行状态/A 链路/周期，均标注来源（A/B/C 计算）且不可修改。
+
 ## 尚未完成 / 待确认
 
 - **C 已对齐冻结参数**：额定 100 kW、三次曲线、桨距 0-90°；C 计算 `wind_available_kw`/
@@ -79,7 +90,9 @@ C_controller/
 - **串口协议未冻结**：`$WIND` 现为 9 个功率字段，仍需扩展 `session_id/step/sim_time_s/sampled_at_utc`。
 - 物理参数已统一（见 `docs/parameter-ownership.md`）：额定 100 kW、切入/额定/切出风速
   3/12/25 m/s、三次功率曲线、桨距 0-90 deg；这些是小组配置，不是课程原文指定数值。
-- 尚未用真实 ESP8266/STM32 验证上述 TCP 修复；当前代码检查和 PC 测试不等同于硬件联调。
+- **STM32 硬件接入调试与三机（A/B/C）主链条联调已完成**：状态/调度/动作数据传递暂时正常；
+  **异常情况排查（断线重连、超时、半帧/粘包、故障与保护、上电恢复）仍未完成**，尚不能以
+  主链条跑通替代异常场景验证。
 
 ## 快速运行（上位机）
 
@@ -97,14 +110,16 @@ python main.py
 - 无硬件冒烟（本阶段已通过）：串口帧解析、本地仿真（含 `wind_operating_limit_kw` 约束）、
   `wind.db` 建表/插入/查询、旧库自动迁移。
 - 场景覆盖：无风 / 适宜风速 / 额定区间 / 高风，STOP / START，开环 / 闭环。
-- 未做：A/B/C 实机 TCP/UART 联调；不以单元/冒烟测试替代真实硬件联调。
+- STM32 硬件接入调试与三机主链条联调已完成，数据传递正常；异常情况排查仍未完成，不以
+  单元/冒烟测试替代异常场景的硬件验证。
 
 ## 下一步（与 A/B 联调）
 
 1. **端口已统一到 5000**（C 固件已改，与 A/common 一致）；C 参数名已对齐 A 的 canonical 名
    （`cut_in_speed_mps/rated_speed_mps/cut_out_speed_mps/wind_rated_power_kw/pitch_feather_deg/c_control_s/c_timeout_s`）。
-2. STM32→A 实机联调：A 已解析 `wind_action` 四字段并据此算 `wind_actual_kw`（代码就绪），
-   C 侧也已按冻结职责计算并上报；跑通 state_request/state/wind_action/ack 全链路即可。
+2. （已完成）STM32→A 实机联调：A 已解析 `wind_action` 四字段并据此算 `wind_actual_kw`，
+   C 侧按冻结职责计算并上报；state_request/state/wind_action/ack 全链路已跑通。
+   **下一步转入异常情况排查**（断线重连、超时、半帧/粘包、故障与保护、上电恢复）。
 3. C 补 `parameter_update` 转发：A 已支持 `parameter_update`（C 参数回写），C 固件/上位机需把
    C 上位机编辑的风机参数经 STM32 转发给 A。
 4. 冻结并扩展 C 串口协议（补 `session_id/step/sim_time_s/sampled_at_utc`）。
