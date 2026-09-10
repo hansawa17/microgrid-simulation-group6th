@@ -3,16 +3,20 @@
 串口协议编解码 —— PC-C 上位机 <-> STM32 风机控制器（USART2）
 
 帧格式（ASCII，\\r\\n 结尾，字段以 , 分隔，无校验）：
-  MCU -> PC 遥测 :  $WIND,<cycle>,<wind_speed>,<power_available>,<power_set>,<power_actual>,<status>,<deg>,<control_mode>
+  MCU -> PC 遥测 :  $WIND,<cycle>,<wind_speed>,<power_available>,<power_operating_limit>,<power_set>,<power_actual>,<status>,<deg>,<control_mode>,<online>
   PC  -> MCU 参数:  $PARAM,<cut_in_speed_mps>,<rated_speed_mps>,<cut_out_speed_mps>,<wind_rated_power_kw>,<pitch_feather_deg>,<c_control_s>,<c_timeout_s>,<control_mode>
   PC  -> MCU 命令:  $CMD,START|STOP|RESET|AUTO|MANUAL
-  MCU -> PC  应答:  $ACK,<PARAM|CMD>,<0|1>
+  PC  -> MCU 网络:  $WIFI,<A host>,<A port> 或 $WIFI?
+  MCU -> PC  网络:  $WIFIGET,<A host>,<A port>
+  MCU -> PC  应答:  $ACK,<PARAM|CMD|WIFI>,<0|1>
 
 字段顺序以 config.PARAM_FIELDS / config.WIND_FIELDS 为准。
 
-线格式 8 字段顺序不变（与固件一致），Python 侧按 WIND_FIELDS 的位置映射为对齐 A/B 仓库的字段名：
-  wind_speed_mps / wind_available_kw / wind_target_kw / wind_actual_kw / wind_running / pitch_target_deg。
-wind_operating_limit_kw 不在线格式中，由本地 mock（simulator.py）额外补齐，联调后由 A 的 state 提供。
+$WIND 线格式与固件一致，Python 侧按 WIND_FIELDS 的位置映射为对齐 A/B 仓库的字段名：
+  wind_speed_mps / wind_available_kw / wind_operating_limit_kw / wind_target_kw /
+  wind_actual_kw / wind_running / pitch_target_deg / link_status。
+其中 wind_available_kw 与 wind_operating_limit_kw 由 C 计算，A 校验、存储并转发；
+wind_target_kw 来自 B，wind_actual_kw 来自 A。
 """
 
 from config import PARAM_FIELDS, WIND_FIELDS

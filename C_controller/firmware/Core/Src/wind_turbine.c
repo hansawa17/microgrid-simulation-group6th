@@ -50,7 +50,7 @@ typedef struct
 
     /* 计算输出 */
     float    power_available;        /* 可用功率 kW */
-    float    power_operating_limit;  /* 稳态运行上限 kW（联调后由 A 计算） */
+    float    power_operating_limit;  /* 稳态运行上限 kW（C 计算，A 校验并转发） */
     float    power_actual;           /* 实际功率 kW */
     float    deg;                    /* 桨距角   °  */
     uint8_t  status;                 /* 启停 0停止/1运行 */

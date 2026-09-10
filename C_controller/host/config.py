@@ -69,11 +69,11 @@ PARAM_FIELDS = [
     "control_mode",
 ]
 
-# 遥测帧（$WIND）中的字段顺序（与固件 wind_turbine.c 发送顺序一致，9 字段）。
+# 遥测帧（$WIND）中的字段顺序（与固件 wind_turbine.c 发送顺序一致，10 字段）。
 # Python 侧字段名已对齐 A/B 仓库 state.payload 命名（见 common/protocol.md）：
 #   wind_speed            -> wind_speed_mps
 #   power_available       -> wind_available_kw
-#   power_operating_limit -> wind_operating_limit_kw   （联调后由 A 计算）
+#   power_operating_limit -> wind_operating_limit_kw   （C 计算，A 校验并转发）
 #   power_set             -> wind_target_kw            （B 下发的调度目标）
 #   power_actual          -> wind_actual_kw            （A 计算）
 #   status                -> wind_running              （bool）

@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication
 
-from B_dispatch import gui_b
+from B_dispatch import gui_b, gui_b_legacy
 
 
 class FakeRepository:
@@ -68,8 +68,10 @@ class BGuiConnectionTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        repo_patch = patch.object(gui_b, "EMSRepository", FakeRepository)
-        client_patch = patch.object(gui_b, "EMSTcpClient", FakeClient)
+        # The enhanced GUI subclasses the transport/dispatch window kept in
+        # gui_b_legacy, so patch the module where those dependencies are used.
+        repo_patch = patch.object(gui_b_legacy, "EMSRepository", FakeRepository)
+        client_patch = patch.object(gui_b_legacy, "EMSTcpClient", FakeClient)
         self.addCleanup(repo_patch.stop)
         self.addCleanup(client_patch.stop)
         repo_patch.start()

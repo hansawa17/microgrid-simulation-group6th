@@ -55,7 +55,7 @@ C_controller/
 - 新增 `esp8266.c`（AT 驱动，USART1）与 `wifi_client.c`（JSON Lines 客户端，`source=C`）。
 - 连接流程：`AT → ATE0 → CWMODE=1 → CWJAP → CIPSTART → state_request(full=true) → ONLINE`，断线自动重连。
 - 联调时 STM32 读 A 的 `state`（风速 + B 目标），算可用功率/稳态上限/启停/桨距并发
-  `wind_action{wind_enable,pitch_target_deg,wind_available_kw,wind_operating_limit_kw}`；串口 `$WIND` 扩为 9 字段。
+  `wind_action{wind_enable,pitch_target_deg,wind_available_kw,wind_operating_limit_kw}`；串口 `$WIND` 扩为 10 字段（含 cycle 与链路状态）。
 - 已修复 ESP8266 单连接 `+IPD,<len>` 把三位长度漏掉首位的问题；收包改为 ISR/主循环环形缓冲，支持跨多次串口接收的 `+IPD` 载荷。
 - TCP 应用层按 `state_request → state → wind_action → ack` 单未决事务运行；`CIPSEND` 非阻塞等待提示符与 `SEND OK`，ACK 未知时保留同序号命令，重连先全量同步。
 - A 在 state 中返回 `next_command_seq`，STM32 据此恢复当前 A 会话的发送序号，避免 MCU 重启后被判为 `out_of_order`。
