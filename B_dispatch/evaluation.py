@@ -42,13 +42,30 @@ def evaluate_repository(repo,period:str="5m")->EvaluationResult:
    states=conn.execute("SELECT * FROM state_history ORDER BY id").fetchall(); commands=conn.execute("SELECT * FROM dispatch_commands ORDER BY id").fetchall(); label="全部历史"
   else:
    window=f"-{m} minutes"; states=conn.execute("SELECT * FROM state_history WHERE julianday(received_at_utc)>=julianday('now',?) ORDER BY id",(window,)).fetchall(); commands=conn.execute("SELECT * FROM dispatch_commands WHERE julianday(created_at_utc)>=julianday('now',?) ORDER BY id",(window,)).fetchall(); label=f"最近 {m} 分钟"
-  tracking_rows=conn.execute("SELECT c.wind_target_kw,c.diesel_target_kw,s.wind_actual_kw,s.diesel_actual_kw FROM dispatch_commands c JOIN state_history s ON s.session_id=c.session_id AND s.step=c.step WHERE c.ack_accepted=1").fetchall()
+  if period=="session":
+   tracking_rows=conn.execute("""SELECT c.wind_target_kw,c.diesel_target_kw,
+       (SELECT s.wind_actual_kw FROM state_history s WHERE s.session_id=c.session_id AND s.step>c.step ORDER BY s.step,s.id LIMIT 1) AS wind_actual_kw,
+       (SELECT s.diesel_actual_kw FROM state_history s WHERE s.session_id=c.session_id AND s.step>c.step ORDER BY s.step,s.id LIMIT 1) AS diesel_actual_kw
+       FROM dispatch_commands c
+       WHERE c.session_id=(SELECT session_id FROM current_state WHERE id=1) AND c.ack_accepted=1""").fetchall()
+  elif m is None:
+   tracking_rows=conn.execute("""SELECT c.wind_target_kw,c.diesel_target_kw,
+       (SELECT s.wind_actual_kw FROM state_history s WHERE s.session_id=c.session_id AND s.step>c.step ORDER BY s.step,s.id LIMIT 1) AS wind_actual_kw,
+       (SELECT s.diesel_actual_kw FROM state_history s WHERE s.session_id=c.session_id AND s.step>c.step ORDER BY s.step,s.id LIMIT 1) AS diesel_actual_kw
+       FROM dispatch_commands c WHERE c.ack_accepted=1""").fetchall()
+  else:
+   window=f"-{m} minutes"; tracking_rows=conn.execute("""SELECT c.wind_target_kw,c.diesel_target_kw,
+       (SELECT s.wind_actual_kw FROM state_history s WHERE s.session_id=c.session_id AND s.step>c.step ORDER BY s.step,s.id LIMIT 1) AS wind_actual_kw,
+       (SELECT s.diesel_actual_kw FROM state_history s WHERE s.session_id=c.session_id AND s.step>c.step ORDER BY s.step,s.id LIMIT 1) AS diesel_actual_kw
+       FROM dispatch_commands c
+       WHERE c.ack_accepted=1 AND julianday(c.created_at_utc)>=julianday('now',?)""",(window,)).fetchall()
+  valid_tracking=[r for r in tracking_rows if r['wind_actual_kw'] is not None and r['diesel_actual_kw'] is not None]
   if states:
    avg_balance=sum(abs(float(r['load_power_kw'])-float(r['wind_actual_kw'])-float(r['diesel_actual_kw'])) for r in states)/len(states); avail=sum(float(r['wind_available_kw']) for r in states); wind_util=(sum(float(r['wind_actual_kw']) for r in states)/avail*100 if avail>1e-9 else 0.0); load=sum(float(r['load_power_kw']) for r in states); diesel_share=(sum(float(r['diesel_actual_kw']) for r in states)/load*100 if load>1e-9 else 0.0)
    unserved=sum(max(float(r['load_power_kw'])-float(r['wind_actual_kw'])-float(r['diesel_actual_kw']),0.0) for r in states)/len(states); surplus=sum(max(float(r['wind_actual_kw'])+float(r['diesel_actual_kw'])-float(r['load_power_kw']),0.0) for r in states)/len(states)
    violations=sum(1 for r in states if float(r['wind_operating_limit_kw'])>float(r['wind_available_kw'])+1e-6 or float(r['wind_actual_kw'])>float(r['wind_operating_limit_kw'])+1e-6)
   else: avg_balance=wind_util=diesel_share=unserved=surplus=0.0; violations=0
-  tracking_error=(sum((abs(float(r['wind_target_kw'])-float(r['wind_actual_kw']))+abs(float(r['diesel_target_kw'])-float(r['diesel_actual_kw'])))/2 for r in tracking_rows)/len(tracking_rows)) if tracking_rows else 0.0
+  tracking_error=(sum((abs(float(r['wind_target_kw'])-float(r['wind_actual_kw']))+abs(float(r['diesel_target_kw'])-float(r['diesel_actual_kw'])))/2 for r in valid_tracking)/len(valid_tracking)) if valid_tracking else 0.0
   age=float(repo.get_runtime_config()['max_state_age_s'])
   exec_rows=[]
   exec_cmds=[r for r in commands if r['status']=='accepted' and (r['ack_accepted'] in (1,True))]
@@ -63,7 +80,6 @@ def evaluate_repository(repo,period:str="5m")->EvaluationResult:
  if exec_rows:
   exec_score=sum(float(x.total_score) for x in exec_rows if x.total_score is not None)/len(exec_rows); exec_verdict="pass" if exec_score>=70 else "needs_improvement"; exec_reason=f"{len(exec_rows)} 条完整 B→C→A 反馈，按小组评价规则汇总"
  else: exec_score=None; exec_verdict="insufficient_data"; exec_reason="无完整 B dispatch→C action→A 后续 state 反馈"
- # Keep the legacy card field, but make it the independent wind-execution result when available.
  system=exec_score if exec_score is not None else 0.0
  return EvaluationResult(label,len(states),b,w,d,c,t,ems,system,overall,avg_balance,wind_util,diesel_share,violations,tracking_error,len(commands),unserved,surplus,len(exec_rows),exec_score,exec_verdict,exec_reason)
 
