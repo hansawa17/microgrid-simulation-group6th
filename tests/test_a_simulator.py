@@ -546,6 +546,7 @@ class ProtocolTests(unittest.TestCase):
                                 "last_wind_action_seq", "last_wind_action_step",
                                 "wind_action_applied_at_utc",
                                 "next_command_seq",
+                                "parameters",
                             },
                         )
 
