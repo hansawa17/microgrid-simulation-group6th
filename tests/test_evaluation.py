@@ -2,19 +2,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from B_dispatch.evaluation import evaluate_repository
+from B_dispatch.evaluation import EVALUATION_WEIGHTS, evaluate_repository
 from B_dispatch.repository import EMSRepository
 
 
 class EvaluationTests(unittest.TestCase):
-    def test_empty_database_is_read_only_and_returns_result(self):
+    def test_empty_database_is_read_only_and_uses_five_item_weights(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = EMSRepository(Path(tmp) / "ems.db")
             repo.initialize()
             result = evaluate_repository(repo, "5m")
             self.assertEqual(result.sample_count, 0)
             self.assertEqual(result.constraint_violations, 0)
-            self.assertAlmostEqual(result.overall_score, 70.5)
+            self.assertEqual(result.dispatch_count, 0)
+            self.assertAlmostEqual(sum(EVALUATION_WEIGHTS.values()), 1.0)
+            self.assertAlmostEqual(result.overall_score, 85.0)
 
     def test_evaluation_reads_existing_state_without_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -45,6 +47,7 @@ class EvaluationTests(unittest.TestCase):
             self.assertEqual(result.constraint_violations, 0)
             self.assertAlmostEqual(result.wind_utilization_pct, 100.0)
             self.assertAlmostEqual(result.unserved_kw, 0.0)
+            self.assertEqual(result.dispatch_count, 0)
 
 
 if __name__ == "__main__":
