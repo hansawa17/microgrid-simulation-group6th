@@ -607,18 +607,45 @@ class MainWindow(QtWidgets.QMainWindow):
 
         v.addWidget(card)
 
-        # 只读数据说明
+        # 实时只读数据（来源 A / B / C 计算，不可修改，仅显示）
         ro = self._frame()
         ro.setProperty("role", "card")
         rl = QtWidgets.QVBoxLayout(ro)
         rl.setContentsMargins(16, 14, 16, 14)
-        rl.setSpacing(4)
-        t = QtWidgets.QLabel("ⓘ 不可修改的实时数据（仅显示）")
+        rl.setSpacing(10)
+        t = QtWidgets.QLabel("ⓘ 实时只读数据（来源 A / B / C 计算，不可修改）")
         t.setProperty("role", "cardTitle")
-        d = QtWidgets.QLabel("wind_speed_mps · wind_available_kw · wind_operating_limit_kw · wind_target_kw · wind_actual_kw · wind_running · pitch_target_deg · cycle · timestamp · communication_status")
-        d.setProperty("role", "source")
         rl.addWidget(t)
-        rl.addWidget(d)
+
+        ro_grid = QtWidgets.QGridLayout()
+        ro_grid.setHorizontalSpacing(28)
+        ro_grid.setVerticalSpacing(10)
+        # (键, 名称, 单位, 来源)
+        ro_defs = [
+            ("wind_speed_mps",         "风速",     "m/s", "A"),
+            ("wind_available_kw",      "可用功率", "kW",  "C 计算"),
+            ("wind_operating_limit_kw", "运行上限", "kW", "C 计算"),
+            ("wind_target_kw",         "目标功率", "kW",  "B"),
+            ("wind_actual_kw",         "实际功率", "kW",  "A 计算"),
+            ("pitch_target_deg",       "桨距角",   "°",   "C 计算"),
+            ("wind_running",           "运行状态", "",    "C 计算"),
+            ("link_status",            "A 链路",   "",    "STM32↔A"),
+            ("cycle",                  "当前周期", "",    "MCU"),
+        ]
+        self.readonlyLabels = {}
+        self._ro_meta = {}
+        for i, (key, name, unit, src) in enumerate(ro_defs):
+            row = i // 3
+            col = (i % 3) * 2
+            name_lab = QtWidgets.QLabel(name)
+            name_lab.setProperty("role", "cardTitle")
+            val_lab = QtWidgets.QLabel("—")
+            val_lab.setProperty("role", "source")
+            ro_grid.addWidget(name_lab, row, col)
+            ro_grid.addWidget(val_lab, row, col + 1)
+            self.readonlyLabels[key] = val_lab
+            self._ro_meta[key] = (unit, src)
+        rl.addLayout(ro_grid)
         v.addWidget(ro)
 
         v.addStretch(1)
@@ -853,6 +880,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.powerAvailableValue.setText(f"{power_available:.1f}")
         self.powerSetValue.setText(f"{power_set:.1f}")
         self.powerActualValue.setText(f"{power_actual:.1f}")
+
+    def update_readonly_params(self, data):
+        """更新「参数设置」页的实时只读数据（来源 A / B / C，不可修改）。"""
+        def _num(key):
+            try:
+                return f"{float(data.get(key)):.2f}"
+            except (TypeError, ValueError):
+                return "—"
+
+        values = {
+            "wind_speed_mps":          _num("wind_speed_mps"),
+            "wind_available_kw":       _num("wind_available_kw"),
+            "wind_operating_limit_kw": _num("wind_operating_limit_kw"),
+            "wind_target_kw":          _num("wind_target_kw"),
+            "wind_actual_kw":          _num("wind_actual_kw"),
+            "pitch_target_deg":        _num("pitch_target_deg"),
+            "wind_running":            "运行" if data.get("wind_running") else "停止",
+            "link_status":             "在线" if data.get("link_status") else "离线",
+            "cycle":                   str(data.get("cycle", "—")),
+        }
+        for key, label in self.readonlyLabels.items():
+            unit, src = self._ro_meta.get(key, ("", ""))
+            text = values.get(key, "—")
+            if unit:
+                text += f" {unit}"
+            label.setText(f"{text}　·　{src}")
 
     def _set_state_label(self, label, state, text):
         label.setText(text)

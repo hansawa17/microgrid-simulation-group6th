@@ -38,7 +38,29 @@ class Simulator(QThread):
     #  控制接口（与真实 MCU 对齐）
     # ------------------------------------------------------------------ #
     def set_params(self, params):
-        self.params = dict(params)
+        """运行期更新控制参数（切入/额定/切出风速、额定功率、最大顺桨角、
+        控制周期、通信超时、控制模式），下一控制周期即生效。
+
+        风速->功率的三次方曲线框架保持不变，仅参数取值变化；非法/越界取值
+        按固件 wind_turbine.c 的规则钳位，避免分母为 0。
+        """
+        p = dict(params)
+        try:
+            p["cut_in_speed_mps"]    = float(p["cut_in_speed_mps"])
+            p["rated_speed_mps"]     = float(p["rated_speed_mps"])
+            p["cut_out_speed_mps"]   = float(p["cut_out_speed_mps"])
+            p["wind_rated_power_kw"] = float(p["wind_rated_power_kw"])
+            p["pitch_feather_deg"]   = float(p["pitch_feather_deg"])
+            p["c_control_s"]         = float(p["c_control_s"])
+            p["c_timeout_s"]         = float(p["c_timeout_s"])
+            p["control_mode"]        = int(p["control_mode"])
+            if p["rated_speed_mps"] <= p["cut_in_speed_mps"]:
+                p["rated_speed_mps"] = p["cut_in_speed_mps"] + 1.0
+            if p["cut_out_speed_mps"] <= p["rated_speed_mps"]:
+                p["cut_out_speed_mps"] = p["rated_speed_mps"] + 1.0
+        except (KeyError, ValueError, TypeError):
+            return  # 参数不完整/非法时不覆盖，保持当前取值
+        self.params = p
 
     def command(self, cmd):
         if cmd == "START":
@@ -136,6 +158,7 @@ class Simulator(QThread):
             "wind_running": wind_running,
             "pitch_target_deg": round(pitch_target_deg, 2),
             "control_mode": mode,
+            "link_status": 0,   # 本地仿真无 A 连接，链路状态恒为离线
         }
         self.cycle += 1
         self.telemetry.emit(data)

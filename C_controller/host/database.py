@@ -154,7 +154,7 @@ class Database:
     def __init__(self, path=config.DATABASE_PATH):
         self.path = path
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # 可重入：update_params 内部会再调 get_params，避免同线程死锁
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._init_schema()

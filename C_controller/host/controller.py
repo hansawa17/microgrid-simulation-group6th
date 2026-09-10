@@ -150,6 +150,7 @@ class Controller(QObject):
         else:
             self._sim_on = True
             self.simulator = Simulator()
+            self.simulator.set_params(self.db.get_params())  # 继承当前已应用参数，避免重置为默认
             self.simulator.telemetry.connect(self._on_telemetry)
             self.simulator.start()
             self.ui.simulateButton.setText("停止本地仿真")
@@ -211,6 +212,7 @@ class Controller(QObject):
                               cycle=data["cycle"])
         self.ui.set_comm_pills(pca_online=bool(data.get("link_status", 0)), stm32_online=True)
         self.ui.append_curves(data)
+        self.ui.update_readonly_params(data)
 
     # ------------------------------------------------------------------ #
     #  通信超时检测
