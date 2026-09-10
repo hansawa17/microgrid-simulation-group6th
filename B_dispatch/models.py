@@ -38,6 +38,7 @@ class GridState:
     last_wind_action_step: int | None = None
     wind_action_applied_at_utc: str | None = None
     extension_status: str = "legacy_or_incomplete"
+    parameters: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
