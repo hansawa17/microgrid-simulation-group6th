@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import os
+import socket
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -52,6 +53,34 @@ class MainWindow(_LegacyMainWindow):
     def set_state_snapshot(self, state: GridState) -> None:
         """Treat a just-received TCP state as fresh (age starts at zero)."""
         super().set_state_snapshot(replace(state, received_age_s=0.0))
+        if getattr(state, "parameters", None):
+            try:
+                self._ensure_db()
+                if self.repo.apply_remote_parameters(state.parameters):
+                    self._reload_physical_widgets()
+            except Exception as exc:
+                self.log(f"参数同步失败：{exc}")
+
+    def _reload_physical_widgets(self) -> None:
+        try:
+            physical = self.repo.get_physical_parameters()
+        except Exception:
+            return
+        self._physical = {k: float(v) for k, v in physical.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        self._sync_physical_to_params()
+        self.core = self.core.__class__(self.config())
+        for group in ("a_physical_widgets", "c_physical_widgets"):
+            widgets = getattr(self, group, None)
+            if not widgets:
+                continue
+            for key, widget in widgets.items():
+                if key in self._physical:
+                    widget.setValue(self._physical[key])
+
+    def _sync_physical_to_params(self) -> None:
+        self.params['diesel_max_kw'] = float(self._physical.get('diesel_max_kw', 120.0))
+        self.params['wind_max_kw'] = float(self._physical.get('wind_rated_kw', 100.0))
+        self.params['wind_min_kw'] = 0.0
 
     def _refresh_scada_table(self) -> None:
         if self.state is None or not hasattr(self, "scada_table"): return
@@ -84,7 +113,8 @@ class MainWindow(_LegacyMainWindow):
             for column_index, value in enumerate(row): self.scada_table.setItem(row_index, column_index, QtWidgets.QTableWidgetItem(str(value)))
 
     def config(self) -> DispatchConfig:
-        return DispatchConfig(wind_min_kw=self.params['wind_min_kw'], wind_max_kw=self.params['wind_max_kw'], diesel_max_kw=self.params['diesel_max_kw'], reserve_kw=self.params['reserve_kw'], diesel_min_kw=float(getattr(self, '_diesel_min_kw', 20.0)), max_state_age_s=self.params['max_age_s'], c_has_control_priority=True)
+        ph = getattr(self, "_physical", {}) or {}
+        return DispatchConfig(wind_min_kw=0.0, wind_max_kw=float(ph.get("wind_rated_kw", 100.0)), diesel_max_kw=float(ph.get("diesel_max_kw", 120.0)), reserve_kw=self.params['reserve_kw'], diesel_min_kw=float(ph.get("diesel_min_kw", 20.0)), max_state_age_s=self.params['max_age_s'], c_has_control_priority=True)
 
     def _ensure_db(self) -> None:
         """Create the schema only when it is missing; never reset user parameters."""
@@ -94,52 +124,57 @@ class MainWindow(_LegacyMainWindow):
     def params_page(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('参数设置'))
         b_card = self.make_card(); bf = QtWidgets.QFormLayout(b_card)
-        self.p_wind_min = QtWidgets.QDoubleSpinBox(); self.p_wind_min.setRange(0,1000); self.p_wind_min.setSuffix(' kW')
-        self.p_wind_max = QtWidgets.QDoubleSpinBox(); self.p_wind_max.setRange(0,1000); self.p_wind_max.setSuffix(' kW')
-        self.p_diesel_max = QtWidgets.QDoubleSpinBox(); self.p_diesel_max.setRange(0,2000); self.p_diesel_max.setSuffix(' kW')
-        self.p_reserve = QtWidgets.QDoubleSpinBox(); self.p_reserve.setRange(0.1,1000); self.p_reserve.setDecimals(2); self.p_reserve.setSuffix(' kW')
-        self.p_age = QtWidgets.QDoubleSpinBox(); self.p_age.setRange(0.1,60); self.p_age.setDecimals(2); self.p_age.setSuffix(' s')
         self.p_poll = QtWidgets.QDoubleSpinBox(); self.p_poll.setRange(0.1,60); self.p_poll.setDecimals(2); self.p_poll.setSuffix(' s')
         self.p_dispatch = QtWidgets.QDoubleSpinBox(); self.p_dispatch.setRange(0.1,300); self.p_dispatch.setDecimals(2); self.p_dispatch.setSuffix(' s')
+        self.p_reserve = QtWidgets.QDoubleSpinBox(); self.p_reserve.setRange(0.1,1000); self.p_reserve.setDecimals(2); self.p_reserve.setSuffix(' kW')
+        self.p_age = QtWidgets.QDoubleSpinBox(); self.p_age.setRange(0.1,60); self.p_age.setDecimals(2); self.p_age.setSuffix(' s')
         self.p_closed = QtWidgets.QCheckBox('B closed loop（默认开启）'); self.p_closed.setChecked(True)
-        for label, widget in [('B：风电最小目标',self.p_wind_min),('B：风电容量上限',self.p_wind_max),('B：柴油容量上限',self.p_diesel_max),('B：柴油 reserve',self.p_reserve),('B：最大状态年龄',self.p_age),('B：采集周期',self.p_poll),('B：调度周期',self.p_dispatch),('B：运行模式',self.p_closed)]: bf.addRow(label,widget)
+        for label, widget in [('B：采集周期',self.p_poll),('B：调度周期',self.p_dispatch),('B：柴发余量 reserve',self.p_reserve),('B：最大状态年龄',self.p_age),('B：运行模式',self.p_closed)]: bf.addRow(label,widget)
         l.addWidget(b_card)
+        a_card = self.make_card(); af = QtWidgets.QFormLayout(a_card); self.a_physical_widgets = {}
+        for key,title,suffix in [('diesel_min_kw','柴油最小功率',' kW'),('diesel_max_kw','柴油最大功率',' kW')]:
+            spin=QtWidgets.QDoubleSpinBox(); spin.setRange(0,1e9); spin.setDecimals(2); spin.setSuffix(suffix); spin.setEnabled(False); self.a_physical_widgets[key]=spin; af.addRow(title,spin)
+        note_a=QtWidgets.QLabel('柴油最小/最大功率由 A 维护，B 只读接收。'); note_a.setProperty('hint',True); note_a.setWordWrap(True); af.addRow(note_a)
+        l.addWidget(a_card)
         c_card = self.make_card(); cf = QtWidgets.QFormLayout(c_card); self.c_physical_widgets = {}
-        physical_fields = [('wind_rated_kw','风机额定功率',' kW'),('wind_cut_in_mps','切入风速',' m/s'),('wind_rated_speed_mps','额定风速',' m/s'),('wind_cut_out_mps','切出风速',' m/s'),('pitch_min_deg','桨距下限',' °'),('pitch_max_deg','桨距上限',' °'),('wind_ramp_up_kw_s','风电升爬坡率',' kW/s'),('wind_ramp_down_kw_s','风电降爬坡率',' kW/s'),('diesel_min_kw','柴发最小功率',' kW'),('diesel_max_kw','柴发最大功率',' kW')]
-        for key,title,suffix in physical_fields:
+        for key,title,suffix in [('wind_rated_kw','风机额定功率',' kW'),('wind_cut_in_mps','切入风速',' m/s'),('wind_rated_speed_mps','额定风速',' m/s'),('wind_cut_out_mps','切出风速',' m/s'),('pitch_min_deg','桨距下限',' °'),('pitch_max_deg','桨距上限',' °')]:
             spin=QtWidgets.QDoubleSpinBox(); spin.setRange(-1e9,1e9); spin.setDecimals(2); spin.setSuffix(suffix); spin.setEnabled(False); self.c_physical_widgets[key]=spin; cf.addRow(title,spin)
-        note_c=QtWidgets.QLabel('以上物理参数由 C 维护，B 只读副本展示；当前值按 ems.db 中的统一基线保存，不提供 B 编辑入口。'); note_c.setProperty('hint',True); note_c.setWordWrap(True); cf.addRow(note_c)
+        note_c=QtWidgets.QLabel('风机额定功率、切入/额定/切出风速与桨距角由 C 维护，经 A 转发，B 只读显示。'); note_c.setProperty('hint',True); note_c.setWordWrap(True); cf.addRow(note_c)
         l.addWidget(c_card)
-        note=QtWidgets.QLabel('B 可写参数仅包括 reserve、调度上下限、采集周期、决策周期和闭环模式。保存后立即更新本地定时器；采集周期在当前连接中同步到 B TCP client 的轮询配置。'); note.setProperty('hint',True); note.setWordWrap(True); l.addWidget(note)
+        note=QtWidgets.QLabel('B 只能修改采集周期、调度周期和柴发余量；A/C 参数随 A/C 实时修改自动刷新。'); note.setProperty('hint',True); note.setWordWrap(True); l.addWidget(note)
         row=QtWidgets.QHBoxLayout(); load=QtWidgets.QPushButton('从 ems.db 读取'); load.setProperty('kind','secondary'); load.clicked.connect(self.load_db_config); save=QtWidgets.QPushButton('保存参数'); save.setProperty('kind','primary'); save.clicked.connect(self.save_params); row.addWidget(load); row.addWidget(save); row.addStretch(); l.addLayout(row); l.addStretch(); return w
 
     def load_db_config(self) -> None:
+        self._physical = {}
         try:
             try: p=self.repo.get_parameters(); r=self.repo.get_runtime_config(); physical=self.repo.get_physical_parameters()
             except Exception: self.repo.initialize(); p=self.repo.get_parameters(); r=self.repo.get_runtime_config(); physical=self.repo.get_physical_parameters()
-            self.params.update(wind_min_kw=float(p['wind_min_kw']),wind_max_kw=float(p['wind_max_kw']),diesel_max_kw=float(p['diesel_max_kw']),reserve_kw=float(p['reserve_kw']),max_age_s=float(r['max_state_age_s']),poll_period_s=float(r['poll_period_s']),dispatch_period_s=float(r['dispatch_period_s']),closed_loop=bool(r['closed_loop']))
-            self._diesel_min_kw=float(physical['diesel_min_kw'])
-            if hasattr(self,'c_physical_widgets'):
-                for key,widget in self.c_physical_widgets.items(): widget.setValue(float(physical[key]))
+            self.params.update(reserve_kw=float(p['reserve_kw']),max_age_s=float(r['max_state_age_s']),poll_period_s=float(r['poll_period_s']),dispatch_period_s=float(r['dispatch_period_s']),closed_loop=bool(r['closed_loop']))
+            self._physical={k:float(v) for k,v in physical.items() if isinstance(v,(int,float)) and not isinstance(v,bool)}
+            self._sync_physical_to_params()
         except Exception as exc: self.log(f'ems.db 尚未有完整参数，使用 GUI 默认值：{exc}')
-        if hasattr(self,'p_wind_min'):
-            self.p_wind_min.setValue(self.params['wind_min_kw']); self.p_wind_max.setValue(self.params['wind_max_kw']); self.p_diesel_max.setValue(self.params['diesel_max_kw']); self.p_reserve.setValue(self.params['reserve_kw']); self.p_age.setValue(self.params['max_age_s']); self.p_poll.setValue(self.params['poll_period_s']); self.p_dispatch.setValue(self.params['dispatch_period_s']); self.p_closed.setChecked(self.params['closed_loop'])
+        for group in ('a_physical_widgets','c_physical_widgets'):
+            widgets=getattr(self,group,None)
+            if not widgets: continue
+            for key,widget in widgets.items():
+                if key in self._physical: widget.setValue(self._physical[key])
+        if hasattr(self,'p_poll'):
+            self.p_poll.setValue(self.params['poll_period_s']); self.p_dispatch.setValue(self.params['dispatch_period_s']); self.p_reserve.setValue(self.params['reserve_kw']); self.p_age.setValue(self.params['max_age_s']); self.p_closed.setChecked(self.params['closed_loop'])
         self.core=self.core.__class__(self.config())
         if hasattr(self,'runtime_timer'): self.set_runtime_timer()
 
     def save_params(self) -> None:
-        values={'wind_min_kw':self.p_wind_min.value(),'wind_max_kw':self.p_wind_max.value(),'diesel_max_kw':self.p_diesel_max.value(),'reserve_kw':self.p_reserve.value(),'max_age_s':self.p_age.value(),'poll_period_s':self.p_poll.value(),'dispatch_period_s':self.p_dispatch.value(),'closed_loop':self.p_closed.isChecked()}
-        if values['wind_max_kw'] < values['wind_min_kw']: QtWidgets.QMessageBox.warning(self,'参数错误','风电容量上限必须不小于风电最小目标。'); return
-        if values['diesel_max_kw'] < values['reserve_kw'] or values['reserve_kw'] <= 0: QtWidgets.QMessageBox.warning(self,'参数错误','柴油容量上限必须不小于 reserve，且 reserve 必须大于 0。'); return
+        reserve=self.p_reserve.value(); poll=self.p_poll.value(); dispatch=self.p_dispatch.value(); max_age=self.p_age.value(); closed=self.p_closed.isChecked()
+        if reserve<=0: QtWidgets.QMessageBox.warning(self,'参数错误','柴发余量必须大于 0。'); return
         try:
-            self._ensure_db(); self.repo.set_parameters(wind_min_kw=values['wind_min_kw'],wind_max_kw=values['wind_max_kw'],diesel_max_kw=values['diesel_max_kw'],reserve_kw=values['reserve_kw']); self.repo.set_runtime_config(poll_period_s=values['poll_period_s'],dispatch_period_s=values['dispatch_period_s'],closed_loop=values['closed_loop'],max_state_age_s=values['max_age_s'])
-            self.params.update(values); self.core=self.core.__class__(self.config()); self.set_runtime_timer(); self.log('B 自有参数已写入 ems.db；C 物理参数未被写入'); self.statusBar().showMessage('B EMS 参数已更新并写入 ems.db')
+            self._ensure_db(); self.repo.set_reserve(reserve); self.repo.set_runtime_config(poll_period_s=poll,dispatch_period_s=dispatch,closed_loop=closed,max_state_age_s=max_age)
+            self.params.update(reserve_kw=reserve,poll_period_s=poll,dispatch_period_s=dispatch,max_age_s=max_age,closed_loop=closed); self.core=self.core.__class__(self.config()); self.set_runtime_timer(); self.log('B 参数已写入 ems.db（仅采集/调度周期与柴发余量）'); self.statusBar().showMessage('B EMS 参数已更新')
         except Exception as exc: self.log(f'参数写库失败：{exc}'); QtWidgets.QMessageBox.warning(self,'参数写库失败',str(exc))
 
     def history_page(self) -> QtWidgets.QWidget:
         w=QtWidgets.QWidget(); l=QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('历史数据'))
         bar=self.make_card(); g=QtWidgets.QGridLayout(bar); g.addWidget(QtWidgets.QLabel('Session'),0,0); self.h_session=QtWidgets.QLineEdit(); g.addWidget(self.h_session,0,1)
-        now=QtCore.QDateTime.currentDateTimeUtc(); self.h_start=QtCore.QDateTimeEdit(now.addSecs(-3600)); self.h_end=QtCore.QDateTimeEdit(now)
+        now=QtCore.QDateTime.currentDateTimeUtc(); self.h_start=QtWidgets.QDateTimeEdit(now.addSecs(-3600)); self.h_end=QtWidgets.QDateTimeEdit(now)
         for widget in (self.h_start,self.h_end): widget.setDisplayFormat('yyyy-MM-dd HH:mm:ss'); widget.setCalendarPopup(True)
         g.addWidget(QtWidgets.QLabel('起始 UTC'),0,2); g.addWidget(self.h_start,0,3); g.addWidget(QtWidgets.QLabel('结束 UTC'),0,4); g.addWidget(self.h_end,0,5); g.addWidget(QtWidgets.QLabel('最多行数'),1,0); self.h_limit=QtWidgets.QSpinBox(); self.h_limit.setRange(10,5000); self.h_limit.setValue(200); g.addWidget(self.h_limit,1,1)
         q=QtWidgets.QPushButton('查询'); q.setProperty('kind','primary'); q.clicked.connect(self.refresh_history); ex=QtWidgets.QPushButton('导出筛选结果'); ex.setProperty('kind','secondary'); ex.clicked.connect(self.export_history); g.addWidget(q,1,4); g.addWidget(ex,1,5); l.addWidget(bar)
@@ -276,6 +311,10 @@ class MainWindow(_LegacyMainWindow):
                 self._try_send_queued_dispatch()
             elif got_ack and self._manual_dispatch_pending and c._pending_state_request_seq is None and c._pending_ack_seq is None:
                 self._try_send_queued_dispatch()
+        except socket.timeout:
+            # A transient/racy recv timeout is not a broken connection; keep
+            # the socket and let the next poll cycle read again.
+            return
         except Exception as exc:
             self._handle_connection_loss(f"TCP 接收异常：{exc}")
 
@@ -288,10 +327,13 @@ class MainWindow(_LegacyMainWindow):
             QtWidgets.QMessageBox.warning(self, "ACK 未知", "指令可能已到达 A，但 ACK 无法确认。请先恢复连接并核对历史，不要直接重发。"); return
         if self._manual_dispatch_pending:
             return
-        if self.params.get("closed_loop"):
-            self.auto_dispatch = True
-            self.auto_box.blockSignals(True); self.auto_box.setChecked(True); self.auto_box.blockSignals(False)
-            self.log("闭环模式：开启按周期自动下发，无需重复点击")
+        if not self.params.get("closed_loop"):
+            self.log("开环模式：仅计算展示，不发送控制命令")
+            QtWidgets.QMessageBox.information(self, "当前为开环", "开环模式仅计算和展示，不生成可下发控制命令。")
+            return
+        self.auto_dispatch = True
+        self.auto_box.blockSignals(True); self.auto_box.setChecked(True); self.auto_box.blockSignals(False)
+        self.log("闭环模式：开启按周期自动下发，无需重复点击")
         self._manual_dispatch_pending = True
         self.send_btn.setEnabled(False)
         self.send_btn.setText("等待 A 当前状态...")
@@ -467,6 +509,7 @@ class MainWindow(_LegacyMainWindow):
 
 def main() -> int:
     app=QtWidgets.QApplication([]); window=MainWindow(); window.show(); return app.exec()
+
 
 if __name__ == '__main__':
     raise SystemExit(main())
