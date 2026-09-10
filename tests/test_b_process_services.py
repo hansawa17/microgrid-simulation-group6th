@@ -20,7 +20,7 @@ def fresh_state(*, step: int = 1, age_s: float = 0.0) -> GridState:
 
 class FakeClient:
     def __init__(self, state: GridState, *, accepted: bool = True) -> None:
-        self.connected = False; self.latest_state = state; self._pending_state_request_seq = None; self._pending_ack_seq = None; self._accepted = accepted; self.sent = []; self.requested = 0
+        self.connected = False; self.latest_state = state; self._pending_state_request_seq = None; self._pending_ack_seq = None; self._accepted = accepted; self.sent = []; self.requested = 0; self.needs_full_sync = True
     def connect(self) -> None: self.connected = True
     def close(self) -> None: self.connected = False
     def receive_available(self): return []
