@@ -195,10 +195,23 @@ class EMSRepository:
             conn.execute("INSERT INTO schema_meta(key,value) VALUES ('schema_version','4') ON CONFLICT(key) DO UPDATE SET value='4'")
 
     def set_parameters(self, *, wind_min_kw: float, wind_max_kw: float, diesel_max_kw: float, reserve_kw: float = 10.0) -> None:
-        requested = {"wind_min_kw": float(wind_min_kw), "wind_max_kw": float(wind_max_kw), "diesel_max_kw": float(diesel_max_kw), "reserve_kw": float(reserve_kw)}
-        if requested != UNIFIED_DISPATCH:
-            raise ValueError("EMS dispatch parameters are fixed to the unified project baseline")
-        self.initialize()
+        wind_min_kw = float(wind_min_kw)
+        wind_max_kw = float(wind_max_kw)
+        diesel_max_kw = float(diesel_max_kw)
+        reserve_kw = float(reserve_kw)
+        if wind_max_kw < wind_min_kw:
+            raise ValueError("wind_max_kw must be >= wind_min_kw")
+        if diesel_max_kw < reserve_kw:
+            raise ValueError("diesel_max_kw must be >= reserve_kw")
+        if reserve_kw <= 0:
+            raise ValueError("reserve_kw must be > 0")
+        with self.connection() as conn:
+            conn.execute(
+                """UPDATE dispatch_parameters
+                   SET wind_min_kw=?, wind_max_kw=?, diesel_max_kw=?, reserve_kw=?, updated_at=?
+                   WHERE id=1""",
+                (wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw, utc_now()),
+            )
 
     def get_parameters(self) -> sqlite3.Row:
         with self.connection() as conn:
@@ -216,13 +229,20 @@ class EMSRepository:
 
     def set_runtime_config(self, *, poll_period_s: float = 1.0, dispatch_period_s: float = 5.0,
                            closed_loop: bool = True, command_timeout_s: Optional[float] = 3.0) -> None:
-        requested = {
-            "poll_period_s": float(poll_period_s), "dispatch_period_s": float(dispatch_period_s),
-            "closed_loop": int(closed_loop), "command_timeout_s": None if command_timeout_s is None else float(command_timeout_s),
-        }
-        if requested != UNIFIED_RUNTIME:
-            raise ValueError("EMS runtime configuration is fixed to the unified project baseline")
-        self.initialize()
+        poll_period_s = float(poll_period_s)
+        dispatch_period_s = float(dispatch_period_s)
+        if poll_period_s <= 0:
+            raise ValueError("poll_period_s must be > 0")
+        if dispatch_period_s <= 0:
+            raise ValueError("dispatch_period_s must be > 0")
+        command_timeout = None if command_timeout_s is None else float(command_timeout_s)
+        with self.connection() as conn:
+            conn.execute(
+                """UPDATE ems_runtime_config
+                   SET poll_period_s=?, dispatch_period_s=?, closed_loop=?, command_timeout_s=?, updated_at=?
+                   WHERE id=1""",
+                (poll_period_s, dispatch_period_s, int(bool(closed_loop)), command_timeout, utc_now()),
+            )
 
     def get_runtime_config(self) -> sqlite3.Row:
         with self.connection() as conn:

@@ -88,8 +88,6 @@ def _configure_connected_socket(sock: socket.socket) -> None:
     except (AttributeError, OSError):
         return
 
-    # Windows defaults to a multi-hour keepalive. Make half-open tunnel failures
-    # observable within a useful time while state_request remains the primary heartbeat.
     try:
         sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, 10_000, 3_000))
         return
@@ -466,10 +464,11 @@ class EMSTcpClient:
                 raise ProtocolError(f"invalid non-negative numeric field: {key}")
         if payload["wind_operating_limit_kw"] > payload["wind_available_kw"]:
             raise ProtocolError("wind_operating_limit_kw must be <= wind_available_kw")
-        # B's last target and C's current operating limit are independent state
-        # fields. During startup, a C fault, or a limit transition the old target
-        # may legitimately exceed the new limit until B computes its next dispatch.
         sampled_at_utc = _validate_rfc3339_utc(payload["sampled_at_utc"], "sampled_at_utc")
+        received_at_utc = utc_now()
+        sampled_dt = datetime.fromisoformat(sampled_at_utc[:-1] + "+00:00")
+        received_dt = datetime.fromisoformat(received_at_utc[:-1] + "+00:00")
+        received_age_s = max(0.0, (received_dt - sampled_dt).total_seconds())
         if not isinstance(payload["wind_running"], bool) or not isinstance(payload["fault"], bool):
             raise ProtocolError("wind_running and fault must be JSON booleans")
         pitch = payload["pitch_actual_deg"]
@@ -478,4 +477,4 @@ class EMSTcpClient:
         session_id = message["session_id"]
         if not isinstance(session_id, str) or not session_id:
             raise ProtocolError("state session_id must be a non-empty string")
-        return GridState(session_id=session_id, step=message["step"], sim_time_s=float(message["sim_time_s"]), wind_speed_mps=float(payload["wind_speed_mps"]), wind_available_kw=float(payload["wind_available_kw"]), wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]), load_power_kw=float(payload["load_power_kw"]), wind_actual_kw=float(payload["wind_actual_kw"]), diesel_actual_kw=float(payload["diesel_actual_kw"]), wind_running=payload["wind_running"], fault=payload["fault"], sampled_at_utc=sampled_at_utc, received_at_utc=utc_now(), wind_target_kw=float(payload["wind_target_kw"]), pitch_actual_deg=float(pitch))
+        return GridState(session_id=session_id, step=message["step"], sim_time_s=float(message["sim_time_s"]), wind_speed_mps=float(payload["wind_speed_mps"]), wind_available_kw=float(payload["wind_available_kw"]), wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]), load_power_kw=float(payload["load_power_kw"]), wind_actual_kw=float(payload["wind_actual_kw"]), diesel_actual_kw=float(payload["diesel_actual_kw"]), wind_running=payload["wind_running"], fault=payload["fault"], sampled_at_utc=sampled_at_utc, received_at_utc=received_at_utc, received_age_s=received_age_s, wind_target_kw=float(payload["wind_target_kw"]), pitch_actual_deg=float(pitch))

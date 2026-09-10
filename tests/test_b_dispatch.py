@@ -16,7 +16,7 @@ class DispatchTests(unittest.TestCase):
         return GridState(**data)
 
     def cfg(self, **overrides):
-        data = dict(wind_max_kw=100.0, diesel_max_kw=100.0, reserve_kw=10.0)
+        data = dict(wind_max_kw=100.0, diesel_max_kw=100.0, reserve_kw=10.0, diesel_min_kw=20.0)
         data.update(overrides)
         return DispatchConfig(**data)
 
@@ -64,6 +64,14 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(result.diesel_target_kw, 90.0)
         self.assertEqual(result.target_unserved_kw, 40.0)
 
+    def test_diesel_minimum_output_when_started(self):
+        result = calculate_dispatch(
+            self.state(load_power_kw=10.0, wind_available_kw=0.0, wind_operating_limit_kw=0.0, wind_actual_kw=0.0),
+            self.cfg(),
+        )
+        self.assertEqual(result.diesel_target_kw, 20.0)
+        self.assertTrue(result.diesel_enable)
+
     def test_diesel_can_be_completely_off(self):
         result = calculate_dispatch(self.state(load_power_kw=0.0, wind_available_kw=0.0, wind_operating_limit_kw=0.0, wind_actual_kw=0.0), self.cfg())
         self.assertEqual(result.diesel_target_kw, 0.0)
@@ -90,6 +98,10 @@ class DispatchTests(unittest.TestCase):
     def test_config_cannot_consume_reserve(self):
         with self.assertRaises(DispatchError):
             calculate_dispatch(self.state(), self.cfg(diesel_max_kw=10.0, reserve_kw=10.1))
+
+    def test_diesel_minimum_must_fit_dispatch_headroom(self):
+        with self.assertRaises(DispatchError):
+            calculate_dispatch(self.state(), self.cfg(diesel_max_kw=30.0, reserve_kw=10.0, diesel_min_kw=21.0))
 
 
 if __name__ == "__main__":

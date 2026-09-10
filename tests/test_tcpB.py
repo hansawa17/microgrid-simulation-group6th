@@ -3,6 +3,7 @@
 import json
 import socket
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from B_dispatch.models import DispatchConfig, GridState
@@ -173,6 +174,16 @@ class TcpBTests(unittest.TestCase):
         self.assertEqual(state.sampled_at_utc, "2026-09-07T08:03:25.417Z")
         self.assertTrue(state.received_at_utc.endswith("Z"))
         self.assertNotEqual(state.sampled_at_utc, state.received_at_utc)
+        self.assertGreaterEqual(state.received_age_s, 0.0)
+
+    def test_state_received_age_tracks_three_second_sampling_delay(self):
+        sampled = (datetime.now(timezone.utc) - timedelta(seconds=3)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        fake = FakeSocket()
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
+        client.connect()
+        result = client.receive(encode_frame(state_message(sampled_at_utc=sampled)))
+        self.assertGreaterEqual(result[0].received_age_s, 2.0)
+        self.assertLess(result[0].received_age_s, 5.0)
 
     def test_state_rejects_operating_limit_above_available(self):
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: FakeSocket())
@@ -285,6 +296,7 @@ class TcpBTests(unittest.TestCase):
         with self.assertRaisesRegex(ConnectionError, "before A returned its first state"):
             client.receive_once()
         self.assertFalse(client.connected)
+        self.assertTrue(fake.closed)
 
     def test_eof_after_state_uses_normal_disconnect_message(self):
         fake = FakeSocket([encode_frame(state_message()), b""])

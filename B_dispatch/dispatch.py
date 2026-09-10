@@ -43,6 +43,7 @@ def _validate(state: GridState, config: DispatchConfig) -> None:
         "wind_max_kw",
         "diesel_max_kw",
         "reserve_kw",
+        "diesel_min_kw",
         "max_state_age_s",
     ):
         _finite_nonnegative(name, getattr(config, name))
@@ -50,6 +51,8 @@ def _validate(state: GridState, config: DispatchConfig) -> None:
         raise DispatchError("wind_max_kw must be >= wind_min_kw")
     if config.diesel_max_kw < config.reserve_kw:
         raise DispatchError("diesel_max_kw must be >= reserve_kw")
+    if config.diesel_min_kw > config.diesel_dispatch_max_kw:
+        raise DispatchError("diesel_min_kw must be <= diesel_dispatch_max_kw")
     if state.received_age_s > config.max_state_age_s:
         raise DispatchError(
             f"state is stale: age={state.received_age_s:.3f}s > "
@@ -76,6 +79,9 @@ def calculate_dispatch(state: GridState, config: DispatchConfig) -> DispatchResu
         remaining_load = max(state.load_power_kw - wind_target, 0.0)
         diesel_target = min(remaining_load, config.diesel_dispatch_max_kw)
         reason = "wind-first dispatch within operating limit"
+
+    if 0.0 < diesel_target < config.diesel_min_kw:
+        diesel_target = min(config.diesel_min_kw, config.diesel_dispatch_max_kw)
 
     target_generation = wind_target + diesel_target
     target_unserved = max(state.load_power_kw - target_generation, 0.0)
