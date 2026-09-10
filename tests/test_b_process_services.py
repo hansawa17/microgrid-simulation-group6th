@@ -1,5 +1,6 @@
 """Tests for B's database-decoupled compute and TCP processes."""
 from __future__ import annotations
+import socket
 import tempfile
 import unittest
 from dataclasses import replace
@@ -27,6 +28,10 @@ class FakeClient:
     def request_state(self, *, full: bool): self.requested += 1; return 123
     def send_dispatch(self, decision) -> int: self.sent.append(decision); return 77
     def get_ack(self, seq: int): return Ack(ack_seq=seq, accepted=self._accepted, reason="accepted")
+
+
+class TimeoutClient(FakeClient):
+    def receive_available(self): raise socket.timeout()
 
 
 class ProcessServiceTests(unittest.TestCase):
@@ -81,6 +86,16 @@ class ProcessServiceTests(unittest.TestCase):
             fake.latest_state = replace(stale, received_age_s=10.0)
             service = EMSCommunicationService(repo, client_factory=lambda *args, **kwargs: fake, clock=lambda: 0.0, sleeper=lambda _: None); service.initialize()
             self.assertIsNone(service.run_cycle()); self.assertGreaterEqual(fake.requested, 1); self.assertEqual(repo.get_outbox(outbox_id)["status"], "pending")
+
+    def test_io_keeps_tcp_connection_on_transient_socket_timeout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(tmp)
+            state = fresh_state(); repo.save_state(state)
+            fake = TimeoutClient(state)
+            service = EMSCommunicationService(repo, client_factory=lambda *args, **kwargs: fake, clock=lambda: 0.0, sleeper=lambda _: None); service.initialize()
+            self.assertIsNone(service.run_cycle())
+            self.assertTrue(fake.connected)
+            self.assertEqual(repo.get_process_status("B_IO")["state"], "ONLINE")
 
     def test_io_process_claims_and_records_accepted_ack(self):
         with tempfile.TemporaryDirectory() as tmp:
