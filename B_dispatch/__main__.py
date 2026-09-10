@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import argparse
 import socket
-import subprocess
-import sys
 from pathlib import Path
 
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "runtime" / "ems.db"
@@ -121,43 +119,11 @@ def _launch_full_runtime():
     from .repository import EMSRepository
 
     EMSRepository(DEFAULT_DB).initialize()
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    children = [
-        subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "B_dispatch",
-                "compute",
-                "--db",
-                str(DEFAULT_DB),
-            ],
-            creationflags=flags,
-        ),
-        subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "B_dispatch",
-                "io",
-                "--db",
-                str(DEFAULT_DB),
-            ],
-            creationflags=flags,
-        ),
-    ]
-    try:
-        return _launch_gui()
-    finally:
-        for child in children:
-            if child.poll() is None:
-                child.terminate()
-        for child in children:
-            try:
-                child.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                child.kill()
-                child.wait(timeout=3)
+    # The operator GUI now owns the B→A TCP client and runs the closed-loop
+    # dispatch timer directly, mirroring how A/C own their links. Launching the
+    # legacy compute/io subprocesses here would create a second TCP owner and
+    # race the GUI for A's connection.
+    return _launch_gui()
 
 
 def _launch_wind_evaluation():
