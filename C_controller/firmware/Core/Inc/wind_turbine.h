@@ -11,12 +11,18 @@
   *
   *  串口帧格式（ASCII，\r\n 结尾，字段以 , 分隔）：
   *     MCU -> PC 遥测:  $WIND,<cycle>,<wind_speed>,<power_available>,<power_operating_limit>,<power_set>,<power_actual>,<status>,<deg>,<control_mode>,<online>\r\n
+  *                      $WIND2,<同 $WIND 10 字段>,<last_wind_action_seq>   (-1 表示尚无被 A accepted 的 C 动作)\r\n
   *     PC  -> MCU 参数: $PARAM,<cut_in_speed_mps>,<rated_speed_mps>,<cut_out_speed_mps>,<wind_rated_power_kw>,<pitch_feather_deg>,<c_control_s>,<c_timeout_s>,<control_mode>\r\n
+  *                      $PARAM2,<request_id>,<8 字段同 $PARAM>   原子应用 + 递增 parameter_revision\r\n
   *     PC  -> MCU 命令: $CMD,START|STOP|RESET|AUTO|MANUAL\r\n
   *     PC  -> MCU WiFi: $WIFI,<ip>,<port>      run-time set A addr/port + reconnect\r\n
   *                      $WIFI?                 query A addr/port\r\n
-  *     MCU -> PC  应答: $ACK,<PARAM|CMD|WIFI>,<0|1>\r\n
+ *     PC  -> MCU 参数查询: $PARAM?            query wind params（兼容保留）\r\n
+  *                      $PARAMGET?,<request_id> query wind params（带 request_id）\r\n
+  *     MCU -> PC  应答: $ACK,<PARAM|PARAM2|CMD|WIFI>,<0|1>\r\n
   *                      $WIFIGET,<ip>,<port>   reply to $WIFI?\r\n
+  *                      $PARAMGET,<request_id>,<parameter_revision>,<8 字段>\r\n
+  *                      $SYNC,<a_sync_status>,<a_sync_seq>,<a_sync_reason>\r\n
   ******************************************************************************
   */
 #ifndef __WIND_TURBINE_H

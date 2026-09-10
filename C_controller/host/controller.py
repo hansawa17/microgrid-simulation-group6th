@@ -39,6 +39,8 @@ class Controller(QObject):
         self.current = None         # 最新遥测 dict
         self._last_data_time = 0.0  # 最近一次收到数据（monotonic 秒）
         self._sim_on = False
+        self._param_request_id = 0  # $PARAM2/$PARAMGET? 请求序号（递增）
+        self._pending_param = None  # 等待 MCU 回读验证的 {"request_id": int, "params": dict}
 
         # 通信超时检测定时器
         self._timeout_timer = QTimer(self)
@@ -58,6 +60,16 @@ class Controller(QObject):
         params = self.db.get_params()
         self.ui.load_params_form(params)
         self.simulator.set_params(params)
+        # 回显参数验证与 A 副本同步状态（历史可追溯）
+        meta = self.db.get_param_meta()
+        self.ui.set_param_revision(meta["parameter_revision"])
+        if meta["parameter_verified"]:
+            self.ui.set_param_verify_status(True, revision=meta["parameter_revision"])
+        else:
+            self.ui.set_param_verify_status(False, revision=meta["parameter_revision"],
+                                            reason=meta["verify_reason"])
+        self.ui.set_param_sync_status(meta["a_sync_status"], meta["a_sync_seq"],
+                                      meta["a_sync_reason"])
         # 用数据库最近数据回填曲线（历史可追溯）
         for row in self.db.latest_telemetry(300):
             self._append_curves_from_row(row)
@@ -134,6 +146,7 @@ class Controller(QObject):
             self.ui.status_message("STM32 串口已连接")
             self.db.insert_system_log("INFO", "UART_CONNECT", "STM32 串口连接成功", source="UART")
             self.query_wifi_config()   # 回填当前 A 服务器地址/端口
+            self.query_params()        # 读回 MCU 当前风机参数，用于 GUI 回显
 
     def _on_serial_error(self, msg):
         self.ui.status_message(msg)
@@ -182,6 +195,10 @@ class Controller(QObject):
             ip, port = payload
             self.ui.set_wifi_form(ip, port)
             self.ui.status_message(f"当前 A 服务器：{ip}:{port}")
+        elif kind == "paramget":
+            self._verify_paramget(payload)
+        elif kind == "sync":
+            self._on_param_sync(payload)
 
     @staticmethod
     def _msg_type(text):
@@ -253,18 +270,23 @@ class Controller(QObject):
             QMessageBox.warning(self.ui, "数据库错误", str(e))
             return
 
-        # 下发到数据源
+        # 下发到数据源（$PARAM2 原子应用；MCU 确认后经 $PARAMGET 回读验证）
         self._send_params(params)
 
         self.simulator.set_params(params)
-        self.ui.status_message(f"参数已应用（{len(changes)} 项改动），并已下发")
+        self.ui.status_message(f"参数已下发（{len(changes)} 项改动），等待 MCU 回读确认")
         self.db.insert_system_log("INFO", "PARAM_APPLY", f"参数下发成功，共 {len(changes)} 项改动", source="GUI")
 
     def _send_params(self, params):
-        frame = protocol.build_param_frame(params)
+        # 使用 $PARAM2（原子应用）：MCU 完整解析校验后一次性应用并递增 parameter_revision，
+        # 随后返回同 request_id 的 $PARAMGET 供上位机回读验证。
+        self._param_request_id += 1
+        request_id = self._param_request_id
+        self._pending_param = {"request_id": request_id, "params": params}
+        frame = protocol.build_param2_frame(request_id, params)
         if self.serial is not None and self.serial.is_open():
             ok = self.serial.send(frame)
-            self.db.insert_communication_log("UART", "TX", "PARAM", data_length=len(frame), result=1 if ok else 0)
+            self.db.insert_communication_log("UART", "TX", "PARAM2", data_length=len(frame), result=1 if ok else 0)
         # 仿真模式：simulator.set_params 已在调用处处理
 
     def reset_params(self):
@@ -333,6 +355,77 @@ class Controller(QObject):
             self.serial.send(frame)
             self.db.insert_communication_log("UART", "TX", "WIFI?", data_length=len(frame), result=1)
 
+    def query_params(self):
+        """连串口后查询 MCU 当前风机参数，用于 GUI 回显（来源 MCU，而非本地 wind.db）。"""
+        if self.serial is not None and self.serial.is_open():
+            self._param_request_id += 1
+            frame = protocol.build_paramget_query_frame(self._param_request_id)
+            self.serial.send(frame)
+            self.db.insert_communication_log("UART", "TX", "PARAMGET?", data_length=len(frame), result=1)
+
+    # ------------------------------------------------------------------ #
+    #  参数回读验证 / A 副本同步
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _params_close(expected, actual, tol=0.01):
+        """统一容差比较（不比较格式化字符串）。"""
+        try:
+            return abs(float(expected) - float(actual)) <= tol
+        except (TypeError, ValueError):
+            return False
+
+    def _verify_paramget(self, payload):
+        """处理 $PARAMGET 读回：更新表单/仿真器为 MCU 实际值，并做应用验证。"""
+        request_id = payload.get("request_id")
+        revision = payload.get("parameter_revision")
+
+        # 用 MCU 回读值回填表单与仿真器（来源 MCU，而非本地 wind.db）
+        self.ui.load_params_form(payload)
+        self.simulator.set_params(payload)
+        self.ui.set_param_revision(revision)
+
+        if self._pending_param is not None and self._pending_param["request_id"] == request_id:
+            expected = self._pending_param["params"]
+            mismatches = []
+            for key in config.PARAM_FIELDS:
+                if key == "control_mode":
+                    if int(expected[key]) != int(payload[key]):
+                        mismatches.append(key)
+                elif not self._params_close(expected[key], payload[key]):
+                    mismatches.append(key)
+
+            self._pending_param = None
+            if mismatches:
+                reason = "回读不一致: " + ",".join(mismatches)
+                self.db.mark_param_verified(0, revision=revision, reason=reason)
+                self.ui.set_param_verify_status(False, revision=revision, reason=reason)
+                self.ui.status_message("参数回读不一致，未宣称 MCU 已生效")
+                self.db.insert_system_log("WARNING", "PARAM_VERIFY_FAIL", reason, source="GUI")
+            else:
+                self.db.mark_param_verified(1, revision=revision, reason=None)
+                self.ui.set_param_verify_status(True, revision=revision, reason=None)
+                self.ui.status_message(f"MCU 已生效（参数版本 {revision}）")
+                self.db.insert_system_log("INFO", "PARAM_VERIFIED",
+                                          f"MCU 已生效 revision={revision}", source="GUI")
+        else:
+            # 纯读回（连接后 $PARAMGET? 查询），不改变 parameter_verified
+            self.ui.status_message(f"已读回 MCU 参数（版本 {revision}）")
+
+    def _on_param_sync(self, payload):
+        """处理 $SYNC：STM32->A parameter_update 的 ACK/超时结果。"""
+        status = int(payload.get("a_sync_status", 0))
+        seq = payload.get("a_sync_seq")
+        reason = payload.get("a_sync_reason", "") or ""
+        self.db.record_param_sync(status, seq, reason)
+        self.ui.set_param_sync_status(status, seq, reason)
+        label = config.A_SYNC_LABELS.get(status, "未知")
+        suffix = f"（{reason}）" if reason else ""
+        self.ui.status_message(f"A 参数副本同步：{label}{suffix}")
+        level = "INFO" if status == config.A_SYNC_ACCEPTED else "WARNING"
+        self.db.insert_system_log(level, "A_SYNC",
+                                  f"parameter_update 状态={status} seq={seq} reason={reason}",
+                                  source="STM32")
+
     # ------------------------------------------------------------------ #
     #  历史数据
     # ------------------------------------------------------------------ #
@@ -346,9 +439,12 @@ class Controller(QObject):
         if dtype == "运行数据":
             rows = self.db.query_telemetry(start, end)
             self.ui.set_history_rows(rows, kind="telemetry")
-        else:
+        elif dtype == "控制历史":
             rows = self.db.query_control_history(start, end)
             self.ui.set_history_rows(rows, kind="control")
+        else:  # 参数修改
+            rows = self.db.query_remote_adjust(start, end)
+            self.ui.set_history_rows(rows, kind="adjust")
         self.ui.status_message(f"历史数据查询完成：{len(rows)} 条")
 
     def refresh_history(self):

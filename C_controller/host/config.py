@@ -32,8 +32,8 @@ SERIAL_STOPBITS = 1
 # --------------------------------------------------------------------------- #
 #  Wi-Fi / A 服务端（STM32 作为 TCP 客户端；地址/端口可在 GUI 修改下发）
 # --------------------------------------------------------------------------- #
-WIFI_DEFAULT_IP = "192.168.1.100"    # 与固件 wifi_config.h 的 WIFI_SERVER_IP 一致（占位，运行期经 GUI 覆盖）
-WIFI_DEFAULT_PORT = 5000             # 与固件 wifi_config.h 的 WIFI_SERVER_PORT 一致（占位，运行期经 GUI 覆盖）
+WIFI_DEFAULT_IP = "192.168.1.100"  # 与固件 wifi_config.h 的 WIFI_SERVER_IP 一致（占位，运行期经 GUI 覆盖）
+WIFI_DEFAULT_PORT = 5000           # 与固件 wifi_config.h 的 WIFI_SERVER_PORT 一致（占位，运行期经 GUI 覆盖）
 
 # --------------------------------------------------------------------------- #
 #  默认风机参数（与 wind_turbine.h 的 WT_DEFAULT_* 保持一致）
@@ -69,11 +69,11 @@ PARAM_FIELDS = [
     "control_mode",
 ]
 
-# 遥测帧（$WIND）中的字段顺序（与固件 wind_turbine.c 发送顺序一致，10 字段）。
+# 遥测帧（$WIND）中的字段顺序（与固件 wind_turbine.c 发送顺序一致，9 字段）。
 # Python 侧字段名已对齐 A/B 仓库 state.payload 命名（见 common/protocol.md）：
 #   wind_speed            -> wind_speed_mps
 #   power_available       -> wind_available_kw
-#   power_operating_limit -> wind_operating_limit_kw   （C 计算，A 校验并转发）
+#   power_operating_limit -> wind_operating_limit_kw   （联调后由 A 计算）
 #   power_set             -> wind_target_kw            （B 下发的调度目标）
 #   power_actual          -> wind_actual_kw            （A 计算）
 #   status                -> wind_running              （bool）
@@ -90,6 +90,37 @@ WIND_FIELDS = [
     "control_mode",
     "link_status",
 ]
+
+# $WIND2 遥测帧（11 字段）：在 $WIND 基础上追加 last_wind_action_seq。
+#  -1 表示当前 session 尚无被 A accepted 的 C 动作；PC 入库转换为 NULL。
+WIND2_FIELDS = WIND_FIELDS + ["last_wind_action_seq"]
+
+# parameter_update 可同步到 A 的 C 白名单参数（control_mode 不属于 A 物理参数副本，禁止发送）
+PARAM_WHITELIST = [
+    "wind_rated_power_kw",
+    "cut_in_speed_mps",
+    "rated_speed_mps",
+    "cut_out_speed_mps",
+    "pitch_feather_deg",
+    "c_control_s",
+    "c_timeout_s",
+]
+
+# A 副本同步状态（$SYNC 帧 a_sync_status）
+A_SYNC_NONE = 0
+A_SYNC_QUEUED = 1
+A_SYNC_SENT = 2
+A_SYNC_ACCEPTED = 3
+A_SYNC_REJECTED = 4
+A_SYNC_UNKNOWN = 5
+A_SYNC_LABELS = {
+    A_SYNC_NONE: "未同步",
+    A_SYNC_QUEUED: "已排队",
+    A_SYNC_SENT: "已发送待确认",
+    A_SYNC_ACCEPTED: "A 副本已同步",
+    A_SYNC_REJECTED: "A 拒绝",
+    A_SYNC_UNKNOWN: "ACK 未知",
+}
 
 # 参数标签 / 单位（GUI 表单与历史显示用）
 PARAM_LABELS = {

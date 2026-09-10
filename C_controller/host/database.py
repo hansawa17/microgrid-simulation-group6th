@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS parameter (
     c_control_s         REAL NOT NULL,
     c_timeout_s         REAL NOT NULL,
     control_mode        INTEGER NOT NULL,
+    parameter_revision  INTEGER,
+    parameter_verified  INTEGER,
+    verified_at_utc     TEXT,
+    verify_reason       TEXT,
+    a_sync_status       INTEGER,
+    a_sync_seq          INTEGER,
+    a_sync_reason       TEXT,
     update_time         TEXT NOT NULL
 );
 
@@ -69,7 +76,8 @@ CREATE TABLE IF NOT EXISTS telemetry (
     wind_running            INTEGER NOT NULL,
     pitch_target_deg        REAL,
     control_mode            INTEGER NOT NULL,
-    communication_status    INTEGER NOT NULL
+    communication_status    INTEGER NOT NULL,
+    last_wind_action_seq    INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS control_history (
@@ -175,7 +183,22 @@ class Database:
             if "cut_in_speed" in param_cols:
                 self._conn.execute("DROP TABLE IF EXISTS parameter")
             self._conn.executescript(_SCHEMA)
+            # 迁移：新版本列原位补齐（保留已有遥测/参数历史）
+            self._ensure_column("telemetry", "last_wind_action_seq", "INTEGER")
+            self._ensure_column("parameter", "parameter_revision", "INTEGER")
+            self._ensure_column("parameter", "parameter_verified", "INTEGER")
+            self._ensure_column("parameter", "verified_at_utc", "TEXT")
+            self._ensure_column("parameter", "verify_reason", "TEXT")
+            self._ensure_column("parameter", "a_sync_status", "INTEGER")
+            self._ensure_column("parameter", "a_sync_seq", "INTEGER")
+            self._ensure_column("parameter", "a_sync_reason", "TEXT")
             self._conn.commit()
+
+    def _ensure_column(self, table, column, decl):
+        """原位补齐列（若不存在），避免重建表丢失历史数据。"""
+        cols = [r[1] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if column not in cols:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
     def _seed(self):
         """写入默认设备与默认参数（若不存在）。"""
@@ -193,11 +216,11 @@ class Database:
             if cur.fetchone()[0] == 0:
                 p = config.DEFAULT_PARAMS
                 cur.execute(
-                    "INSERT INTO parameter (param_id, device_id, cut_in_speed_mps, rated_speed_mps, cut_out_speed_mps, wind_rated_power_kw, pitch_feather_deg, c_control_s, c_timeout_s, control_mode, update_time) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO parameter (param_id, device_id, cut_in_speed_mps, rated_speed_mps, cut_out_speed_mps, wind_rated_power_kw, pitch_feather_deg, c_control_s, c_timeout_s, control_mode, parameter_revision, parameter_verified, a_sync_status, update_time) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (1, 1, p["cut_in_speed_mps"], p["rated_speed_mps"], p["cut_out_speed_mps"],
                      p["wind_rated_power_kw"], p["pitch_feather_deg"], p["c_control_s"],
-                     p["c_timeout_s"], p["control_mode"], now_ms()),
+                     p["c_timeout_s"], p["control_mode"], 0, 0, 0, now_ms()),
                 )
             self._conn.commit()
 
@@ -212,6 +235,51 @@ class Database:
         if row is None:
             return dict(config.DEFAULT_PARAMS)
         return {k: row[k] for k in config.PARAM_FIELDS}
+
+    def get_param_meta(self):
+        """返回参数验证与 A 同步元数据（parameter_revision / verified / a_sync_*）。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT parameter_revision, parameter_verified, verified_at_utc, verify_reason, "
+                "a_sync_status, a_sync_seq, a_sync_reason FROM parameter WHERE device_id=1 "
+                "ORDER BY param_id DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return {
+                "parameter_revision": 0, "parameter_verified": 0,
+                "verified_at_utc": None, "verify_reason": None,
+                "a_sync_status": 0, "a_sync_seq": None, "a_sync_reason": None,
+            }
+        return {
+            "parameter_revision": row["parameter_revision"],
+            "parameter_verified": row["parameter_verified"],
+            "verified_at_utc": row["verified_at_utc"],
+            "verify_reason": row["verify_reason"],
+            "a_sync_status": row["a_sync_status"],
+            "a_sync_seq": row["a_sync_seq"],
+            "a_sync_reason": row["a_sync_reason"],
+        }
+
+    def mark_param_verified(self, verified, revision=None, reason=None):
+        """记录 $PARAMGET 回读验证结果：verified=1 表示 MCU 已生效。"""
+        with self._lock:
+            sql = "UPDATE parameter SET parameter_verified=?, verified_at_utc=?, verify_reason=?"
+            args = [int(verified), now_ms(), reason]
+            if revision is not None:
+                sql += ", parameter_revision=?"
+                args.append(int(revision))
+            sql += " WHERE device_id=1"
+            self._conn.execute(sql, args)
+            self._conn.commit()
+
+    def record_param_sync(self, status, seq=None, reason=None):
+        """记录 STM32->A parameter_update 的同步状态（$SYNC 帧）。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE parameter SET a_sync_status=?, a_sync_seq=?, a_sync_reason=? WHERE device_id=1",
+                (int(status), seq, reason),
+            )
+            self._conn.commit()
 
     def update_params(self, new_params):
         """更新参数表，并把改动逐项写入 remote_adjust。返回改动项列表。"""
@@ -247,15 +315,16 @@ class Database:
     # ------------------------------------------------------------------ #
     def insert_telemetry(self, data, communication_status=1):
         """插入一条遥测。data 含对齐仓库命名的字段（见 config.WIND_FIELDS）。"""
+        last_seq = data.get("last_wind_action_seq")
         with self._lock:
             self._conn.execute(
                 "INSERT INTO telemetry (device_id, cycle, timestamp, wind_speed_mps, wind_available_kw, "
                 "wind_operating_limit_kw, wind_target_kw, wind_actual_kw, wind_running, pitch_target_deg, "
-                "control_mode, communication_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "control_mode, communication_status, last_wind_action_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (1, int(data["cycle"]), now_ms(), data["wind_speed_mps"], data["wind_available_kw"],
                  data.get("wind_operating_limit_kw"), data["wind_target_kw"], data["wind_actual_kw"],
                  int(data["wind_running"]), data.get("pitch_target_deg"), int(data["control_mode"]),
-                 communication_status),
+                 communication_status, last_seq),
             )
             # 同步写入闭环控制历史（本阶段 B/A 未接入，柴发/负荷字段留空）
             self._conn.execute(
@@ -330,6 +399,15 @@ class Database:
         sql = ("SELECT timestamp, cycle, wind_speed_mps, wind_available_kw, wind_target_kw, wind_actual_kw, "
                "pitch_target_deg, wind_running, power_diesel_set, load, decision_status FROM control_history "
                "WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC LIMIT ?")
+        with self._lock:
+            rows = self._conn.execute(sql, (start, end + ".999", limit)).fetchall()
+        return [tuple(r) for r in rows]
+
+    def query_remote_adjust(self, start, end, limit=1000):
+        """按时间区间查询参数修改历史（remote_adjust），返回 [(列值元组), ...]。"""
+        sql = ("SELECT adjust_time, parameter_name, old_value, new_value, unit, source, result "
+               "FROM remote_adjust WHERE adjust_time >= ? AND adjust_time <= ? "
+               "ORDER BY adjust_time ASC LIMIT ?")
         with self._lock:
             rows = self._conn.execute(sql, (start, end + ".999", limit)).fetchall()
         return [tuple(r) for r in rows]

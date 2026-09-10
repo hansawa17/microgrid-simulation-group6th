@@ -631,6 +631,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("wind_running",           "运行状态", "",    "C 计算"),
             ("link_status",            "A 链路",   "",    "STM32↔A"),
             ("cycle",                  "当前周期", "",    "MCU"),
+            ("last_wind_action_seq",   "最近动作seq", "", "A accepted"),
         ]
         self.readonlyLabels = {}
         self._ro_meta = {}
@@ -647,6 +648,44 @@ class MainWindow(QtWidgets.QMainWindow):
             self._ro_meta[key] = (unit, src)
         rl.addLayout(ro_grid)
         v.addWidget(ro)
+
+        # 参数验证与 A 副本同步状态（本整改新增：区分「MCU 已生效」与「A 副本已同步」）
+        vs = self._frame()
+        vs.setProperty("role", "card")
+        vsl = QtWidgets.QVBoxLayout(vs)
+        vsl.setContentsMargins(16, 14, 16, 14)
+        vsl.setSpacing(8)
+        vt = QtWidgets.QLabel("ⓘ 参数验证与 A 副本同步")
+        vt.setProperty("role", "cardTitle")
+        vsl.addWidget(vt)
+
+        vs_grid = QtWidgets.QGridLayout()
+        vs_grid.setHorizontalSpacing(24)
+        vs_grid.setVerticalSpacing(8)
+
+        vs_grid.addWidget(QtWidgets.QLabel("参数版本 (revision)"), 0, 0)
+        self.paramRevisionLabel = QtWidgets.QLabel("—")
+        self.paramRevisionLabel.setProperty("role", "source")
+        vs_grid.addWidget(self.paramRevisionLabel, 0, 1, 1, 2)
+
+        vs_grid.addWidget(QtWidgets.QLabel("MCU 是否生效"), 1, 0)
+        self.mcuVerifiedLabel = QtWidgets.QLabel("—")
+        self.mcuVerifiedLabel.setProperty("state", "warn")
+        vs_grid.addWidget(self.mcuVerifiedLabel, 1, 1)
+        self.mcuVerifiedDetailLabel = QtWidgets.QLabel("")
+        self.mcuVerifiedDetailLabel.setProperty("role", "source")
+        vs_grid.addWidget(self.mcuVerifiedDetailLabel, 1, 2)
+
+        vs_grid.addWidget(QtWidgets.QLabel("A 副本同步"), 2, 0)
+        self.aSyncLabel = QtWidgets.QLabel("—")
+        self.aSyncLabel.setProperty("state", "warn")
+        vs_grid.addWidget(self.aSyncLabel, 2, 1)
+        self.aSyncDetailLabel = QtWidgets.QLabel("")
+        self.aSyncDetailLabel.setProperty("role", "source")
+        vs_grid.addWidget(self.aSyncDetailLabel, 2, 2)
+
+        vsl.addLayout(vs_grid)
+        v.addWidget(vs)
 
         v.addStretch(1)
         return page
@@ -726,7 +765,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ql.addWidget(self.endTimeEdit)
         ql.addWidget(QtWidgets.QLabel("数据类型"))
         self.dataTypeCombo = QtWidgets.QComboBox()
-        self.dataTypeCombo.addItems(["运行数据", "控制历史"])
+        self.dataTypeCombo.addItems(["运行数据", "控制历史", "参数修改"])
         ql.addWidget(self.dataTypeCombo)
         ql.addSpacing(8)
         self.queryButton = self._button("查询", "primary")
@@ -899,6 +938,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "wind_running":            "运行" if data.get("wind_running") else "停止",
             "link_status":             "在线" if data.get("link_status") else "离线",
             "cycle":                   str(data.get("cycle", "—")),
+            "last_wind_action_seq":    (str(data["last_wind_action_seq"])
+                                        if data.get("last_wind_action_seq") is not None else "—"),
         }
         for key, label in self.readonlyLabels.items():
             unit, src = self._ro_meta.get(key, ("", ""))
@@ -906,6 +947,34 @@ class MainWindow(QtWidgets.QMainWindow):
             if unit:
                 text += f" {unit}"
             label.setText(f"{text}　·　{src}")
+
+    def set_param_revision(self, revision):
+        self.paramRevisionLabel.setText(str(revision) if revision is not None else "—")
+
+    def set_param_verify_status(self, verified, revision=None, reason=None):
+        """显示「MCU 已生效」与否（来自 $PARAMGET 回读验证，不冒充 A 同步）。"""
+        if revision is not None:
+            self.set_param_revision(revision)
+        if verified:
+            self._set_state_label(self.mcuVerifiedLabel, "good", "MCU 已生效")
+            self.mcuVerifiedDetailLabel.setText("验证通过")
+        else:
+            self._set_state_label(self.mcuVerifiedLabel, "bad", "MCU 未生效")
+            self.mcuVerifiedDetailLabel.setText(f"验证失败：{reason}" if reason else "验证失败")
+
+    def set_param_sync_status(self, status, seq=None, reason=None):
+        """显示 A 参数副本同步状态（来自 $SYNC，与 MCU 已生效严格区分）。"""
+        label = config.A_SYNC_LABELS.get(status, "未知")
+        if status == config.A_SYNC_ACCEPTED:
+            self._set_state_label(self.aSyncLabel, "good", label)
+        elif status in (config.A_SYNC_REJECTED, config.A_SYNC_UNKNOWN):
+            self._set_state_label(self.aSyncLabel, "bad", label)
+        else:
+            self._set_state_label(self.aSyncLabel, "warn", label)
+        detail = f"seq={seq}" if seq is not None else ""
+        if reason:
+            detail = f"{detail}　{reason}" if detail else reason
+        self.aSyncDetailLabel.setText(detail)
 
     def _set_state_label(self, label, state, text):
         label.setText(text)
@@ -981,6 +1050,19 @@ class MainWindow(QtWidgets.QMainWindow):
                     "闭环" if cm == 1 else "开环",
                     "正常" if cs == 1 else "超时",
                 ])
+        elif kind == "adjust":
+            headers = ["修改时间", "参数名", "旧值", "新值", "单位", "来源", "结果"]
+            formatted = []
+            for ts, name, old_v, new_v, unit, src, result in rows:
+                label = config.PARAM_LABELS.get(name, (name, ""))[0]
+                if name == "control_mode":
+                    old_s = "闭环" if int(old_v) == 1 else "开环"
+                    new_s = "闭环" if int(new_v) == 1 else "开环"
+                else:
+                    old_s = f"{float(old_v):.2f}" if old_v is not None else "-"
+                    new_s = f"{float(new_v):.2f}" if new_v is not None else "-"
+                formatted.append([ts, label, old_s, new_s, unit or "-", src or "-",
+                                  "成功" if result == 1 else "失败"])
         else:
             headers = ["时间戳", "周期", "风速(m/s)", "可用功率(kW)", "目标功率(kW)",
                        "实际功率(kW)", "桨距角(°)", "状态", "柴发设定(kW)", "负荷(kW)", "决策状态"]

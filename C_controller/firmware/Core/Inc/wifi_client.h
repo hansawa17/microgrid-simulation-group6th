@@ -33,4 +33,28 @@ void        WifiClient_SetServer(const char *ip, uint16_t port);
 const char *WifiClient_GetServerIp(void);
 uint16_t    WifiClient_GetServerPort(void);
 
+/* ------------------------------------------------------------------ */
+/*  parameter_update 与动作追踪（本整改新增）                           */
+/* ------------------------------------------------------------------ */
+/* A 副本同步状态（wind_turbine 据此组装 $SYNC 帧） */
+#define WF_PSYNC_NONE     0u  /* 未发送 */
+#define WF_PSYNC_QUEUED   1u  /* 已排队，等待安全空档 */
+#define WF_PSYNC_SENT     2u  /* 已发送，等待 A 的 ACK */
+#define WF_PSYNC_ACCEPTED 3u  /* A accepted */
+#define WF_PSYNC_REJECTED 4u  /* A rejected */
+#define WF_PSYNC_UNKNOWN  5u  /* 超时/断线，ACK 未知 */
+
+/* 排队向 A 发送 source=C 的 parameter_update（在单未决 TCP 事务安全空档发送）。
+ * parameters_json 形如 {"wind_rated_power_kw":100.00,...,"c_timeout_s":3.00}，
+ * 只允许 C 白名单物理参数，control_mode 不得包含。 */
+void WifiClient_QueueParameterUpdate(const char *parameters_json);
+
+/* 最近一次被 A accepted 的 wind_action.seq（-1 表示当前会话尚无） */
+int32_t WifiClient_GetLastWindActionSeq(void);
+
+/* parameter_update 同步状态 / seq / reason（供 wind_turbine 组装 $SYNC） */
+uint32_t    WifiClient_GetParamSyncStatus(void);
+int32_t     WifiClient_GetParamSyncSeq(void);
+const char *WifiClient_GetParamSyncReason(void);
+
 #endif /* __WIFI_CLIENT_H */

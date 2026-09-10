@@ -132,6 +132,28 @@ B 正式运行由 `communication_service.py`、`compute_service.py` 和 `gui_b.p
 - 「参数设置」页由静态文字卡改为实时只读网格，展示风速/可用功率/运行上限/目标功率/
   实际功率/桨距角/运行状态/A 链路/周期，均标注来源（A/B/C 计算）且不可修改。
 
+### 2026-09-10 · C 风机指令追踪 + 参数回读证明 + A 参数副本同步
+
+- 固件新增版本化串口帧：`$WIND2`（在 `$WIND` 后追加 `last_wind_action_seq`，-1→NULL）、
+  `$PARAM2,<request_id>,<8字段>`（全字段校验通过后原子应用并递增 `parameter_revision`）、
+  `$PARAMGET?,<request_id>` 与 `$PARAMGET,<request_id>,<revision>,<8字段>`；保留旧
+  `$WIND/$PARAM/$CMD/$WIFI` 兼容解析。新增 `$SYNC,<a_sync_status>,<a_sync_seq>,<reason>`
+  上报 STM32→A `parameter_update` 结果。
+- 固件在 `$PARAM2` 生效后，于 TCP 单未决事务安全空档（不打断 state/wind_action/ACK）排队
+  向 A 发送 source=C 的 `parameter_update`，payload 只含 7 个白名单物理参数，`control_mode`
+  不发送；断线/超时 ACK 标记 unknown，不盲目重发。
+- 上位机 `wind.db` 原位迁移补齐 `telemetry.last_wind_action_seq` 与参数表
+  `parameter_revision/parameter_verified/verified_at_utc/verify_reason/a_sync_*`；回读验证用
+  统一 0.01 容差，`$PARAMGET.request_id` 匹配且数值一致才显示「MCU 已生效」，`$SYNC`
+  accepted 才显示「A 副本已同步」，两者互不冒充；历史查询增加「参数修改」与同步状态可查。
+- 配套 A 汇聚端最小改动（见 `docs/wind-execution-status-extension.md`）：`grid.db` 升至
+  schema v6，`state.payload` 恒输出 `controller_wind_enable/pitch_target_deg/
+  last_wind_action_seq/last_wind_action_step/wind_action_applied_at_utc` 五字段，`wind_action`
+  payload 仍严格四字段。
+- 验证范围：PC 自动测试覆盖 A 五字段/幂等/新会话清空、`$WIND`/`$WIND2`/`$PARAM2`/
+  `$PARAMGET`/`$SYNC` 解析、parameter_update 白名单与旧库迁移；未重新编译 STM32 固件，未
+  执行三机/串口/硬件实测。
+
 ### 2026-09-09 · C Wi-Fi 地址/端口运行期可配
 
 - C 的 A 服务器地址/端口不再只写死在固件 `wifi_config.h`，改为「上电默认值 + 运行期可改」：

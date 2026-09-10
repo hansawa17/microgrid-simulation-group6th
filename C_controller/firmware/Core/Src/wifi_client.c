@@ -53,7 +53,8 @@ typedef enum {
 typedef enum {
     WF_MSG_NONE,
     WF_MSG_STATE_REQUEST,
-    WF_MSG_WIND_ACTION
+    WF_MSG_WIND_ACTION,
+    WF_MSG_PARAMETER_UPDATE
 } wf_message_kind_t;
 
 typedef enum {
@@ -75,6 +76,7 @@ typedef struct {
     uint8_t  wind_running;
     uint8_t  fault;
     uint8_t  got_state;
+    int32_t  last_wind_action_seq;   /* 最近一次被 A accepted 的 wind_action.seq（-1=无） */
 } WfState_t;
 
 static WfState_t wf;
@@ -102,6 +104,16 @@ static uint8_t wf_resend_pending = 0u;
 static char wf_rx_line[WF_RX_LINE_SIZE];
 static uint16_t wf_rx_len = 0u;
 static uint8_t wf_rx_discarding = 0u;
+
+/* parameter_update（C 白名单物理参数）队列与 A 同步状态；在单未决事务安全空档发送 */
+static char wf_param_update_payload[256];
+static uint8_t wf_param_update_queued = 0u;
+static uint32_t wf_psync_status = WF_PSYNC_NONE;
+static uint32_t wf_psync_seq = 0u;
+static char wf_psync_reason[32];
+
+/* 当前等待 ACK 的消息类型（区分 wind_action / parameter_update） */
+static wf_message_kind_t wf_ack_kind = WF_MSG_NONE;
 
 static void ftoa2(char *dst, float v)
 {
@@ -181,6 +193,14 @@ static void wf_reset_transport(void)
     wf_rx_len = 0u;
     wf_rx_discarding = 0u;
     wf_resend_pending = 0u;
+    wf_ack_kind = WF_MSG_NONE;
+    /* 已发送但未收到 ACK 的 parameter_update 因断线/超时而 ACK 未知 */
+    if (wf_psync_status == WF_PSYNC_SENT)
+    {
+        wf_psync_status = WF_PSYNC_UNKNOWN;
+        strncpy(wf_psync_reason, "ack_unknown", sizeof(wf_psync_reason) - 1u);
+        wf_psync_reason[sizeof(wf_psync_reason) - 1u] = '\0';
+    }
     Esp8266_DiscardData();
 }
 
@@ -269,6 +289,20 @@ static int wf_send_state_request(void)
     return wf_start_frame(frame, (uint16_t)n, WF_MSG_STATE_REQUEST, wf.seq);
 }
 
+static int wf_send_parameter_update(void)
+{
+    char payload[320];
+    char frame[WF_FRAME_SIZE];
+    int n;
+    snprintf(payload, sizeof(payload), "{\"parameters\":%s}", wf_param_update_payload);
+    n = wf_build_envelope(frame, sizeof(frame), "parameter_update", payload, wf.seq);
+    if (n <= 0 || (size_t)n >= sizeof(frame)) return -1;
+    wf_psync_status = WF_PSYNC_SENT;
+    wf_psync_seq = wf.seq;
+    wf_psync_reason[0] = '\0';
+    return wf_start_frame(frame, (uint16_t)n, WF_MSG_PARAMETER_UPDATE, wf.seq);
+}
+
 static int wf_handle_state(const char *line)
 {
     char session[64];
@@ -297,6 +331,7 @@ static int wf_handle_state(const char *line)
     {
         wf_pending_valid = 0u;
         wf_pending_len = 0u;
+        wf.last_wind_action_seq = -1;   /* 新 session 清空动作追踪 */
     }
     strcpy(wf.session_id, session);
 
@@ -340,14 +375,43 @@ static int wf_handle_ack(const char *line)
         json_get_bool(line, "accepted", &accepted) != 0)
         return -1;
 
-    if (wf_app_state != WF_APP_WAIT_ACK || !wf_pending_valid ||
-        ack_seq != wf_pending_seq)
+    if (wf_app_state != WF_APP_WAIT_ACK)
         return -1;
 
-    /* accepted/rejected 都结束该事务；拒绝原因由 A 留库，下一轮重新同步。 */
-    (void)accepted;
-    wf_pending_valid = 0u;
-    wf_pending_len = 0u;
+    if (wf_ack_kind == WF_MSG_WIND_ACTION)
+    {
+        if (!wf_pending_valid || ack_seq != wf_pending_seq)
+            return -1;
+    }
+    else if (wf_ack_kind == WF_MSG_PARAMETER_UPDATE)
+    {
+        if (ack_seq != wf_psync_seq)
+            return -1;
+    }
+    else
+    {
+        return -1;
+    }
+
+    if (wf_ack_kind == WF_MSG_WIND_ACTION)
+    {
+        if (accepted)
+            wf.last_wind_action_seq = (int32_t)ack_seq;
+        wf_pending_valid = 0u;
+        wf_pending_len = 0u;
+    }
+    else if (wf_ack_kind == WF_MSG_PARAMETER_UPDATE)
+    {
+        char reason[32];
+        if (json_get_string(line, "reason", reason, sizeof(reason)) == 0)
+            strncpy(wf_psync_reason, reason, sizeof(wf_psync_reason) - 1u);
+        else
+            strncpy(wf_psync_reason, "rejected", sizeof(wf_psync_reason) - 1u);
+        wf_psync_reason[sizeof(wf_psync_reason) - 1u] = '\0';
+        wf_psync_status = accepted ? WF_PSYNC_ACCEPTED : WF_PSYNC_REJECTED;
+    }
+
+    wf_ack_kind = WF_MSG_NONE;
     wf_app_state = WF_APP_IDLE;
     wf_response_tick = 0u;
     wf.got_state = 0u;
@@ -409,11 +473,12 @@ static void wf_finish_send(void)
         wf_app_state = WF_APP_WAIT_STATE;
         wf_response_tick = HAL_GetTick();
     }
-    else if (wf_tx_kind == WF_MSG_WIND_ACTION)
+    else if (wf_tx_kind == WF_MSG_WIND_ACTION || wf_tx_kind == WF_MSG_PARAMETER_UPDATE)
     {
         wf_app_state = WF_APP_WAIT_ACK;
         wf_response_tick = HAL_GetTick();
     }
+    wf_ack_kind = wf_tx_kind;
     wf_tx_state = WF_TX_IDLE;
     wf_tx_kind = WF_MSG_NONE;
     wf_tx_len = 0u;
@@ -448,8 +513,14 @@ static int wf_tx_task(uint32_t events)
 void WifiClient_Init(void)
 {
     memset(&wf, 0, sizeof(wf));
+    wf.last_wind_action_seq = -1;
     wf_pending_valid = 0u;
     wf_pending_len = 0u;
+    wf_param_update_queued = 0u;
+    wf_psync_status = WF_PSYNC_NONE;
+    wf_psync_seq = 0u;
+    wf_psync_reason[0] = '\0';
+    wf_ack_kind = WF_MSG_NONE;
     wf_reset_transport();
     wf_enter(WF_AT_SYNC);
 }
@@ -543,6 +614,14 @@ void WifiClient_Task(void)
                                    WF_MSG_WIND_ACTION, wf_pending_seq) == 0)
                     wf_resend_pending = 0u;
             }
+            else if (wf_param_update_queued)
+            {
+                /* 在单未决事务安全空档发送 parameter_update，不与 state/wind_action/ACK 并发 */
+                if (wf_send_parameter_update() == 0)
+                    wf_param_update_queued = 0u;
+                else
+                    wf_reconnect();
+            }
             else if (!wf.got_state)
             {
                 if (wf_send_state_request() != 0) wf_reconnect();
@@ -599,6 +678,29 @@ void WifiClient_SetServer(const char *ip, uint16_t port)
 
 const char *WifiClient_GetServerIp(void)   { return g_server_ip; }
 uint16_t    WifiClient_GetServerPort(void) { return g_server_port; }
+
+void WifiClient_QueueParameterUpdate(const char *parameters_json)
+{
+    if (parameters_json == NULL || parameters_json[0] == '\0') return;
+    if (strlen(parameters_json) >= sizeof(wf_param_update_payload)) return;
+    strcpy(wf_param_update_payload, parameters_json);
+    wf_param_update_queued = 1u;
+    wf_psync_status = WF_PSYNC_QUEUED;
+    wf_psync_reason[0] = '\0';
+}
+
+int32_t WifiClient_GetLastWindActionSeq(void) { return wf.last_wind_action_seq; }
+
+uint32_t WifiClient_GetParamSyncStatus(void)  { return wf_psync_status; }
+
+int32_t WifiClient_GetParamSyncSeq(void)
+{
+    if (wf_psync_status == WF_PSYNC_NONE || wf_psync_status == WF_PSYNC_QUEUED)
+        return -1;
+    return (int32_t)wf_psync_seq;
+}
+
+const char *WifiClient_GetParamSyncReason(void) { return wf_psync_reason; }
 
 int WifiClient_IsOnline(void)                    { return (wf_state == WF_ONLINE) ? 1 : 0; }
 int WifiClient_HasState(void)                    { return (wf.got_state != 0u) ? 1 : 0; }

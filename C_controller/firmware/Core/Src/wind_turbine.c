@@ -47,10 +47,11 @@ typedef struct
     float    pitch_feather_deg;
     float    c_control_s;  /* 控制周期 s */
     float    c_timeout_s;    /* 通信超时 s */
+    uint32_t parameter_revision;  /* 参数版本：每次 $PARAM2 原子应用后递增 */
 
     /* 计算输出 */
     float    power_available;        /* 可用功率 kW */
-    float    power_operating_limit;  /* 稳态运行上限 kW（C 计算，A 校验并转发） */
+    float    power_operating_limit;  /* 稳态运行上限 kW（联调后由 A 计算） */
     float    power_actual;           /* 实际功率 kW */
     float    deg;                    /* 桨距角   °  */
     uint8_t  status;                 /* 启停 0停止/1运行 */
@@ -61,6 +62,9 @@ typedef struct
 } WT_State_t;
 
 static WT_State_t wt;
+
+/* 上次上报的 A 同步状态（用于 $SYNC 变化检测，首帧必发） */
+static uint32_t wt_last_sync_status = 0xFFFFFFFFu;
 
 /* ------------------------------------------------------------------ */
 /*  串口接收行缓冲                                                     */
@@ -109,6 +113,7 @@ static void wt_send_telemetry(void)
 {
     char buf[192];
     char f1[16], f2[16], f3[16], f4[16], f5[16], f6[16];
+    int32_t last_seq = WifiClient_GetLastWindActionSeq();
 
     wt_ftoa2(f1, wt.wind_speed);
     wt_ftoa2(f2, wt.power_available);
@@ -117,14 +122,75 @@ static void wt_send_telemetry(void)
     wt_ftoa2(f5, wt.power_actual);
     wt_ftoa2(f6, wt.deg);
 
-    sprintf(buf, "$WIND,%lu,%s,%s,%s,%s,%s,%u,%s,%u,%u\r\n",
+    /* $WIND2 在旧 $WIND 基础上追加 last_wind_action_seq（-1 表示尚无被 A accepted 的 C 动作） */
+    sprintf(buf, "$WIND2,%lu,%s,%s,%s,%s,%s,%u,%s,%u,%u,%ld\r\n",
             (unsigned long)wt.cycle,
             f1, f2, f3, f4, f5,
             (unsigned)wt.status,
             f6,
             (unsigned)wt.control_mode,
-            (unsigned)(WifiClient_IsOnline() ? 1u : 0u));
+            (unsigned)(WifiClient_IsOnline() ? 1u : 0u),
+            (long)last_seq);
     wt_send(buf);
+}
+
+/* ------------------------------------------------------------------ */
+/*  参数查询应答：$PARAMGET,<request_id>,<revision>,<8 字段>            */
+/* ------------------------------------------------------------------ */
+static void wt_send_paramget(uint32_t request_id)
+{
+    char buf[192];
+    char f1[16], f2[16], f3[16], f4[16], f5[16], f6[16], f7[16];
+
+    wt_ftoa2(f1, wt.cut_in_speed_mps);
+    wt_ftoa2(f2, wt.rated_speed_mps);
+    wt_ftoa2(f3, wt.cut_out_speed_mps);
+    wt_ftoa2(f4, wt.wind_rated_power_kw);
+    wt_ftoa2(f5, wt.pitch_feather_deg);
+    wt_ftoa2(f6, wt.c_control_s);
+    wt_ftoa2(f7, wt.c_timeout_s);
+
+    sprintf(buf, "$PARAMGET,%lu,%lu,%s,%s,%s,%s,%s,%s,%s,%u\r\n",
+            (unsigned long)request_id,
+            (unsigned long)wt.parameter_revision,
+            f1, f2, f3, f4, f5, f6, f7,
+            (unsigned)wt.control_mode);
+    wt_send(buf);
+}
+
+/* ------------------------------------------------------------------ */
+/*  A 副本同步状态上报：$SYNC,<a_sync_status>,<a_sync_seq>,<reason>     */
+/* ------------------------------------------------------------------ */
+static void wt_send_sync(uint32_t status, int32_t seq, const char *reason)
+{
+    char buf[128];
+    if (reason == NULL) reason = "";
+    sprintf(buf, "$SYNC,%lu,%ld,%s\r\n", (unsigned long)status, (long)seq, reason);
+    wt_send(buf);
+}
+
+/* ------------------------------------------------------------------ */
+/*  排队向 A 同步 C 物理参数白名单（control_mode 不发送）               */
+/* ------------------------------------------------------------------ */
+static void wt_queue_parameter_update(void)
+{
+    char params[256];
+    char f1[16], f2[16], f3[16], f4[16], f5[16], f6[16], f7[16];
+
+    wt_ftoa2(f1, wt.cut_in_speed_mps);
+    wt_ftoa2(f2, wt.rated_speed_mps);
+    wt_ftoa2(f3, wt.cut_out_speed_mps);
+    wt_ftoa2(f4, wt.wind_rated_power_kw);
+    wt_ftoa2(f5, wt.pitch_feather_deg);
+    wt_ftoa2(f6, wt.c_control_s);
+    wt_ftoa2(f7, wt.c_timeout_s);
+
+    snprintf(params, sizeof(params),
+             "{\"wind_rated_power_kw\":%s,\"cut_in_speed_mps\":%s,"
+             "\"rated_speed_mps\":%s,\"cut_out_speed_mps\":%s,"
+             "\"pitch_feather_deg\":%s,\"c_control_s\":%s,\"c_timeout_s\":%s}",
+             f4, f1, f2, f3, f5, f6, f7);
+    WifiClient_QueueParameterUpdate(params);
 }
 
 /* ------------------------------------------------------------------ */
@@ -218,6 +284,7 @@ static void wt_reset_defaults(void)
     wt.c_timeout_s    = WT_DEFAULT_C_TIMEOUT_S;
     wt.run_enable      = 1u;
     wt.cycle           = 0u;
+    wt.parameter_revision   = 0u;
     wt.power_available       = 0.0f;
     wt.power_operating_limit = 0.0f;
     wt.power_actual          = 0.0f;
@@ -253,6 +320,52 @@ static void wt_parse_line(char *line)
         if (wt.rated_speed_mps <= wt.cut_in_speed_mps) wt.rated_speed_mps = wt.cut_in_speed_mps + 1.0f;
 
         wt_send_ack("PARAM", 1u);
+    }
+    else if (strcmp(p, "$PARAM2") == 0)
+    {
+        /* 原子应用：完整解析并校验全部字段后一次性生效；失败保持旧参数并返回当前有效值 */
+        char *s;
+        uint32_t request_id;
+        float v_cut_in, v_rated, v_cut_out, v_power, v_feather, v_control, v_timeout;
+        int v_mode;
+
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_ack("PARAM2", 0u); return; }
+        request_id = (uint32_t)strtoul(s, NULL, 10);
+
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_paramget(request_id); return; } v_cut_in  = (float)atof(s);
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_paramget(request_id); return; } v_rated   = (float)atof(s);
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_paramget(request_id); return; } v_cut_out = (float)atof(s);
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_paramget(request_id); return; } v_power   = (float)atof(s);
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_paramget(request_id); return; } v_feather = (float)atof(s);
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_paramget(request_id); return; } v_control = (float)atof(s);
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_paramget(request_id); return; } v_timeout = (float)atof(s);
+        s = strtok(NULL, ","); if (s == NULL) { wt_send_paramget(request_id); return; } v_mode    = (int)atoi(s);
+
+        if (v_cut_in < 0.0f || v_rated <= v_cut_in || v_cut_out <= v_rated ||
+            v_power <= 0.0f || v_feather < 0.0f || v_feather > 90.0f ||
+            v_control <= 0.0f || v_timeout <= 0.0f ||
+            (v_mode != WT_MODE_OPEN_LOOP && v_mode != WT_MODE_CLOSED_LOOP))
+        {
+            wt_send_ack("PARAM2", 0u);
+            wt_send_paramget(request_id);   /* 失败保持旧参数并返回当前有效值 */
+            return;
+        }
+
+        wt.cut_in_speed_mps    = v_cut_in;
+        wt.rated_speed_mps     = v_rated;
+        wt.cut_out_speed_mps   = v_cut_out;
+        wt.wind_rated_power_kw = v_power;
+        wt.pitch_feather_deg   = v_feather;
+        wt.c_control_s         = v_control;
+        wt.c_timeout_s         = v_timeout;
+        wt.control_mode        = (uint8_t)v_mode;
+        wt.parameter_revision++;
+
+        wt_send_ack("PARAM2", 1u);
+        wt_send_paramget(request_id);
+
+        /* MCU 确认生效后，在 TCP 单未决事务安全空档排队同步 C 白名单参数到 A */
+        wt_queue_parameter_update();
     }
     else if (strcmp(p, "$CMD") == 0)
     {
@@ -297,6 +410,18 @@ static void wt_parse_line(char *line)
         sprintf(buf, "$WIFIGET,%s,%u\r\n",
                 WifiClient_GetServerIp(), (unsigned)WifiClient_GetServerPort());
         wt_send(buf);
+    }
+    else if (strcmp(p, "$PARAM?") == 0)
+    {
+        /* 旧查询（兼容保留）：应答 $PARAMGET,<request_id=0>,<revision>,<8 字段> */
+        wt_send_paramget(0u);
+    }
+    else if (strcmp(p, "$PARAMGET?") == 0)
+    {
+        /* 查询当前风机参数：应答 $PARAMGET,<request_id>,<revision>,<8 字段> */
+        char *s = strtok(NULL, ",");
+        uint32_t request_id = (s != NULL) ? (uint32_t)strtoul(s, NULL, 10) : 0u;
+        wt_send_paramget(request_id);
     }
 }
 
@@ -347,6 +472,16 @@ void WindTurbine_PeriodicTask(void)
         wt.power_actual = WifiClient_GetWindActualKw();
     }
     /* 在线但等待 state/ack 时保持上一状态；Wi-Fi 状态机继续推进事务。 */
+
+    /* 上报 A 副本同步状态变化（$SYNC），状态无变化时不重复发送 */
+    {
+        uint32_t sync_status = WifiClient_GetParamSyncStatus();
+        if (sync_status != wt_last_sync_status)
+        {
+            wt_last_sync_status = sync_status;
+            wt_send_sync(sync_status, WifiClient_GetParamSyncSeq(), WifiClient_GetParamSyncReason());
+        }
+    }
 
     wt_send_telemetry();
     wt.cycle++;

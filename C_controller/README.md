@@ -82,6 +82,30 @@ C_controller/
 - 「参数设置」页改为实时只读网格，展示风速/可用功率/运行上限/目标功率/实际功率/桨距角/
   运行状态/A 链路/周期，均标注来源（A/B/C 计算）且不可修改。
 
+### 2026-09-10 · 风机指令追踪 + 参数回读证明 + A 参数副本同步
+
+- **固件**（`wind_turbine.{c,h}` / `wifi_client.{c,h}`）：
+  - 遥测 `$WIND` 升级为 `$WIND2`，追加 `last_wind_action_seq`（-1 表示当前会话尚无被
+    A accepted 的 C 动作，PC 入库转 NULL）；保留旧 `$WIND/$PARAM/$CMD/$WIFI` 兼容。
+  - 参数下发改用 `$PARAM2,<request_id>,<8字段>`：MCU 完整解析并校验全部字段后原子应用、
+    递增 `parameter_revision`，失败保持旧参数并返回当前 `$PARAMGET`；`$PARAMGET?,<request_id>`
+    读回当前有效值。
+  - `$PARAM2` 生效后，在 TCP 单未决事务安全空档排队发送 source=C 的 `parameter_update`，
+    payload 只含 7 个白名单物理参数（`control_mode` 不发送）；`wind_action` 被 A accepted 时
+    记录 `last_wind_action_seq`；新增 `$SYNC` 上报同步结果（0未同步/1排队/2已发送/3accepted/
+    4rejected/5ack未知）。
+- **上位机**（`config/protocol/database/controller/gui`）：
+  - `wind.db` 原位迁移补齐 `telemetry.last_wind_action_seq` 与参数表
+    `parameter_revision/parameter_verified/verified_at_utc/verify_reason/a_sync_*`，保留历史。
+  - 回读验证用统一 0.01 数值容差：`$PARAMGET.request_id` 匹配且全部参数一致才显示
+    「MCU 已生效」，否则显示失败原因；`$SYNC` 的 accepted 才显示「A 副本已同步」，两者
+    互不冒充。参数页新增参数版本/验证状态/失败原因/A 同步状态显示，监控页显示最近动作 seq。
+- 配套 A 汇聚端最小改动（`grid.db` schema v6 + `state.payload` 五字段 + `wind_action` 原子
+  追踪）见 `docs/wind-execution-status-extension.md` 与 `docs/decisions.md`。
+- 验证：新增 `tests/test_c_wind_extension.py`（`$WIND/$WIND2/$PARAM2/$PARAMGET/$SYNC` 解析、
+  parameter_update 白名单、旧库迁移）与 A 侧 `test_a_simulator.py` 五字段/幂等/新会话用例，
+  PC 全部通过；**未重新编译 STM32 固件**，未执行三机/串口/硬件实测。
+
 ## 尚未完成 / 待确认
 
 - **C 已对齐冻结参数**：额定 100 kW、三次曲线、桨距 0-90°；C 计算 `wind_available_kw`/
