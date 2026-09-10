@@ -96,6 +96,9 @@ class ControlInputs:
     pitch_target_deg: float
     controller_wind_available_kw: float
     controller_wind_operating_limit_kw: float
+    last_wind_action_seq: int | None = None
+    last_wind_action_step: int | None = None
+    wind_action_applied_at_utc: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +120,11 @@ class SimulationState:
     diesel_running: bool
     fault: bool
     power_imbalance_kw: float
+    controller_wind_enable: bool = False
+    pitch_target_deg: float = 90.0
+    last_wind_action_seq: int | None = None
+    last_wind_action_step: int | None = None
+    wind_action_applied_at_utc: str | None = None
 
     def __post_init__(self) -> None:
         if not self.session_id:
@@ -141,6 +149,17 @@ class SimulationState:
             raise ValueError("wind_operating_limit_kw must not exceed wind_available_kw")
         if not math.isfinite(self.power_imbalance_kw):
             raise ValueError("power_imbalance_kw must be finite")
+        if type(self.controller_wind_enable) is not bool:
+            raise ValueError("controller_wind_enable must be boolean")
+        _finite_non_negative("pitch_target_deg", self.pitch_target_deg)
+        for name in ("last_wind_action_seq", "last_wind_action_step"):
+            value = getattr(self, name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+            ):
+                raise ValueError(f"{name} must be a non-negative integer or None")
+        if self.wind_action_applied_at_utc is not None:
+            _validate_utc_timestamp(self.wind_action_applied_at_utc)
 
     def protocol_payload(self) -> dict[str, object]:
         """Return fields currently listed in common/protocol.md."""
@@ -155,6 +174,11 @@ class SimulationState:
             "wind_target_kw": self.wind_target_kw,
             "diesel_target_kw": self.diesel_target_kw,
             "pitch_actual_deg": self.pitch_actual_deg,
+            "controller_wind_enable": self.controller_wind_enable,
+            "pitch_target_deg": self.pitch_target_deg,
+            "last_wind_action_seq": self.last_wind_action_seq,
+            "last_wind_action_step": self.last_wind_action_step,
+            "wind_action_applied_at_utc": self.wind_action_applied_at_utc,
             "wind_running": self.wind_running,
             "diesel_running": self.diesel_running,
             "fault": self.fault,
@@ -276,4 +300,9 @@ def simulate_step(
         diesel_running=controls.diesel_enable and diesel_actual > 0,
         fault=False,
         power_imbalance_kw=imbalance,
+        controller_wind_enable=controls.controller_wind_enable,
+        pitch_target_deg=controls.pitch_target_deg,
+        last_wind_action_seq=controls.last_wind_action_seq,
+        last_wind_action_step=controls.last_wind_action_step,
+        wind_action_applied_at_utc=controls.wind_action_applied_at_utc,
     )

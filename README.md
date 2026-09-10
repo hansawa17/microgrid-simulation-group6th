@@ -9,7 +9,7 @@
 ### beta0.3（2026-09-10）
 
 - B：正式拆分为 `B_IO` 通信、`B_COMPUTE` 调度计算和 GUI 三个独立进程；SQLite 仅用于 B 本机进程交接，A/B 跨电脑仍通过 TCP 通信。
-- B：`ems.db` 升至 schema v5，新增可靠 dispatch outbox、进程心跳、通信配置和完整 SCADA 状态字段；参数重复初始化不再覆盖用户保存值，状态年龄随本机时间持续增长。
+- B：`ems.db` 当前为 schema v6，在 v5 的可靠 dispatch outbox、进程心跳、通信配置和完整 SCADA 状态字段基础上，新增风机指令执行评价；参数重复初始化不覆盖用户保存值，状态年龄随本机时间持续增长。
 - B：开环决策只记录展示，闭环命令才由通信进程领取；发送前复核 session、step 和状态年龄，进程异常退出后的在途命令标记为 `delivery_unknown`，禁止盲目重发。
 - B：补齐 YC/YX/YT/YK 四遥实时点表、UTC 时间段历史曲线、目标/实际区分、调度与后续反馈对应，以及 EMS 调度结果和风机执行效果两类评价展示。
 - B：柴油机投运遵守 20 kW 小组最小出力配置，并在可行时协调下调风电目标；新增三进程一键启动入口和失效虚拟环境恢复流程。
@@ -71,13 +71,14 @@ Windows 在仓库根目录双击 `启动A程序.bat`，或执行：
   -Scenario .\A_simulator\scenarios\antarctic_10min.csv
 ```
 
-A UI 当前分为“运行监控、参数设置、历史数据、报警与通信”：
+A UI 当前分为“运行监控、参数设置、历史数据、数据库分类、报警与通信”：
 
 - 运行监控将场景编辑、仿真控制、通信设置、实时 KPI、状态卡片、风速和功率曲线集中在同一页。
 - 参数按 `owner/source/updated_at_utc` 展示；A 只能编辑自身所有权参数，B/C 参数经 `parameter_update` 同步为只读副本。
-- 历史页在后台线程读取 `state_history` 和日志，合并快速切换产生的重复刷新请求，并限制表格一次渲染的行数，避免大数据库打开页面时阻塞 GUI。
+- 历史页在后台线程按 UTC+8 起止时段和 session 读取 SCADA 状态、运行日志与控制追溯，日志可导出并在资源管理器定位；数据库分类页明确分开 YC/YX/YT/YK、设备参数、环境/场景、仿真历史和日志。
+- 场景编辑可修改仿真总时长；B/C 连接每 5 s 显示应用层心跳龄并对陈旧记录强制显示超时，协议/数据库错误以非阻塞弹窗提示。
 - 顶部时钟及运行/历史曲线读取原始 `sampled_at_utc`，统一换算为 UTC+8 北京时间显示；数据库和 TCP 仍保存 UTC，CSV 的 `sim_time_s` 继续用于场景插值和确定性重放，协议排序仍以 `session_id + step + seq` 为准。
-- 通信页显示本机 IPv4；监听地址和端口仅能在 TCP 停止后修改，并作用于下一次启动的 TCP 子进程。
+- 通信页显示本机 IPv4；监听地址和端口始终可编辑，TCP 运行中修改会标记为待应用，并作用于下一次启动的 TCP 子进程。
 
 FRP 示例：公网 `frp-box.com:38243` 可映射到 A 本机 `127.0.0.1:5005`。A 设置本地端口 `5005`；B/C 客户端的主机与端口应分开填写为 `frp-box.com` 和 `38243`。公网端点、令牌和密码不能硬编码或提交；协议 v1 尚无认证和加密。
 
@@ -117,7 +118,7 @@ B 正式运行由 `communication_service.py`、`compute_service.py` 和 `gui_b.p
 
 - B_IO 独占 TCP，B_COMPUTE 只读写 `ems.db` 并计算调度，GUI 只监视、配置和把人工闭环请求写入 outbox。
 - 开环决策仅记录为 `open_loop`，通信进程永不领取；闭环发送前再次核对 session、step 与动态状态年龄。
-- `ems.db` 升至 schema v5，补齐完整 SCADA 字段并新增 outbox、进程心跳、通信配置；重复初始化不再覆盖已保存参数。
+- `ems.db` 当前为 schema v6，补齐完整 SCADA 字段、outbox、进程心跳、通信配置及风机指令执行评价；重复初始化不覆盖已保存参数。
 - `python -m B_dispatch` 或 `scripts/start_b.ps1` 启动完整三进程，`python -m B_dispatch gui` 仅调试界面。
 
 ### 2026-09-10 · C 参数设置运行期可调 + 只读实时展示
@@ -220,7 +221,7 @@ B 正式运行由 `communication_service.py`、`compute_service.py` 和 `gui_b.p
 7. **通信诊断**：B_IO/B_COMPUTE 心跳、outbox、seq、ACK 和 GUI 事件日志。
 8. **报警与评价**：C fault、状态过期、delivery unknown 以及数据库评价 KPI。
 
-`EMSRepository.initialize()` 会创建/迁移本地 `ems.db` 到 schema v5；已有参数不再被重复初始化覆盖，并新增完整 SCADA state、outbox、通信配置和进程心跳。真实 `data/runtime/ems.db` 不提交仓库。
+`EMSRepository.initialize()` 会创建/迁移本地 `ems.db` 到 schema v6；已有参数不再被重复初始化覆盖，并包含完整 SCADA state、outbox、通信配置、进程心跳和风机指令执行评价。真实 `data/runtime/ems.db` 不提交仓库。
 
 GUI 可以单独调试（不会自行连接 A 或计算自动调度）：
 
@@ -249,7 +250,7 @@ python -m B_dispatch gui
 - B-owned `tcpB.py` / `serviceB.py`。
 - JSON Lines、4096 bytes、seq/session/step、双时间字段、ACK 风险处理。
 - `wind_available_kw` / `wind_operating_limit_kw` 已进入 B 模型、TCP parser、dispatch、数据库和测试。
-- `ems.db` schema v5 已增加完整物理参数只读副本、完整 SCADA state、进程心跳、通信配置和 outbox；B 自有参数可持久化且初始化不覆盖。
+- `ems.db` schema v6 已包含完整物理参数只读副本、完整 SCADA state、进程心跳、通信配置、outbox 和风机指令执行评价；B 自有参数可持久化且初始化不覆盖。
 - B PyQt6 GUI 支持 A 端点配置、本地 mock、参数设置、历史导出、通信诊断和调度评价，但不直接接触 TCP。
 - B_IO / B_COMPUTE / GUI 已拆为三个独立进程；手动 GUI dispatch 只写入队列，由 B_IO 安全核对后下发。
 - STM32 硬件接入调试与三机（A/B/C）主链条联调已完成，状态/调度/动作数据传递暂时正常。

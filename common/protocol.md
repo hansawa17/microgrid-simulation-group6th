@@ -40,7 +40,7 @@ source/target 为 A、B、C（C 指单片机）；session_id 为 A 仿真会话�
 
 `next_command_seq` 是 A 按当前 `session_id` 和请求方 `source` 查询命令历史后返回的非负整数，表示该客户端新命令可使用的最小安全序号。STM32 在重启或重连后的全量同步中将本地发送序号提升到不小于该值；已发送但 ACK 未知的命令仍保留原报文和原序号重发，由 A 的幂等规则判定。该提示不放宽 A 的重复、冲突或乱序校验。
 
-为支持新版验收表的风机指令执行评价，已冻结向后兼容的 state 扩展字段：`controller_wind_enable`、`pitch_target_deg`、`last_wind_action_seq`、`last_wind_action_step`、`wind_action_applied_at_utc`。字段精确定义、null语义、数据库映射、滚动升级和 B/C 实施要求统一见 `docs/wind-execution-status-extension.md`。在整改代码完成前这些字段属于实现目标，不代表当前版本已经发送。TCP `version` 仍为1，现有 `wind_action.payload` 仍严格保持原四字段，不得把动作追踪元数据塞入 payload。
+为支持新版验收表的风机指令执行评价，已冻结向后兼容的 state 扩展字段：`controller_wind_enable`、`pitch_target_deg`、`last_wind_action_seq`、`last_wind_action_step`、`wind_action_applied_at_utc`。字段精确定义、null语义、数据库映射、滚动升级和 B/C 实施要求统一见 `docs/wind-execution-status-extension.md`。A 已在 `grid.db` schema v6 和 state 发送端实现这些字段；B/C 仍须完成兼容接收，联调完成前不得宣称三方已全部接入。TCP `version` 仍为1，现有 `wind_action.payload` 仍严格保持原四字段，不得把动作追踪元数据塞入 payload。
 
 A 综合监控界面使用 `sampled_at_utc` 作为实时和历史曲线横轴；这不改变公共信封中的 `sim_time_s`。CSV 仍用相对 `sim_time_s` 插值和重放，界面显示的 UTC 不能代替 `session_id + step + seq` 参与控制排序。
 

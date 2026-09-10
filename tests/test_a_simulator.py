@@ -203,7 +203,7 @@ class RepositoryTests(unittest.TestCase):
         clock.assert_called_once_with()
         self.assertEqual(self.repo.get_state().step, 1)
         with closing(sqlite3.connect(self.db)) as connection:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 5)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 6)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM state_history").fetchone()[0], 2)
             self.assertGreater(connection.execute("SELECT COUNT(*) FROM scada_history").fetchone()[0], 11)
             current_time = connection.execute(
@@ -320,11 +320,54 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(len(migrated.parameter_snapshot()), 19)
         self.assertEqual(len(migrated.state_history(100)), before)
         with closing(sqlite3.connect(self.db)) as connection:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 5)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 6)
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM parameter_history").fetchone()[0],
                 19,
             )
+
+    def test_time_range_database_categories_and_log_export(self):
+        state = self.repo.get_state()
+        states = self.repo.state_history_between(
+            state.sampled_at_utc,
+            state.sampled_at_utc,
+            session_id=self.session,
+        )
+        self.assertEqual(len(states), 1)
+        self.assertEqual(states[0]["sampled_at_utc"], state.sampled_at_utc)
+        self.assertEqual(
+            self.repo.state_history_between(
+                "2000-01-01T00:00:00.000Z",
+                "2000-01-01T00:00:01.000Z",
+                session_id=self.session,
+            ),
+            [],
+        )
+
+        categories = self.repo.database_categories()
+        self.assertEqual(
+            set(categories),
+            {
+                "YC", "YX", "YT", "YK", "device_parameters",
+                "environment_scenario", "simulation_history", "logs",
+            },
+        )
+        self.assertTrue(categories["YC"])
+        self.assertTrue(categories["YX"])
+        self.assertTrue(categories["YT"])
+        self.assertTrue(categories["YK"])
+        self.assertTrue(all(row["category"] == "control" for row in categories["YK"]))
+
+        destination = Path(self.temp.name) / "exports" / "logs.jsonl"
+        exported = self.repo.export_logs_jsonl(
+            destination,
+            "2000-01-01T00:00:00.000Z",
+            "2200-01-01T00:00:00.000Z",
+            session_id=self.session,
+        )
+        records = [json.loads(line) for line in exported.read_text(encoding="utf-8").splitlines()]
+        self.assertTrue(records)
+        self.assertTrue(all("occurred_at_utc" in row and "object" in row for row in records))
 
     def test_reinitialize_backs_up_existing_database(self):
         original_session = self.repo.get_state().session_id
@@ -499,6 +542,9 @@ class ProtocolTests(unittest.TestCase):
                                 "wind_actual_kw", "diesel_actual_kw", "wind_target_kw",
                                 "diesel_target_kw", "pitch_actual_deg", "wind_running",
                                 "diesel_running", "fault", "power_imbalance_kw",
+                                "controller_wind_enable", "pitch_target_deg",
+                                "last_wind_action_seq", "last_wind_action_step",
+                                "wind_action_applied_at_utc",
                                 "next_command_seq",
                             },
                         )
@@ -637,7 +683,9 @@ class ProtocolTests(unittest.TestCase):
                     "wind_operating_limit_kw": 40.0,
                 },
             }
-            result = repo.apply_command(message)
+            applied_at = "2099-01-01T00:00:02.000Z"
+            with patch("A_simulator.repository._utc_now", return_value=applied_at):
+                result = repo.apply_command(message)
             self.assertTrue(result.accepted)
 
             state_request = {
@@ -653,15 +701,29 @@ class ProtocolTests(unittest.TestCase):
             }
             state_response = MessageProcessor(repo).process(state_request)
             self.assertEqual(state_response["payload"]["next_command_seq"], 2)
+            self.assertTrue(state_response["payload"]["controller_wind_enable"])
+            self.assertEqual(state_response["payload"]["pitch_target_deg"], 12.0)
+            self.assertEqual(state_response["payload"]["last_wind_action_seq"], 1)
+            self.assertEqual(state_response["payload"]["last_wind_action_step"], 0)
+            self.assertEqual(
+                state_response["payload"]["wind_action_applied_at_utc"], applied_at
+            )
             self.assertLessEqual(len(encode_frame(state_response, 4096)), 1024)
 
             import sqlite3
             with closing(sqlite3.connect(db)) as connection:
                 row = connection.execute(
                     "SELECT pitch_target_deg, controller_wind_available_kw, "
-                    "controller_wind_operating_limit_kw FROM control_state WHERE singleton_id=1"
+                    "controller_wind_operating_limit_kw, last_wind_action_seq, "
+                    "last_wind_action_step, wind_action_applied_at_utc "
+                    "FROM control_state WHERE singleton_id=1"
                 ).fetchone()
-            self.assertEqual(row, (12.0, 40.0, 40.0))
+            self.assertEqual(row, (12.0, 40.0, 40.0, 1, 0, applied_at))
+            categories = repo.database_categories()
+            yk = {row["point_id"]: row for row in categories["YK"]}
+            self.assertEqual(yk["WT01.controller_wind_enable"]["value_json"], "true")
+            yt = {row["point_id"]: row for row in categories["YT"]}
+            self.assertEqual(yt["WT01.pitch_target_deg"]["value_json"], "12.0")
 
             invalid = {
                 **message,

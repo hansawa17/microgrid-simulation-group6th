@@ -16,7 +16,7 @@ from PyQt6.QtCore import QProcess
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from A_simulator.config import load_config
-from A_simulator.gui.main_window import PARAMETER_NAMES, SimulatorWindow
+from A_simulator.gui.main_window import LINK_REFRESH_MS, PARAMETER_NAMES, SimulatorWindow
 from A_simulator.repository import Repository
 from A_simulator.scenario import load_scenario_csv, save_scenario_csv
 
@@ -62,10 +62,10 @@ class SimulatorWindowTests(unittest.TestCase):
         self.assertFalse(self.window._history_loading, "history worker did not finish")
 
     def test_dashboard_pages_endpoint_and_owner_editors(self) -> None:
-        self.assertEqual(self.window.pageStack.count(), 4)
+        self.assertEqual(self.window.pageStack.count(), 5)
         self.assertEqual(
             [button.text() for button in self.window.navButtons],
-            ["运行监控", "参数设置", "历史数据", "报警与通信"],
+            ["运行监控", "参数设置", "历史数据", "数据库分类", "报警与通信"],
         )
         self.assertEqual(self.window.bindCombo.currentText(), "127.0.0.1")
         self.assertEqual(self.window.portSpin.value(), 54321)
@@ -94,6 +94,63 @@ class SimulatorWindowTests(unittest.TestCase):
             },
         )
         self.assertIn("wind_rated_power_kw", PARAMETER_NAMES)
+        self.assertEqual(self.window._link_health_timer.interval(), LINK_REFRESH_MS)
+
+    def test_database_tabs_explicitly_separate_four_remotes(self) -> None:
+        self.window.refresh_database_categories(force=True)
+        self.assertEqual(
+            [self.window.databaseTabs.tabText(index) for index in range(4)],
+            ["YC 遥测", "YX 遥信", "YT 遥调", "YK 遥控"],
+        )
+        self.assertGreater(self.window.databaseTables["YC"].rowCount(), 0)
+        self.assertGreater(self.window.databaseTables["YX"].rowCount(), 0)
+        self.assertGreater(self.window.databaseTables["YT"].rowCount(), 0)
+        self.assertGreater(self.window.databaseTables["YK"].rowCount(), 0)
+        self.assertIn("YK=", self.window.databaseSummaryLabel.text())
+
+    def test_simulation_duration_rescales_scenario_axis(self) -> None:
+        original_count = len(self.window.wind_editor.times_s())
+        self.window.simulationDurationSpin.setValue(300.0)
+        self.window.apply_simulation_duration()
+        self.assertEqual(len(self.window.wind_editor.times_s()), original_count)
+        self.assertAlmostEqual(self.window.wind_editor.times_s()[0], 0.0)
+        self.assertAlmostEqual(self.window.wind_editor.times_s()[-1], 300.0)
+        self.assertAlmostEqual(self.window.config.end_s, 300.0)
+        self.assertTrue(self.window._scenario_dirty)
+
+    def test_stale_connection_never_remains_visually_normal(self) -> None:
+        old = "2000-01-01T00:00:00.000Z"
+        with patch.object(
+            self.window.repository,
+            "connection_statuses",
+            return_value={
+                "B": {"connected": True, "last_seen_at_utc": old, "detail": "stale"},
+                "C": {"connected": False, "last_seen_at_utc": None, "detail": "closed"},
+            },
+        ):
+            self.window._refresh_link_health()
+        self.window.refresh_state()
+        self.assertIn("离线", self.window.bPill.text())
+        self.assertIn("Ping(心跳龄)", self.window.bPill.text())
+        self.assertIn("连接记录已过期", self.window.monitor_status["B"][1].text())
+
+    def test_log_export_and_new_database_warning_popup(self) -> None:
+        self.window.refresh_history()
+        self._wait_for_history()
+        self.window.export_selected_logs()
+        assert self.window._log_export_path is not None
+        self.assertTrue(self.window._log_export_path.is_file())
+        self.assertTrue(self.window.revealLogsButton.isEnabled())
+        first = self.window._log_export_path.read_text(encoding="utf-8").splitlines()[0]
+        self.assertIn('"occurred_at_utc"', first)
+        self.assertIn('"object"', first)
+
+        self.window._refresh_alerts()
+        self.repository.log("WARNING", "manufactured_fault", "test fault")
+        with patch.object(self.window, "_show_fault_popup") as popup:
+            self.window._refresh_alerts()
+        popup.assert_called_once()
+        self.assertIn("manufactured_fault", popup.call_args.args[0])
 
     def test_starting_simulation_also_ensures_tcp_service(self) -> None:
         with (
@@ -164,6 +221,39 @@ class SimulatorWindowTests(unittest.TestCase):
             len(self.window.wind_editor._time_labels),
             len(self.window.wind_editor.times_s()),
         )
+        self.assertIn("SCADA 1 条", self.window.historyRangeSummary.text())
+        self.assertIn("UTC+8", self.window.historyTrend.title)
+
+    def test_history_page_traces_control_change_in_selected_range(self) -> None:
+        state = self.repository.get_state()
+        result = self.repository.apply_command(
+            {
+                "version": 1,
+                "type": "wind_action",
+                "source": "C",
+                "target": "A",
+                "session_id": self.session_id,
+                "seq": 1,
+                "step": state.step,
+                "sim_time_s": state.sim_time_s,
+                "payload": {
+                    "wind_enable": True,
+                    "pitch_target_deg": 10.0,
+                    "wind_available_kw": 40.0,
+                    "wind_operating_limit_kw": 35.0,
+                },
+            }
+        )
+        self.assertTrue(result.accepted)
+        self.window.refresh_history()
+        self._wait_for_history()
+        self.assertGreater(self.window.traceTable.rowCount(), 0)
+        events = {
+            self.window.traceTable.item(row, 2).text()
+            for row in range(self.window.traceTable.rowCount())
+        }
+        self.assertIn("wind_action", events)
+        self.assertIn("追溯", self.window.historyRangeSummary.text())
 
     def test_stopped_run_can_create_a_new_safe_session(self) -> None:
         self.repository.set_status("start")

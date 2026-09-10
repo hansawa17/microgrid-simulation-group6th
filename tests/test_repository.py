@@ -31,7 +31,7 @@ class RepositoryTests(unittest.TestCase):
                 self.assertEqual(params, (0.0, 100.0, 120.0, 10.0))
                 runtime = conn.execute("SELECT poll_period_s, dispatch_period_s, closed_loop, command_timeout_s, max_state_age_s FROM ems_runtime_config WHERE id=1").fetchone()
                 self.assertEqual(runtime, (1.0, 5.0, 1, 3.0, 2.0))
-                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "5")
+                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "6")
                 state_columns = {row[1] for row in conn.execute("PRAGMA table_info(current_state)")}
                 self.assertTrue({"wind_available_kw", "wind_operating_limit_kw", "diesel_target_kw",
                                  "diesel_running", "power_imbalance_kw"} <= state_columns)

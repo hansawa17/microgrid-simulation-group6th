@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import math
@@ -12,14 +12,25 @@ import sys
 import time
 from typing import Any, Iterable, Mapping
 
-from PyQt6.QtCore import QObject, QProcess, QRunnable, QThreadPool, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import (
+    QDateTime,
+    QObject,
+    QProcess,
+    QRunnable,
+    QThreadPool,
+    QTimer,
+    Qt,
+    QUrl,
+    pyqtSignal,
+)
+from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QButtonGroup,
     QComboBox,
     QDoubleSpinBox,
+    QDateTimeEdit,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -37,6 +48,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -50,6 +62,8 @@ from .curve_widget import CurveEditor, TimeSeriesChart, format_beijing_time, for
 ROOT_DIR = Path(__file__).resolve().parents[2]
 BEIJING_TIMEZONE = timezone(timedelta(hours=8))
 HISTORY_TABLE_ROW_LIMIT = 1000
+LINK_REFRESH_MS = 5000
+LINK_STALE_AFTER_S = 10.0
 
 COLORS = {
     "bg": "#e9eff6",
@@ -122,7 +136,7 @@ QPushButton[role="segment"] {{ background: #eef3f8; color: #45607a; border: 1px 
 QPushButton[role="segment"]:checked {{ background: {COLORS['primary']}; color: #ffffff; }}
 QPushButton:disabled {{ background: #dfe6ed; color: #9aabba; }}
 
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{ background: #ffffff; border: 1px solid #cbd9e6; border-radius: 5px; padding: 6px 8px; selection-background-color: {COLORS['primary']}; }}
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit {{ background: #ffffff; border: 1px solid #cbd9e6; border-radius: 5px; padding: 6px 8px; selection-background-color: {COLORS['primary']}; }}
 QLineEdit:read-only {{ background: #f4f7fa; color: #5c758c; }}
 QComboBox:disabled, QSpinBox:disabled {{ background: #edf1f5; color: #8b9caf; }}
 
@@ -150,6 +164,11 @@ PROTOCOL_ROWS = (
     ("diesel_target_kw", "B 调度目标", "kW"),
     ("diesel_actual_kw", "A 物理模型实际出力", "kW"),
     ("pitch_actual_deg", "C 动作经 A 仿真后的桨距", "deg"),
+    ("controller_wind_enable", "C 最近一次有效风机允许运行命令", "bool"),
+    ("pitch_target_deg", "C 最近一次有效目标桨距", "deg"),
+    ("last_wind_action_seq", "A 已接受的最近 C wind_action 序号", "count"),
+    ("last_wind_action_step", "A 应用最近 C wind_action 时的仿真步", "step"),
+    ("wind_action_applied_at_utc", "A 原子应用最近 C wind_action 的 UTC 时间", "UTC"),
     ("wind_running", "A 仿真后的风机运行状态", "bool"),
     ("diesel_running", "A 仿真后的柴发运行状态", "bool"),
     ("fault", "A 状态断面故障标志", "bool"),
@@ -231,7 +250,11 @@ def _row_mapping(value: object) -> dict[str, Any]:
         "load_power_kw", "wind_available_kw", "wind_operating_limit_kw",
         "wind_target_kw", "wind_actual_kw", "diesel_target_kw", "diesel_actual_kw",
         "pitch_actual_deg", "wind_running", "diesel_running", "fault",
-        "power_imbalance_kw",
+        "power_imbalance_kw", "id", "point_id", "category", "version",
+        "updated_step", "recorded_at_utc", "object", "detail", "accepted",
+        "reason", "occurred_at_utc", "last_wind_action_seq",
+        "last_wind_action_step", "wind_action_applied_at_utc",
+        "controller_wind_enable", "pitch_target_deg",
     ):
         if hasattr(value, name):
             result[name] = getattr(value, name)
@@ -288,6 +311,8 @@ class _HistoryLoadTask(QRunnable):
         limit: int,
         selected_session: str | None,
         log_level: str,
+        start_utc: str,
+        end_utc: str,
     ) -> None:
         super().__init__()
         self.request_id = request_id
@@ -295,6 +320,8 @@ class _HistoryLoadTask(QRunnable):
         self.limit = limit
         self.selected_session = selected_session
         self.log_level = log_level
+        self.start_utc = start_utc
+        self.end_utc = end_utc
         self.signals = _HistoryLoadSignals()
 
     def run(self) -> None:
@@ -309,16 +336,28 @@ class _HistoryLoadTask(QRunnable):
             if selected_session not in sessions:
                 selected_session = sessions[-1] if sessions else None
             states = (
-                repository.state_history(limit=self.limit, session_id=selected_session)
+                repository.state_history_between(
+                    self.start_utc,
+                    self.end_utc,
+                    limit=self.limit,
+                    session_id=selected_session,
+                )
                 if selected_session is not None
                 else []
             )
-            logs = repository.logs(limit=self.limit)
-            if self.log_level != "全部":
-                logs = [
-                    row for row in logs
-                    if str(_row_mapping(row).get("level", "")).upper() == self.log_level
-                ]
+            logs = repository.logs_between(
+                self.start_utc,
+                self.end_utc,
+                limit=self.limit,
+                session_id=selected_session,
+                level=None if self.log_level == "全部" else self.log_level,
+            )
+            traces = repository.trace_events_between(
+                self.start_utc,
+                self.end_utc,
+                limit=self.limit,
+                session_id=selected_session,
+            )
             self.signals.loaded.emit(
                 self.request_id,
                 {
@@ -326,6 +365,9 @@ class _HistoryLoadTask(QRunnable):
                     "selected_session": selected_session,
                     "states": [_row_mapping(row) for row in states],
                     "logs": [_row_mapping(row) for row in logs],
+                    "traces": [_row_mapping(row) for row in traces],
+                    "start_utc": self.start_utc,
+                    "end_utc": self.end_utc,
                 },
             )
         except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
@@ -363,6 +405,13 @@ class SimulatorWindow(QMainWindow):
         self._history_task: _HistoryLoadTask | None = None
         self._last_live_refresh = 0.0
         self._last_parameter_refresh = 0.0
+        self._last_database_refresh = 0.0
+        self._connection_probe: dict[str, dict[str, object]] = {}
+        self._last_alert_log_id: int | None = None
+        self._alert_baseline_initialized = False
+        self._active_error_boxes: list[QMessageBox] = []
+        self._reported_faults: set[str] = set()
+        self._log_export_path: Path | None = None
         self._ui_events: list[dict[str, object]] = []
         self._parameter_editors: dict[str, QDoubleSpinBox] = {}
         self._parameter_originals: dict[str, float] = {}
@@ -411,6 +460,7 @@ class SimulatorWindow(QMainWindow):
         self.pageStack.addWidget(self._build_monitor_page())
         self.pageStack.addWidget(self._build_parameters_page())
         self.pageStack.addWidget(self._build_history_page())
+        self.pageStack.addWidget(self._build_database_page())
         self.pageStack.addWidget(self._build_alarm_page())
         body.addWidget(self.pageStack, 1)
         root.addLayout(body, 1)
@@ -475,10 +525,17 @@ class SimulatorWindow(QMainWindow):
         self.btnMonitor = self._nav_button("运行监控")
         self.btnParameters = self._nav_button("参数设置")
         self.btnHistory = self._nav_button("历史数据")
+        self.btnDatabase = self._nav_button("数据库分类")
         self.btnProtocol = self._nav_button("报警与通信")
         # Compatibility alias: scenario editing now lives inside the monitor page.
         self.btnScenario = self.btnMonitor
-        self.navButtons = [self.btnMonitor, self.btnParameters, self.btnHistory, self.btnProtocol]
+        self.navButtons = [
+            self.btnMonitor,
+            self.btnParameters,
+            self.btnHistory,
+            self.btnDatabase,
+            self.btnProtocol,
+        ]
         for button in self.navButtons:
             layout.addWidget(button)
         layout.addStretch(1)
@@ -593,6 +650,24 @@ class SimulatorWindow(QMainWindow):
         scenario_layout = QVBoxLayout(scenario_page)
         scenario_layout.setContentsMargins(0, 0, 0, 0)
         scenario_layout.setSpacing(8)
+        duration_card = self._frame()
+        duration_card.setProperty("role", "card")
+        duration_layout = QHBoxLayout(duration_card)
+        duration_layout.setContentsMargins(14, 8, 14, 8)
+        duration_layout.addWidget(QLabel("仿真总时长"))
+        self.simulationDurationSpin = QDoubleSpinBox()
+        self.simulationDurationSpin.setRange(self.config.step_s, 7 * 24 * 3600.0)
+        self.simulationDurationSpin.setDecimals(3)
+        self.simulationDurationSpin.setSuffix(" s")
+        self.simulationDurationSpin.setValue(self.config.end_s - self.config.start_s)
+        duration_layout.addWidget(self.simulationDurationSpin)
+        self.applyDurationButton = self._button("应用到场景时间轴", "primary")
+        duration_layout.addWidget(self.applyDurationButton)
+        duration_note = QLabel("修改后需保存 CSV，并重新初始化 grid.db 才会用于仿真")
+        duration_note.setProperty("role", "source")
+        duration_layout.addWidget(duration_note)
+        duration_layout.addStretch(1)
+        scenario_layout.addWidget(duration_card)
         times = [point.sim_time_s for point in self.scenario.points]
         wind_values = [point.wind_speed_mps for point in self.scenario.points]
         load_values = [point.load_power_kw for point in self.scenario.points]
@@ -798,6 +873,25 @@ class SimulatorWindow(QMainWindow):
         control_row.addWidget(self.refreshHistoryButton)
         layout.addLayout(control_row)
 
+        range_row = QHBoxLayout()
+        range_row.addWidget(QLabel("开始时间 UTC+8"))
+        self.historyStartEdit = QDateTimeEdit(
+            QDateTime.currentDateTime().addDays(-1)
+        )
+        self.historyStartEdit.setCalendarPopup(True)
+        self.historyStartEdit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        range_row.addWidget(self.historyStartEdit)
+        range_row.addWidget(QLabel("结束时间 UTC+8"))
+        self.historyEndEdit = QDateTimeEdit(QDateTime.currentDateTime().addSecs(60))
+        self.historyEndEdit.setCalendarPopup(True)
+        self.historyEndEdit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        range_row.addWidget(self.historyEndEdit)
+        self.historyRangeSummary = QLabel("按北京时间选择，数据库按 UTC 闭区间查询")
+        self.historyRangeSummary.setProperty("role", "source")
+        range_row.addWidget(self.historyRangeSummary)
+        range_row.addStretch(1)
+        layout.addLayout(range_row)
+
         self.historyTrend = TimeSeriesChart(
             title="历史状态曲线", unit="kW", colors={"历史": COLORS["primary"]}
         )
@@ -827,9 +921,16 @@ class SimulatorWindow(QMainWindow):
         self.logLevelCombo = QComboBox()
         self.logLevelCombo.addItems(("全部", "INFO", "WARNING", "ERROR"))
         log_row.addWidget(self.logLevelCombo)
+        self.exportLogsButton = self._button("导出查询日志", "secondary")
+        self.revealLogsButton = self._button("在资源管理器中定位", "secondary")
+        self.revealLogsButton.setEnabled(False)
+        log_row.addWidget(self.exportLogsButton)
+        log_row.addWidget(self.revealLogsButton)
         layout.addLayout(log_row)
-        self.logTable = QTableWidget(0, 5)
-        self.logTable.setHorizontalHeaderLabels(("时间 UTC+8", "级别", "事件", "step", "消息"))
+        self.logTable = QTableWidget(0, 6)
+        self.logTable.setHorizontalHeaderLabels(
+            ("发生时间 UTC+8", "级别", "对象", "事件", "step", "消息")
+        )
         self.logTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.logTable.setAlternatingRowColors(True)
         self.logTable.verticalHeader().setVisible(False)
@@ -837,11 +938,72 @@ class SimulatorWindow(QMainWindow):
         self.logTable.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         self.logTable.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         self.logTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-        self.logTable.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.logTable.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        self.logTable.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         self.logTable.setColumnWidth(0, 205)
         self.logTable.setMinimumHeight(220)
         layout.addWidget(self.logTable)
+
+        trace_title = QLabel("场景与控制变化追溯")
+        trace_title.setProperty("role", "cardTitle")
+        layout.addWidget(trace_title)
+        self.traceTable = QTableWidget(0, 7)
+        self.traceTable.setHorizontalHeaderLabels(
+            ("发生时间 UTC+8", "对象", "事件", "是否接受", "原因", "session", "详情")
+        )
+        self.traceTable.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.traceTable.setAlternatingRowColors(True)
+        self.traceTable.verticalHeader().setVisible(False)
+        self.traceTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.traceTable.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self.traceTable.setMinimumHeight(220)
+        layout.addWidget(self.traceTable)
         layout.addStretch(1)
+        return page
+
+    def _build_database_page(self) -> QWidget:
+        page, layout = self._scroll_page()
+        title_row = QHBoxLayout()
+        title_row.addWidget(self._section_title("grid.db 数据分类检查"))
+        title_row.addStretch(1)
+        self.databaseSummaryLabel = QLabel(
+            "四遥：YC=遥测、YX=遥信、YT=遥调、YK=遥控"
+        )
+        self.databaseSummaryLabel.setProperty("role", "source")
+        title_row.addWidget(self.databaseSummaryLabel)
+        self.refreshDatabaseButton = self._button("刷新分类", "primary")
+        title_row.addWidget(self.refreshDatabaseButton)
+        layout.addLayout(title_row)
+
+        note = QLabel(
+            "四遥类别与设备参数、环境/场景、仿真历史、运行日志分别展示；"
+            "目标值不等于实际出力，YK 仅展示已接收的控制状态。"
+        )
+        note.setWordWrap(True)
+        note.setProperty("role", "source")
+        layout.addWidget(note)
+        self.databaseTabs = QTabWidget()
+        self.databaseTables: dict[str, QTableWidget] = {}
+        tab_specs = (
+            ("YC", "YC 遥测"),
+            ("YX", "YX 遥信"),
+            ("YT", "YT 遥调"),
+            ("YK", "YK 遥控"),
+            ("device_parameters", "设备参数"),
+            ("environment_scenario", "环境与场景数据"),
+            ("simulation_history", "仿真历史"),
+            ("logs", "运行日志"),
+        )
+        for key, label in tab_specs:
+            table = QTableWidget(0, 0)
+            table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            table.setAlternatingRowColors(True)
+            table.verticalHeader().setVisible(False)
+            table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            self.databaseTables[key] = table
+            self.databaseTabs.addTab(table, label)
+        self.databaseTabs.setMinimumHeight(620)
+        layout.addWidget(self.databaseTabs)
         return page
 
     def _build_alarm_page(self) -> QWidget:
@@ -1027,6 +1189,7 @@ class SimulatorWindow(QMainWindow):
         self.load_editor.curveChanged.connect(self._scenario_changed)
         self.wind_editor.editingFinished.connect(self._scenario_editing_finished)
         self.load_editor.editingFinished.connect(self._scenario_editing_finished)
+        self.applyDurationButton.clicked.connect(self.apply_simulation_duration)
         self.start_button.clicked.connect(lambda: self.control_simulation("start"))
         self.pause_button.clicked.connect(lambda: self.control_simulation("pause"))
         self.resume_button.clicked.connect(lambda: self.control_simulation("resume"))
@@ -1043,6 +1206,11 @@ class SimulatorWindow(QMainWindow):
         self.historyMetricCombo.currentIndexChanged.connect(self._schedule_history_refresh)
         self.historyLimitSpin.valueChanged.connect(self._schedule_history_refresh)
         self.logLevelCombo.currentIndexChanged.connect(self._schedule_history_refresh)
+        self.historyStartEdit.dateTimeChanged.connect(self._schedule_history_refresh)
+        self.historyEndEdit.dateTimeChanged.connect(self._schedule_history_refresh)
+        self.exportLogsButton.clicked.connect(self.export_selected_logs)
+        self.revealLogsButton.clicked.connect(self.reveal_exported_log)
+        self.refreshDatabaseButton.clicked.connect(lambda: self.refresh_database_categories(force=True))
         self.clearUiEventsButton.clicked.connect(self._clear_ui_events)
 
         self._tcp_server.stateChanged.connect(self._tcp_state_changed)
@@ -1068,7 +1236,12 @@ class SimulatorWindow(QMainWindow):
         self._history_debounce_timer.setSingleShot(True)
         self._history_debounce_timer.setInterval(250)
         self._history_debounce_timer.timeout.connect(self.refresh_history)
+        self._link_health_timer = QTimer(self)
+        self._link_health_timer.setInterval(LINK_REFRESH_MS)
+        self._link_health_timer.timeout.connect(self._refresh_link_health)
+        self._link_health_timer.start()
         self._update_clock()
+        self._refresh_link_health()
 
     def _switch_page(self, index: int) -> None:
         self.pageStack.setCurrentIndex(index)
@@ -1077,6 +1250,8 @@ class SimulatorWindow(QMainWindow):
         elif index == 2:
             self.refresh_history()
         elif index == 3:
+            self.refresh_database_categories(force=True)
+        elif index == 4:
             self._refresh_alerts()
 
     def _update_clock(self) -> None:
@@ -1141,6 +1316,61 @@ class SimulatorWindow(QMainWindow):
         self._update_scenario_source_label()
         self.update_preview()
 
+    def apply_simulation_duration(self) -> None:
+        """Rescale the editable scenario time axis to the requested duration."""
+
+        try:
+            duration = float(self.simulationDurationSpin.value())
+            if duration < self.config.step_s:
+                raise ValueError("仿真总时长不能小于一个计算步长")
+            old_times = self.wind_editor.times_s()
+            old_start = old_times[0]
+            old_span = old_times[-1] - old_start
+            if old_span <= 0:
+                raise ValueError("场景时间轴必须包含至少两个不同时间点")
+            new_start = self.config.start_s
+            new_times = [
+                new_start + (value - old_start) / old_span * duration
+                for value in old_times
+            ]
+            wind_values = self.wind_editor.values()
+            load_values = self.load_editor.values()
+            self.config = replace(self.config, end_s=new_start + duration)
+            self.wind_editor.set_data(
+                new_times,
+                wind_values,
+                maximum=max(
+                    self.config.wind.cut_out_speed_mps,
+                    max(wind_values) * 1.05,
+                    1.0,
+                ),
+            )
+            self.load_editor.set_data(
+                new_times,
+                load_values,
+                maximum=max(max(load_values) * 1.1, 1.0),
+            )
+            labels = self._scenario_labels(new_times)
+            self.wind_editor.set_time_labels(labels)
+            self.load_editor.set_time_labels(labels)
+            self.time_slider.setRange(0, len(new_times) - 1)
+            self.scenario = self._scenario_from_editors()
+            self._scenario_dirty = True
+            self._update_scenario_source_label()
+            self.update_preview()
+            if self.db_path.is_file():
+                self._record_repository_event(
+                    "INFO",
+                    "scenario_duration_changed",
+                    f"duration_s={duration:.3f}; requires database reinitialization",
+                )
+            self.statusBar().showMessage(
+                f"仿真总时长已改为 {duration:.3f} s；请保存 CSV 并重新初始化 grid.db",
+                7000,
+            )
+        except (TypeError, ValueError) as error:
+            QMessageBox.warning(self, "仿真总时长修改失败", str(error))
+
     def _write_scenario_csv(self, path: Path, *, message: str) -> None:
         scenario = self._scenario_from_editors()
         save_scenario_csv(path, scenario)
@@ -1149,6 +1379,8 @@ class SimulatorWindow(QMainWindow):
         self._scenario_source_path = self.scenario_path
         self._scenario_dirty = False
         self._update_scenario_source_label()
+        if self.db_path.is_file():
+            self._record_repository_event("INFO", "scenario_saved", str(path.resolve()))
         self.statusBar().showMessage(message, 4000)
 
     def _scenario_editing_finished(self) -> None:
@@ -1183,6 +1415,10 @@ class SimulatorWindow(QMainWindow):
             if scenario.points[0].sim_time_s > self.config.start_s or scenario.points[-1].sim_time_s < self.config.end_s:
                 raise ValueError("CSV 时间轴不能覆盖配置中的仿真起止时刻")
             self._set_scenario(scenario, Path(path))
+            if self.db_path.is_file():
+                self._record_repository_event(
+                    "INFO", "scenario_loaded", str(Path(path).resolve())
+                )
             self.chartStack.setCurrentIndex(1)
             self.btnScenarioCharts.setChecked(True)
             self.statusBar().showMessage("CSV 已加载｜需初始化新数据库后才用于仿真", 6000)
@@ -1355,7 +1591,9 @@ class SimulatorWindow(QMainWindow):
         self.statusBar().showMessage(f"{source}：{message[-180:]}", 8000)
 
     def _process_error(self, source: str, error: QProcess.ProcessError) -> None:
-        self._append_ui_event("ERROR", source, f"进程错误：{error.name}")
+        message = f"进程错误：{error.name}"
+        self._append_ui_event("ERROR", source, message)
+        self._show_fault_popup(f"{source} 运行错误", message, source)
 
     def _process_finished(self, source: str, code: int) -> None:
         if source == "TCP" and self.db_path.is_file():
@@ -1364,7 +1602,10 @@ class SimulatorWindow(QMainWindow):
             except (OSError, RuntimeError, ValueError, sqlite3.Error):
                 pass
         level = "INFO" if code == 0 else "ERROR"
-        self._append_ui_event(level, source, f"进程结束，exit_code={code}")
+        message = f"进程结束，exit_code={code}"
+        self._append_ui_event(level, source, message)
+        if code != 0:
+            self._show_fault_popup(f"{source} 异常退出", message, source)
 
     def _runner_finished(self, code: int) -> None:
         recovered = False
@@ -1376,11 +1617,15 @@ class SimulatorWindow(QMainWindow):
             except (OSError, RuntimeError, ValueError, sqlite3.Error):
                 pass
         if recovered:
+            message = (
+                f"计算子进程已退出（exit_code={code}），数据库状态已自动转为 paused"
+            )
             self._append_ui_event(
                 "WARNING",
                 "仿真",
-                f"计算子进程已退出（exit_code={code}），数据库状态已自动转为 paused",
+                message,
             )
+            self._show_fault_popup("仿真进程异常", message, "仿真")
         else:
             self._process_finished("仿真", code)
         self.refresh_state()
@@ -1392,6 +1637,42 @@ class SimulatorWindow(QMainWindow):
         })
         self._ui_events = self._ui_events[-200:]
         self._refresh_alerts()
+
+    def _record_repository_event(self, level: str, event: str, message: str) -> None:
+        try:
+            self.repository.log(level, event, message)
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            self._append_ui_event(
+                "WARNING", "日志", f"事件 {event} 未写入 grid.db：{error}"
+            )
+
+    def _show_fault_popup(self, title: str, message: str, source: str) -> None:
+        """Show a non-blocking error dialog so polling and painting keep running."""
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(title)
+        box.setText(message)
+        box.setInformativeText(f"对象：{source}；主界面将继续运行，请在历史日志中追溯。")
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.setModal(False)
+        self._active_error_boxes.append(box)
+
+        def release(_result: int, target: QMessageBox = box) -> None:
+            if target in self._active_error_boxes:
+                self._active_error_boxes.remove(target)
+            target.deleteLater()
+
+        box.finished.connect(release)
+        box.show()
+
+    def _show_fault_popup_once(
+        self, fingerprint: str, title: str, message: str, source: str
+    ) -> None:
+        if fingerprint in self._reported_faults:
+            return
+        self._reported_faults.add(fingerprint)
+        self._show_fault_popup(title, message, source)
 
     def _clear_ui_events(self) -> None:
         self._ui_events.clear()
@@ -1434,7 +1715,7 @@ class SimulatorWindow(QMainWindow):
         try:
             runtime = self.repository.runtime()
             state = self.repository.get_state()
-            connections = self.repository.connection_statuses()
+            connections = self._connection_probe or self.repository.connection_statuses()
         except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
             self._database_health = "异常"
             self._update_communication_summary()
@@ -1443,10 +1724,16 @@ class SimulatorWindow(QMainWindow):
             self._set_control_buttons(None)
             self.initialize_button.setEnabled(True)
             self.initialize_button.setText("修复 grid.db")
+            self._show_fault_popup_once(
+                f"database:{error}", "grid.db 读取失败", str(error), str(self.db_path)
+            )
             return
 
         status = str(runtime["status"])
         self._database_health = "正常"
+        self._reported_faults = {
+            key for key in self._reported_faults if not key.startswith("database:")
+        }
         self._update_communication_summary()
         self._set_pill(self.dbDot, self.dbPill, "grid.db 正常", COLORS["good"])
         self.runtime_detail.setText(
@@ -1475,14 +1762,26 @@ class SimulatorWindow(QMainWindow):
         )
         for peer in ("B", "C"):
             item = connections.get(peer, {"connected": False, "detail": "not connected"})
-            connected = bool(item.get("connected"))
+            connected = bool(item.get("effective_connected", item.get("connected")))
             detail = str(item.get("detail", ""))
             seen = item.get("last_seen_at_utc")
-            if seen:
+            ping_text = str(item.get("ping_text", "Ping -"))
+            if seen and "最近" not in detail:
                 detail = f"{detail}　最近 {format_beijing_time(str(seen))} UTC+8"
-            self._update_status_card(peer, "good" if connected else "bad", "●  在线" if connected else "●  离线", detail)
+            detail = f"{ping_text}｜{detail}"
+            self._update_status_card(
+                peer,
+                "good" if connected else "bad",
+                "●  在线" if connected else "●  离线/超时",
+                detail,
+            )
             dot, pill = (self.bDot, self.bPill) if peer == "B" else (self.cDot, self.cPill)
-            self._set_pill(dot, pill, f"{peer} {'在线' if connected else '离线'}", COLORS["good"] if connected else COLORS["bad"])
+            self._set_pill(
+                dot,
+                pill,
+                f"{peer} {'在线' if connected else '离线'} · {ping_text}",
+                COLORS["good"] if connected else COLORS["bad"],
+            )
 
         payload = state.protocol_payload()
         for key, item in self.protocol_value_items.items():
@@ -1777,11 +2076,21 @@ class SimulatorWindow(QMainWindow):
         if hasattr(self, "_history_debounce_timer"):
             self._history_debounce_timer.start()
 
+    def _history_range_utc(self) -> tuple[str, str]:
+        start_epoch = self.historyStartEdit.dateTime().toSecsSinceEpoch()
+        end_epoch = self.historyEndEdit.dateTime().toSecsSinceEpoch()
+        if start_epoch > end_epoch:
+            raise ValueError("开始时间不能晚于结束时间")
+        start = datetime.fromtimestamp(start_epoch, timezone.utc)
+        end = datetime.fromtimestamp(end_epoch, timezone.utc)
+        return _rfc3339(start), _rfc3339(end)
+
     def refresh_history(self, *_unused) -> None:
         if not self.db_path.is_file():
             self.historyTrend.clear()
             self.historyTable.setRowCount(0)
             self.logTable.setRowCount(0)
+            self.traceTable.setRowCount(0)
             self.refreshHistoryButton.setEnabled(True)
             self.refreshHistoryButton.setText("刷新历史")
             return
@@ -1794,6 +2103,13 @@ class SimulatorWindow(QMainWindow):
     def _start_history_load(self, request_id: int) -> None:
         selected = self.historySessionCombo.currentData()
         selected_session = str(selected) if selected else None
+        try:
+            start_utc, end_utc = self._history_range_utc()
+        except ValueError as error:
+            self.statusBar().showMessage(str(error), 5000)
+            self.refreshHistoryButton.setEnabled(True)
+            self.refreshHistoryButton.setText("刷新历史")
+            return
         self._history_loading = True
         self._history_refresh_pending = False
         self.refreshHistoryButton.setEnabled(False)
@@ -1804,6 +2120,8 @@ class SimulatorWindow(QMainWindow):
             limit=self.historyLimitSpin.value(),
             selected_session=selected_session,
             log_level=self.logLevelCombo.currentText(),
+            start_utc=start_utc,
+            end_utc=end_utc,
         )
         task.signals.loaded.connect(self._history_loaded)
         task.signals.failed.connect(self._history_failed)
@@ -1822,6 +2140,7 @@ class SimulatorWindow(QMainWindow):
         self._history_task = None
         if request_id == self._history_request_id:
             self.statusBar().showMessage(f"历史状态读取失败：{message}", 5000)
+            self._show_fault_popup("历史查询失败", message, "grid.db/history")
         self._finish_history_request(request_id)
 
     def _finish_history_request(self, request_id: int) -> None:
@@ -1838,6 +2157,7 @@ class SimulatorWindow(QMainWindow):
             _row_mapping(row) for row in snapshot.get("states", [])
         ]
         log_rows = [_row_mapping(row) for row in snapshot.get("logs", [])]
+        trace_rows = [_row_mapping(row) for row in snapshot.get("traces", [])]
 
         self.historySessionCombo.blockSignals(True)
         self.historySessionCombo.clear()
@@ -1852,7 +2172,7 @@ class SimulatorWindow(QMainWindow):
         key, unit, color = self.historyMetricCombo.currentData()
         label = self.historyMetricCombo.currentText()
         session_label = str(selected_session)[:8] if selected_session else "无会话"
-        self.historyTrend.title = f"历史 · {label} · {session_label}"
+        self.historyTrend.title = f"历史 · {label} ({unit}) · {session_label} · 时间 UTC+8"
         self.historyTrend.unit = unit
         self.historyTrend.colors = {label: color}
         self.historyTrend.set_series(
@@ -1879,6 +2199,13 @@ class SimulatorWindow(QMainWindow):
         finally:
             self.historyTable.setUpdatesEnabled(True)
         self._populate_log_table(log_rows)
+        self._populate_trace_table(trace_rows)
+        start_text = _display_timestamp(snapshot.get("start_utc", "-"))
+        end_text = _display_timestamp(snapshot.get("end_utc", "-"))
+        self.historyRangeSummary.setText(
+            f"闭区间 {start_text} ～ {end_text}｜SCADA {len(selected_rows)} 条｜"
+            f"日志 {len(log_rows)} 条｜追溯 {len(trace_rows)} 条"
+        )
         if len(selected_rows) > len(newest):
             self.statusBar().showMessage(
                 f"曲线已加载 {len(selected_rows)} 条；表格显示最近 {len(newest)} 条",
@@ -1903,13 +2230,123 @@ class SimulatorWindow(QMainWindow):
             for row_index, row in enumerate(visible_rows):
                 values = (
                     _display_timestamp(row.get("created_at_utc", "-")),
-                    row.get("level", "-"), row.get("event", "-"),
-                    row.get("step", "-"), row.get("message", ""),
+                    row.get("level", "-"),
+                    self._log_object(row),
+                    row.get("event", "-"),
+                    row.get("step", "-"),
+                    row.get("message", ""),
                 )
                 for column, value in enumerate(values):
                     self.logTable.setItem(row_index, column, QTableWidgetItem(str(value)))
         finally:
             self.logTable.setUpdatesEnabled(True)
+
+    @staticmethod
+    def _log_object(row: Mapping[str, object]) -> str:
+        session = row.get("session_id") or "A"
+        step = row.get("step")
+        return f"{session}/step:{step}" if step is not None else str(session)
+
+    def _populate_trace_table(self, rows: list[dict[str, Any]]) -> None:
+        visible = list(reversed(rows[-HISTORY_TABLE_ROW_LIMIT:]))
+        self.traceTable.setRowCount(len(visible))
+        for row_index, row in enumerate(visible):
+            accepted = row.get("accepted", "-")
+            if isinstance(accepted, (bool, int)):
+                accepted = "是" if bool(accepted) else "否"
+            values = (
+                _display_timestamp(row.get("occurred_at_utc", "-")),
+                row.get("object", "-"),
+                row.get("event", "-"),
+                accepted,
+                row.get("reason", "-"),
+                row.get("session_id", "-"),
+                row.get("detail", ""),
+            )
+            for column, value in enumerate(values):
+                self.traceTable.setItem(row_index, column, QTableWidgetItem(str(value)))
+
+    def export_selected_logs(self) -> None:
+        if not self.db_path.is_file():
+            QMessageBox.warning(self, "导出日志", "请先初始化 grid.db")
+            return
+        try:
+            start_utc, end_utc = self._history_range_utc()
+            selected = self.historySessionCombo.currentData()
+            level = self.logLevelCombo.currentText()
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            destination = self.db_path.parent / "log_exports" / f"A_logs_{stamp}.jsonl"
+            self._log_export_path = self.repository.export_logs_jsonl(
+                destination,
+                start_utc,
+                end_utc,
+                session_id=str(selected) if selected else None,
+                level=None if level == "全部" else level,
+            )
+            self.revealLogsButton.setEnabled(True)
+            self.statusBar().showMessage(
+                f"查询日志已导出：{self._log_export_path}", 7000
+            )
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            self._show_fault_popup("日志导出失败", str(error), "日志")
+
+    def reveal_exported_log(self) -> None:
+        path = self._log_export_path
+        if path is None or not path.is_file():
+            QMessageBox.warning(self, "定位日志", "尚未生成可定位的查询日志文件")
+            return
+        launched = False
+        if sys.platform == "win32":
+            result = QProcess.startDetached("explorer.exe", ["/select,", str(path)])
+            launched = bool(result[0] if isinstance(result, tuple) else result)
+        if not launched:
+            launched = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+        if not launched:
+            self._show_fault_popup("定位日志失败", f"无法打开：{path}", "日志")
+
+    def refresh_database_categories(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self._last_database_refresh < 2.0:
+            return
+        self._last_database_refresh = now
+        if not self.db_path.is_file():
+            for table in self.databaseTables.values():
+                table.setRowCount(0)
+                table.setColumnCount(0)
+            self.databaseSummaryLabel.setText("grid.db 未初始化")
+            return
+        try:
+            categories = self.repository.database_categories(limit=1000)
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            self.databaseSummaryLabel.setText(f"数据库分类读取失败：{error}")
+            self._show_fault_popup("数据库分类读取失败", str(error), "grid.db")
+            return
+        counts: list[str] = []
+        for key, table in self.databaseTables.items():
+            rows = [_row_mapping(row) for row in categories.get(key, [])]
+            counts.append(f"{key}={len(rows)}")
+            self._populate_generic_table(table, rows)
+        self.databaseSummaryLabel.setText(
+            "四遥 YC=遥测、YX=遥信、YT=遥调、YK=遥控｜" + "　".join(counts)
+        )
+
+    @staticmethod
+    def _populate_generic_table(
+        table: QTableWidget, rows: list[dict[str, object]]
+    ) -> None:
+        columns = list(rows[0]) if rows else []
+        table.setColumnCount(len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            for column, name in enumerate(columns):
+                value = row.get(name, "-")
+                if name.endswith("_utc"):
+                    value = _display_timestamp(value)
+                table.setItem(row_index, column, QTableWidgetItem(str(value)))
+        if columns:
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            table.horizontalHeader().setStretchLastSection(True)
 
     def _refresh_alerts(self) -> None:
         database_events: list[dict[str, Any]] = []
@@ -1922,6 +2359,27 @@ class SimulatorWindow(QMainWindow):
                 ]
             except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
                 pass
+        identified = [
+            row for row in database_events
+            if isinstance(row.get("id"), int)
+        ]
+        newest_id = max((int(row["id"]) for row in identified), default=None)
+        if not self._alert_baseline_initialized:
+            self._last_alert_log_id = newest_id
+            self._alert_baseline_initialized = True
+        elif newest_id is not None and newest_id > (self._last_alert_log_id or 0):
+            new_rows = [
+                row for row in identified
+                if int(row["id"]) > int(self._last_alert_log_id or 0)
+            ]
+            if new_rows:
+                newest = max(new_rows, key=lambda row: int(row["id"]))
+                self._show_fault_popup(
+                    f"A 检测到 {newest.get('event', '异常')}",
+                    str(newest.get("message", "未提供错误详情")),
+                    self._log_object(newest),
+                )
+            self._last_alert_log_id = newest_id
         rows = [*database_events, *self._ui_events]
         rows.sort(key=lambda row: str(row.get("created_at_utc", "")), reverse=True)
         rows = rows[:100]
@@ -1933,6 +2391,51 @@ class SimulatorWindow(QMainWindow):
             )
             for column, value in enumerate(values):
                 self.alertTable.setItem(row_index, column, QTableWidgetItem(str(value)))
+
+    def _refresh_link_health(self) -> None:
+        """Refresh B/C application-heartbeat age on the required five-second cycle."""
+
+        evaluated: dict[str, dict[str, object]] = {}
+        if self.db_path.is_file():
+            try:
+                raw = self.repository.connection_statuses()
+            except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
+                raw = {}
+        else:
+            raw = {}
+        now = _utc_now()
+        for peer in ("B", "C"):
+            item = dict(raw.get(peer, {}))
+            seen = item.get("last_seen_at_utc")
+            age_s: float | None = None
+            if seen:
+                try:
+                    parsed = datetime.fromisoformat(str(seen).replace("Z", "+00:00"))
+                    age_s = max(0.0, (now - parsed.astimezone(timezone.utc)).total_seconds())
+                except (TypeError, ValueError):
+                    age_s = None
+            connected = bool(item.get("connected"))
+            effective = connected and age_s is not None and age_s <= LINK_STALE_AFTER_S
+            if age_s is None:
+                ping_text = "Ping(心跳龄) -"
+            elif age_s < 1.0:
+                ping_text = f"Ping(心跳龄) {age_s * 1000:.0f} ms"
+            else:
+                ping_text = f"Ping(心跳龄) {age_s:.1f} s"
+            detail = str(item.get("detail", "not connected"))
+            if connected and not effective:
+                detail = f"连接记录已过期（>{LINK_STALE_AFTER_S:.0f}s）；{detail}"
+            item.update(
+                {
+                    "effective_connected": effective,
+                    "heartbeat_age_s": age_s,
+                    "ping_text": ping_text,
+                    "detail": detail,
+                }
+            )
+            evaluated[peer] = item
+        self._connection_probe = evaluated
+        self._refresh_alerts()
 
     def _update_communication_summary(self) -> None:
         bind = self.bindCombo.currentText().strip()

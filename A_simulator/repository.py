@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 from contextlib import contextmanager
 import json
 import math
+import os
 from pathlib import Path
 import sqlite3
+import tempfile
 from typing import Mapping
 import uuid
 
@@ -23,11 +25,11 @@ from .models import (
 from .scenario import ScenarioCurve, ScenarioPoint
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 SCHEMA = """
-PRAGMA user_version = 5;
+PRAGMA user_version = 6;
 
 CREATE TABLE IF NOT EXISTS simulation_control (
     singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
@@ -89,6 +91,9 @@ CREATE TABLE IF NOT EXISTS control_state (
     pitch_target_deg REAL NOT NULL,
     controller_wind_available_kw REAL NOT NULL,
     controller_wind_operating_limit_kw REAL NOT NULL,
+    last_wind_action_seq INTEGER,
+    last_wind_action_step INTEGER,
+    wind_action_applied_at_utc TEXT,
     updated_at_utc TEXT NOT NULL
 );
 
@@ -246,7 +251,11 @@ def _json_value(value: object) -> str:
     )
 
 
-def _state_from_row(row: sqlite3.Row) -> SimulationState:
+def _state_from_row(
+    row: sqlite3.Row, control_row: sqlite3.Row | None = None
+) -> SimulationState:
+    control = control_row if control_row is not None else row
+    control_keys = set(control.keys())
     return SimulationState(
         session_id=row["session_id"],
         step=row["step"],
@@ -265,6 +274,16 @@ def _state_from_row(row: sqlite3.Row) -> SimulationState:
         diesel_running=bool(row["diesel_running"]),
         fault=bool(row["fault"]),
         power_imbalance_kw=row["power_imbalance_kw"],
+        controller_wind_enable=bool(control["controller_wind_enable"])
+        if "controller_wind_enable" in control_keys else False,
+        pitch_target_deg=float(control["pitch_target_deg"])
+        if "pitch_target_deg" in control_keys else float(row["pitch_actual_deg"]),
+        last_wind_action_seq=control["last_wind_action_seq"]
+        if "last_wind_action_seq" in control_keys else None,
+        last_wind_action_step=control["last_wind_action_step"]
+        if "last_wind_action_step" in control_keys else None,
+        wind_action_applied_at_utc=control["wind_action_applied_at_utc"]
+        if "wind_action_applied_at_utc" in control_keys else None,
     )
 
 
@@ -437,6 +456,8 @@ class Repository:
             diesel_running=False,
             fault=False,
             power_imbalance_kw=first.load_power_kw,
+            controller_wind_enable=bool(initial["controller_wind_enable"]),
+            pitch_target_deg=float(initial["pitch_target_deg"]),
         )
         with _connect(self.path) as connection:
             connection.executescript(SCHEMA)
@@ -493,7 +514,13 @@ class Repository:
                 ],
             )
             connection.execute(
-                """INSERT INTO control_state VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO control_state
+                   (singleton_id, wind_target_kw, diesel_target_kw,
+                    dispatch_wind_enable, controller_wind_enable, diesel_enable,
+                    pitch_target_deg, controller_wind_available_kw,
+                    controller_wind_operating_limit_kw, last_wind_action_seq,
+                    last_wind_action_step, wind_action_applied_at_utc, updated_at_utc)
+                   VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)""",
                 (
                     float(initial["wind_target_kw"]),
                     float(initial["diesel_target_kw"]),
@@ -512,7 +539,7 @@ class Repository:
                 _state_values(state, timestamp),
             )
             self._append_history(connection, state, timestamp)
-            self._write_scada(connection, state, timestamp)
+            self._write_scada(connection, state, timestamp, initial)
             connection.executemany(
                 "INSERT INTO connection_status VALUES (?, 0, NULL, 'not connected')",
                 [("B",), ("C",)],
@@ -585,7 +612,7 @@ class Repository:
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        """Migrate a schema-v4 database in place without discarding history."""
+        """Migrate supported databases in place without discarding history."""
 
         with _connect(self.path) as connection:
             version = int(connection.execute("PRAGMA user_version").fetchone()[0])
@@ -603,12 +630,23 @@ class Repository:
                     count = connection.execute(
                         "SELECT COUNT(*) FROM parameter_state"
                     ).fetchone()[0]
+                    control_columns = {
+                        str(row["name"])
+                        for row in connection.execute("PRAGMA table_info(control_state)")
+                    }
                 except sqlite3.OperationalError as exc:
                     raise RuntimeError(
-                        "schema v5 parameter tables are missing"
+                        "schema v6 parameter tables are missing"
                     ) from exc
                 if count == 0:
-                    raise RuntimeError("schema v5 parameter_state is unexpectedly empty")
+                    raise RuntimeError("schema v6 parameter_state is unexpectedly empty")
+                required = {
+                    "last_wind_action_seq",
+                    "last_wind_action_step",
+                    "wind_action_applied_at_utc",
+                }
+                if not required.issubset(control_columns):
+                    raise RuntimeError("schema v6 control_state extension columns are missing")
                 return
 
             # Only the one-time v4 migration needs a write lock. Re-check the
@@ -618,11 +656,80 @@ class Repository:
             version = int(connection.execute("PRAGMA user_version").fetchone()[0])
             if version == SCHEMA_VERSION:
                 return
-            if version != 4:
+            if version == 4:
+                for statement in PARAMETER_SCHEMA:
+                    connection.execute(statement)
+                self._seed_migrated_parameters(connection)
+                version = 5
+            if version == 5:
+                existing = {
+                    str(row["name"])
+                    for row in connection.execute("PRAGMA table_info(control_state)")
+                }
+                for name, declaration in (
+                    ("last_wind_action_seq", "INTEGER"),
+                    ("last_wind_action_step", "INTEGER"),
+                    ("wind_action_applied_at_utc", "TEXT"),
+                ):
+                    if name not in existing:
+                        connection.execute(
+                            f"ALTER TABLE control_state ADD COLUMN {name} {declaration}"
+                        )
+                runtime = connection.execute(
+                    "SELECT session_id, step FROM simulation_control WHERE singleton_id=1"
+                ).fetchone()
+                control = connection.execute(
+                    "SELECT * FROM control_state WHERE singleton_id=1"
+                ).fetchone()
+                current = connection.execute(
+                    "SELECT sampled_at_utc FROM current_state WHERE singleton_id=1"
+                ).fetchone()
+                if runtime is not None and control is not None and current is not None:
+                    migration_time = _utc_now()
+                    for point in (
+                        (
+                            "WT01.dispatch_wind_enable",
+                            "WT01",
+                            bool(control["dispatch_wind_enable"]),
+                        ),
+                        (
+                            "WT01.controller_wind_enable",
+                            "WT01",
+                            bool(control["controller_wind_enable"]),
+                        ),
+                        ("DG01.diesel_enable", "DG01", bool(control["diesel_enable"])),
+                    ):
+                        connection.execute(
+                            """INSERT INTO scada_points
+                               (point_id, device_id, category, value_json, unit, version,
+                                updated_step, sampled_at_utc, updated_at_utc)
+                               VALUES (?, ?, 'control', ?, 'bool', 1, ?, ?, ?)
+                               ON CONFLICT(point_id) DO UPDATE SET
+                               value_json=excluded.value_json,
+                               version=scada_points.version+1,
+                               updated_step=excluded.updated_step,
+                               sampled_at_utc=excluded.sampled_at_utc,
+                               updated_at_utc=excluded.updated_at_utc""",
+                            (
+                                point[0],
+                                point[1],
+                                _json_value(point[2]),
+                                runtime["step"],
+                                current["sampled_at_utc"],
+                                migration_time,
+                            ),
+                        )
+                if runtime is not None:
+                    connection.execute(
+                        "INSERT INTO logs VALUES (NULL, 'INFO', 'schema_migrated', ?, ?, ?, ?)",
+                        (
+                            "schema v5 -> v6; wind action trace metadata added",
+                            runtime["session_id"], runtime["step"], _utc_now(),
+                        ),
+                    )
+                version = 6
+            if version != SCHEMA_VERSION:
                 raise RuntimeError(f"database schema changed during migration: v{version}")
-            for statement in PARAMETER_SCHEMA:
-                connection.execute(statement)
-            self._seed_migrated_parameters(connection)
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     @staticmethod
@@ -704,7 +811,12 @@ class Repository:
             row = connection.execute("SELECT * FROM current_state WHERE singleton_id=1").fetchone()
             if row is None:
                 raise RuntimeError("current_state row is missing")
-            return _state_from_row(row)
+            control = connection.execute(
+                "SELECT * FROM control_state WHERE singleton_id=1"
+            ).fetchone()
+            if control is None:
+                raise RuntimeError("control_state row is missing")
+            return _state_from_row(row, control)
 
     def get_scenario(self) -> ScenarioCurve:
         """Return the scenario snapshot stored for the active simulation."""
@@ -812,6 +924,59 @@ class Repository:
             result.append(item)
         return result
 
+    @staticmethod
+    def _checked_time_range(start_utc: str, end_utc: str) -> tuple[str, str]:
+        """Validate an inclusive UTC range in the protocol timestamp format."""
+
+        for name, value in (("start_utc", start_utc), ("end_utc", end_utc)):
+            if not isinstance(value, str):
+                raise ValueError(f"{name} must be a UTC timestamp string")
+            try:
+                parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ")
+            except ValueError as exc:
+                raise ValueError(
+                    f"{name} must use YYYY-MM-DDTHH:MM:SS.mmmZ"
+                ) from exc
+            if parsed.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z" != value:
+                raise ValueError(f"{name} must use millisecond UTC precision")
+        if start_utc > end_utc:
+            raise ValueError("start_utc must not be later than end_utc")
+        return start_utc, end_utc
+
+    def state_history_between(
+        self,
+        start_utc: str,
+        end_utc: str,
+        *,
+        limit: int = 10_000,
+        session_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        """Return chronological SCADA state rows inside an inclusive time range."""
+
+        self._ensure_exists()
+        start, end = self._checked_time_range(start_utc, end_utc)
+        checked_limit = self._checked_limit(limit)
+        if session_id is not None and (not isinstance(session_id, str) or not session_id):
+            raise ValueError("session_id must be a non-empty string or None")
+        clauses = ["sampled_at_utc >= ?", "sampled_at_utc <= ?"]
+        values: list[object] = [start, end]
+        if session_id is not None:
+            clauses.append("session_id = ?")
+            values.append(session_id)
+        values.append(checked_limit)
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                f"""SELECT id, {STATE_COLUMNS}, recorded_at_utc
+                    FROM state_history WHERE {' AND '.join(clauses)}
+                    ORDER BY sampled_at_utc, id LIMIT ?""",
+                values,
+            ).fetchall()
+        result = [dict(row) for row in rows]
+        for item in result:
+            for name in ("wind_running", "diesel_running", "fault"):
+                item[name] = bool(item[name])
+        return result
+
     def logs(self, limit: int = 200) -> list[dict[str, object]]:
         """Return newest application log records first."""
 
@@ -824,6 +989,199 @@ class Repository:
                 (checked_limit,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def logs_between(
+        self,
+        start_utc: str,
+        end_utc: str,
+        *,
+        limit: int = 10_000,
+        session_id: str | None = None,
+        level: str | None = None,
+    ) -> list[dict[str, object]]:
+        """Return newest operation logs inside an inclusive time range."""
+
+        self._ensure_exists()
+        start, end = self._checked_time_range(start_utc, end_utc)
+        checked_limit = self._checked_limit(limit)
+        clauses = ["created_at_utc >= ?", "created_at_utc <= ?"]
+        values: list[object] = [start, end]
+        if session_id is not None:
+            if not isinstance(session_id, str) or not session_id:
+                raise ValueError("session_id must be a non-empty string or None")
+            clauses.append("session_id = ?")
+            values.append(session_id)
+        if level is not None:
+            normalized_level = str(level).upper()
+            if normalized_level not in {"INFO", "WARNING", "ERROR"}:
+                raise ValueError("level must be INFO, WARNING, ERROR or None")
+            clauses.append("level = ?")
+            values.append(normalized_level)
+        values.append(checked_limit)
+        with _connect(self.path) as connection:
+            rows = connection.execute(
+                f"""SELECT id, level, event, message, session_id, step, created_at_utc
+                    FROM logs WHERE {' AND '.join(clauses)}
+                    ORDER BY created_at_utc DESC, id DESC LIMIT ?""",
+                values,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def trace_events_between(
+        self,
+        start_utc: str,
+        end_utc: str,
+        *,
+        limit: int = 10_000,
+        session_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        """Return scenario/control/parameter events for acceptance traceability."""
+
+        self._ensure_exists()
+        start, end = self._checked_time_range(start_utc, end_utc)
+        checked_limit = self._checked_limit(limit)
+        with _connect(self.path) as connection:
+            command_clauses = ["received_at_utc >= ?", "received_at_utc <= ?"]
+            command_values: list[object] = [start, end]
+            if session_id is not None:
+                if not isinstance(session_id, str) or not session_id:
+                    raise ValueError("session_id must be a non-empty string or None")
+                command_clauses.append("session_id = ?")
+                command_values.append(session_id)
+            commands = connection.execute(
+                f"""SELECT id, received_at_utc AS occurred_at_utc, session_id,
+                           source AS object, message_type AS event, payload_json AS detail,
+                           accepted, reason
+                    FROM commands WHERE {' AND '.join(command_clauses)}""",
+                command_values,
+            ).fetchall()
+            parameters = connection.execute(
+                """SELECT id, changed_at_utc AS occurred_at_utc, NULL AS session_id,
+                          owner || ':' || name AS object, 'parameter_update' AS event,
+                          'source=' || source || '; old=' || COALESCE(CAST(old_value AS TEXT), 'NULL') ||
+                          '; new=' || CAST(new_value AS TEXT) || ' ' || unit AS detail,
+                          1 AS accepted, 'accepted' AS reason
+                   FROM parameter_history
+                   WHERE changed_at_utc >= ? AND changed_at_utc <= ?""",
+                (start, end),
+            ).fetchall()
+            log_clauses = [
+                "created_at_utc >= ?",
+                "created_at_utc <= ?",
+                "event IN ('session_created','status_changed','scenario_saved','scenario_loaded','scenario_duration_changed')",
+            ]
+            log_values: list[object] = [start, end]
+            if session_id is not None:
+                log_clauses.append("session_id = ?")
+                log_values.append(session_id)
+            scenario_logs = connection.execute(
+                f"""SELECT id, created_at_utc AS occurred_at_utc, session_id,
+                           'A' AS object, event, message AS detail,
+                           1 AS accepted, 'accepted' AS reason
+                    FROM logs WHERE {' AND '.join(log_clauses)}""",
+                log_values,
+            ).fetchall()
+        merged = [dict(row) for row in (*commands, *parameters, *scenario_logs)]
+        merged.sort(key=lambda row: (str(row["occurred_at_utc"]), int(row["id"])))
+        return merged[-checked_limit:]
+
+    def database_categories(self, limit: int = 1000) -> dict[str, list[dict[str, object]]]:
+        """Return explicitly separated four-remote and operational database views."""
+
+        self._ensure_exists()
+        checked_limit = self._checked_limit(limit)
+        category_names = {
+            "YC": "telemetry",
+            "YX": "signal",
+            "YT": "setpoint",
+            "YK": "control",
+        }
+        with _connect(self.path) as connection:
+            result: dict[str, list[dict[str, object]]] = {}
+            for label, category in category_names.items():
+                rows = connection.execute(
+                    """SELECT point_id, device_id, category, value_json, unit, version,
+                              updated_step, sampled_at_utc, updated_at_utc
+                       FROM scada_points WHERE category=? ORDER BY point_id LIMIT ?""",
+                    (category, checked_limit),
+                ).fetchall()
+                result[label] = [dict(row) for row in rows]
+            result["device_parameters"] = [
+                dict(row)
+                for row in connection.execute(
+                    """SELECT device_id, name, value, unit
+                       FROM device_parameters ORDER BY device_id, name LIMIT ?""",
+                    (checked_limit,),
+                ).fetchall()
+            ]
+            result["environment_scenario"] = [
+                dict(row)
+                for row in connection.execute(
+                    """SELECT step, sim_time_s, wind_speed_mps, load_power_kw
+                       FROM scenario_points ORDER BY step LIMIT ?""",
+                    (checked_limit,),
+                ).fetchall()
+            ]
+            result["simulation_history"] = [
+                dict(row)
+                for row in connection.execute(
+                    f"""SELECT id, {STATE_COLUMNS}, recorded_at_utc
+                       FROM state_history ORDER BY id DESC LIMIT ?""",
+                    (checked_limit,),
+                ).fetchall()
+            ]
+            result["logs"] = [
+                dict(row)
+                for row in connection.execute(
+                    """SELECT id, level, event, message, session_id, step, created_at_utc
+                       FROM logs ORDER BY id DESC LIMIT ?""",
+                    (checked_limit,),
+                ).fetchall()
+            ]
+        return result
+
+    def export_logs_jsonl(
+        self,
+        destination: str | Path,
+        start_utc: str,
+        end_utc: str,
+        *,
+        session_id: str | None = None,
+        level: str | None = None,
+    ) -> Path:
+        """Export selected logs with explicit occurrence time and object fields."""
+
+        target = Path(destination)
+        rows = self.logs_between(
+            start_utc,
+            end_utc,
+            session_id=session_id,
+            level=level,
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+                for row in reversed(rows):
+                    object_name = row.get("session_id") or "A"
+                    if row.get("step") is not None:
+                        object_name = f"{object_name}/step:{row['step']}"
+                    record = {
+                        "occurred_at_utc": row["created_at_utc"],
+                        "object": object_name,
+                        **row,
+                    }
+                    handle.write(_json_value(record) + "\n")
+            os.replace(temporary_name, target)
+        except Exception:
+            try:
+                os.unlink(temporary_name)
+            except FileNotFoundError:
+                pass
+            raise
+        return target
 
     def update_a_parameters(
         self, parameters: Mapping[str, object]
@@ -987,6 +1345,8 @@ class Repository:
                 diesel_running=False,
                 fault=False,
                 power_imbalance_kw=environment.load_power_kw,
+                controller_wind_enable=False,
+                pitch_target_deg=float(pitch_row["value"]),
             )
             connection.execute(
                 """UPDATE simulation_control
@@ -1001,6 +1361,9 @@ class Repository:
                        diesel_enable=0, pitch_target_deg=?,
                        controller_wind_available_kw=0,
                        controller_wind_operating_limit_kw=0,
+                       last_wind_action_seq=NULL,
+                       last_wind_action_step=NULL,
+                       wind_action_applied_at_utc=NULL,
                        updated_at_utc=? WHERE singleton_id=1""",
                 (state.pitch_actual_deg, timestamp),
             )
@@ -1014,7 +1377,17 @@ class Repository:
                 _state_values(state, timestamp),
             )
             self._append_history(connection, state, timestamp)
-            self._write_scada(connection, state, timestamp)
+            self._write_scada(
+                connection,
+                state,
+                timestamp,
+                {
+                    "dispatch_wind_enable": False,
+                    "controller_wind_enable": False,
+                    "diesel_enable": False,
+                    "pitch_target_deg": state.pitch_target_deg,
+                },
+            )
             connection.execute(
                 "UPDATE connection_status SET connected=0, detail='new session; waiting for peer'"
             )
@@ -1080,8 +1453,11 @@ class Repository:
                 controller_wind_operating_limit_kw=control_row[
                     "controller_wind_operating_limit_kw"
                 ],
+                last_wind_action_seq=control_row["last_wind_action_seq"],
+                last_wind_action_step=control_row["last_wind_action_step"],
+                wind_action_applied_at_utc=control_row["wind_action_applied_at_utc"],
             )
-            previous_state = _state_from_row(previous_row)
+            previous_state = _state_from_row(previous_row, control_row)
             timestamp = _utc_now()
             if timestamp < previous_state.sampled_at_utc:
                 connection.execute(
@@ -1111,7 +1487,7 @@ class Repository:
                 values,
             )
             self._append_history(connection, state, timestamp)
-            self._write_scada(connection, state, timestamp)
+            self._write_scada(connection, state, timestamp, controls)
             status = "completed" if next_time >= runtime["end_s"] - 1e-9 else "running"
             connection.execute(
                 "UPDATE simulation_control SET sim_time_s=?, step=?, status=? WHERE singleton_id=1",
@@ -1128,7 +1504,17 @@ class Repository:
         )
 
     @staticmethod
-    def _write_scada(connection: sqlite3.Connection, state: SimulationState, timestamp: str) -> None:
+    def _write_scada(
+        connection: sqlite3.Connection,
+        state: SimulationState,
+        timestamp: str,
+        controls: Mapping[str, object] | ControlInputs,
+    ) -> None:
+        def control_value(name: str) -> object:
+            if isinstance(controls, ControlInputs):
+                return getattr(controls, name)
+            return controls[name]
+
         points = (
             ("WT01.wind_speed_mps", "WT01", "telemetry", state.wind_speed_mps, "m/s"),
             ("LOAD01.load_power_kw", "LOAD01", "telemetry", state.load_power_kw, "kW"),
@@ -1142,6 +1528,10 @@ class Repository:
             ("GRID.fault", "GRID", "signal", state.fault, "bool"),
             ("WT01.wind_target_kw", "WT01", "setpoint", state.wind_target_kw, "kW"),
             ("DG01.diesel_target_kw", "DG01", "setpoint", state.diesel_target_kw, "kW"),
+            ("WT01.pitch_target_deg", "WT01", "setpoint", control_value("pitch_target_deg"), "deg"),
+            ("WT01.dispatch_wind_enable", "WT01", "control", bool(control_value("dispatch_wind_enable")), "bool"),
+            ("WT01.controller_wind_enable", "WT01", "control", bool(control_value("controller_wind_enable")), "bool"),
+            ("DG01.diesel_enable", "DG01", "control", bool(control_value("diesel_enable")), "bool"),
             ("WT01.pitch_actual_deg", "WT01", "telemetry", state.pitch_actual_deg, "deg"),
         )
         for point_id, device_id, category, value, unit in points:
@@ -1294,6 +1684,9 @@ class Repository:
                    SET controller_wind_enable=0, pitch_target_deg=?,
                        controller_wind_available_kw=0,
                        controller_wind_operating_limit_kw=0,
+                       last_wind_action_seq=NULL,
+                       last_wind_action_step=NULL,
+                       wind_action_applied_at_utc=NULL,
                        updated_at_utc=? WHERE singleton_id=1""",
                 (prospective["pitch_feather_deg"], timestamp),
             )
@@ -1382,7 +1775,16 @@ class Repository:
                     ("seq_conflict", runtime["session_id"], runtime["step"], timestamp),
                 )
                 return CommandResult(False, "seq_conflict")
-            result = self._validate_and_apply(connection, runtime, message_type, source, session_id, seq, payload)
+            result = self._validate_and_apply(
+                connection,
+                runtime,
+                message_type,
+                source,
+                session_id,
+                seq,
+                payload,
+                timestamp,
+            )
             connection.execute(
                 """INSERT INTO commands
                    (session_id, source, seq, message_type, payload_json, accepted, reason, received_at_utc)
@@ -1406,6 +1808,7 @@ class Repository:
         session_id: object,
         seq: int,
         payload: dict[str, object],
+        applied_at_utc: str,
     ) -> CommandResult:
         if session_id != runtime["session_id"]:
             return CommandResult(False, "stale_session")
@@ -1423,9 +1826,22 @@ class Repository:
             return CommandResult(False, "out_of_order")
         try:
             if message_type == "dispatch":
-                self._apply_dispatch(connection, payload)
+                self._apply_dispatch(
+                    connection,
+                    payload,
+                    session_id=str(runtime["session_id"]),
+                    applied_step=int(runtime["step"]),
+                    applied_at_utc=applied_at_utc,
+                )
             elif message_type == "wind_action":
-                self._apply_wind_action(connection, payload)
+                self._apply_wind_action(
+                    connection,
+                    payload,
+                    seq=seq,
+                    session_id=str(runtime["session_id"]),
+                    applied_step=int(runtime["step"]),
+                    applied_at_utc=applied_at_utc,
+                )
             else:
                 self._apply_parameter_update(connection, payload, source)
         except ValueError as exc:
@@ -1449,7 +1865,15 @@ class Repository:
             raise ValueError(f"invalid_{name}")
         return result
 
-    def _apply_dispatch(self, connection: sqlite3.Connection, payload: dict[str, object]) -> None:
+    def _apply_dispatch(
+        self,
+        connection: sqlite3.Connection,
+        payload: dict[str, object],
+        *,
+        session_id: str,
+        applied_step: int,
+        applied_at_utc: str,
+    ) -> None:
         expected = {"wind_target_kw", "diesel_target_kw", "wind_enable", "diesel_enable"}
         if set(payload) != expected:
             raise ValueError("invalid_dispatch_fields")
@@ -1470,10 +1894,38 @@ class Repository:
         connection.execute(
             """UPDATE control_state SET wind_target_kw=?, diesel_target_kw=?,
                dispatch_wind_enable=?, diesel_enable=?, updated_at_utc=? WHERE singleton_id=1""",
-            (wind_target, diesel_target, int(wind_enable), int(diesel_enable), _utc_now()),
+            (
+                wind_target,
+                diesel_target,
+                int(wind_enable),
+                int(diesel_enable),
+                applied_at_utc,
+            ),
         )
+        for point in (
+            ("WT01.wind_target_kw", "WT01", "setpoint", wind_target, "kW"),
+            ("DG01.diesel_target_kw", "DG01", "setpoint", diesel_target, "kW"),
+            ("WT01.dispatch_wind_enable", "WT01", "control", wind_enable, "bool"),
+            ("DG01.diesel_enable", "DG01", "control", diesel_enable, "bool"),
+        ):
+            self._record_scada_change(
+                connection,
+                *point,
+                session_id=session_id,
+                step=applied_step,
+                timestamp=applied_at_utc,
+            )
 
-    def _apply_wind_action(self, connection: sqlite3.Connection, payload: dict[str, object]) -> None:
+    def _apply_wind_action(
+        self,
+        connection: sqlite3.Connection,
+        payload: dict[str, object],
+        *,
+        seq: int,
+        session_id: str,
+        applied_step: int,
+        applied_at_utc: str,
+    ) -> None:
         expected = {
             "wind_enable",
             "pitch_target_deg",
@@ -1501,8 +1953,68 @@ class Repository:
         connection.execute(
             """UPDATE control_state SET controller_wind_enable=?, pitch_target_deg=?,
                controller_wind_available_kw=?, controller_wind_operating_limit_kw=?,
+               last_wind_action_seq=?, last_wind_action_step=?,
+               wind_action_applied_at_utc=?,
                updated_at_utc=? WHERE singleton_id=1""",
-            (int(wind_enable), pitch, available, operating_limit, _utc_now()),
+            (
+                int(wind_enable),
+                pitch,
+                available,
+                operating_limit,
+                seq,
+                applied_step,
+                applied_at_utc,
+                applied_at_utc,
+            ),
+        )
+        for point in (
+            ("WT01.controller_wind_enable", "WT01", "control", wind_enable, "bool"),
+            ("WT01.pitch_target_deg", "WT01", "setpoint", pitch, "deg"),
+            ("WT01.wind_available_kw", "WT01", "telemetry", available, "kW"),
+            (
+                "WT01.wind_operating_limit_kw",
+                "WT01",
+                "telemetry",
+                operating_limit,
+                "kW",
+            ),
+        ):
+            self._record_scada_change(
+                connection,
+                *point,
+                session_id=session_id,
+                step=applied_step,
+                timestamp=applied_at_utc,
+            )
+
+    @staticmethod
+    def _record_scada_change(
+        connection: sqlite3.Connection,
+        point_id: str,
+        device_id: str,
+        category: str,
+        value: object,
+        unit: str,
+        *,
+        session_id: str,
+        step: int,
+        timestamp: str,
+    ) -> None:
+        value_json = _json_value(value)
+        connection.execute(
+            """INSERT INTO scada_points
+               (point_id, device_id, category, value_json, unit, version, updated_step,
+                sampled_at_utc, updated_at_utc)
+               VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+               ON CONFLICT(point_id) DO UPDATE SET value_json=excluded.value_json,
+               version=scada_points.version+1, updated_step=excluded.updated_step,
+               sampled_at_utc=excluded.sampled_at_utc,
+               updated_at_utc=excluded.updated_at_utc""",
+            (point_id, device_id, category, value_json, unit, step, timestamp, timestamp),
+        )
+        connection.execute(
+            "INSERT INTO scada_history VALUES (NULL, ?, ?, ?, ?, ?, ?)",
+            (session_id, step, point_id, value_json, timestamp, timestamp),
         )
 
     def _apply_parameter_update(

@@ -14,6 +14,8 @@ A 仅直接访问 grid.db；B 仅直接访问 ems.db；C 上位机仅直接访�
 多个进程分别建立连接，事务保持短小；配置合理的锁等待策略。一轮状态更新尽量放在同一事务，避免界面读到半轮结果。
 历史记录必须区分 `sim_time_s`、A 授时产生的 `sampled_at_utc` 和本机实际写入/接收时间；指令包含来源、seq、状态与处理结果。完整字段语义见 `docs/time-interface.md`。
 
-A 的 `grid.db` 当前为 schema v5：沿用 `_utc` 后缀区分采样、接收、创建和更新时间，在 `control_state` 保存 C 发送的 available/operating limit，并新增 `parameter_state` 与 `parameter_history` 保存 A/B/C 参数副本、owner、source 和更新时间。完整 v4 数据库首次访问时原地迁移到 v5并保留状态历史；更旧或损坏结构不做猜测迁移。同一个仿真步的状态、SCADA 当前值及其历史记录复用同一个 `sampled_at_utc`。
+A 的 `grid.db` 当前为 schema v6：沿用 `_utc` 后缀区分采样、接收、创建和更新时间，在 `control_state` 保存 C 发送的 available/operating limit，并保存最近有效 `wind_action` 的 seq、应用 step 和应用 UTC 时间；`parameter_state` 与 `parameter_history` 保存 A/B/C 参数副本、owner、source 和更新时间。完整 v4/v5 数据库首次访问时原地迁移到 v6并保留状态历史；更旧或损坏结构不做猜测迁移。同一个仿真步的状态、SCADA 当前值及其历史记录复用同一个 `sampled_at_utc`。
+
+A 的 `scada_points` 已按 `telemetry/signal/setpoint/control` 对应 YC 遥测、YX 遥信、YT 遥调、YK 遥控。A UI 将四遥、设备参数、环境与场景、仿真历史、运行日志分成八个独立页签；历史页按 UTC 闭区间及 session 查询状态、日志与控制追溯，并可导出含 `occurred_at_utc` 和 `object` 的 JSONL。
 
 表结构尚未冻结，本文件不是 SQL 迁移。具体表及四遥点表由各模块负责人共同确认。数据库保存在 data/runtime/，不提交 Git。
