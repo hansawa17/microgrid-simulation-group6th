@@ -54,7 +54,7 @@ def _get_local_ip():
     return "未获取"
 
 
-def _embed_wind_evaluation(main_window, repository, QtCore, QtWidgets):
+def _embed_wind_evaluation(main_window, repository, QtCore, QtGui, QtWidgets):
     """Embed the wind execution evaluation into the main GUI as a tab.
 
     The evaluation view remains read-only and reuses the same repository. If
@@ -105,6 +105,7 @@ def _launch_gui():
                 self,
                 self._wind_eval_repo,
                 QtCore,
+                QtGui,
                 QtWidgets,
             )
             self._wind_eval_widget.refresh()
