@@ -1,18 +1,12 @@
-"""B / EMS package entry point.
-
-默认启动完整三进程；也可单独启动 GUI、B_IO、B_COMPUTE 或风机执行评价页。
-"""
+"""B / EMS package entry point."""
 from __future__ import annotations
 import argparse
 from pathlib import Path
-import socket
-import subprocess
-import sys
-
+import socket,subprocess,sys
 DEFAULT_DB=Path(__file__).resolve().parents[1]/'data'/'runtime'/'ems.db'
 
 def _build_parser():
- p=argparse.ArgumentParser(prog='python -m B_dispatch',description='B / EMS 主站启动入口');s=p.add_subparsers(dest='command');s.add_parser('gui');s.add_parser('wind-evaluation',help='启动只读风机指令执行评价视图');s.add_parser('run');i=s.add_parser('init');i.add_argument('--db',type=Path,default=DEFAULT_DB);o=s.add_parser('io');o.add_argument('--db',type=Path,default=DEFAULT_DB);o.add_argument('--host');o.add_argument('--port',type=int);c=s.add_parser('compute');c.add_argument('--db',type=Path,default=DEFAULT_DB);return p
+ p=argparse.ArgumentParser(prog='python -m B_dispatch',description='B / EMS 主站启动入口');s=p.add_subparsers(dest='command');s.add_parser('gui');s.add_parser('wind-evaluation');s.add_parser('run');i=s.add_parser('init');i.add_argument('--db',type=Path,default=DEFAULT_DB);o=s.add_parser('io');o.add_argument('--db',type=Path,default=DEFAULT_DB);o.add_argument('--host');o.add_argument('--port',type=int);c=s.add_parser('compute');c.add_argument('--db',type=Path,default=DEFAULT_DB);return p
 
 def _get_local_ip():
  sock=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
@@ -30,18 +24,22 @@ def _get_local_ip():
 def _launch_gui():
  from PyQt6 import QtWidgets
  from . import gui_b
+ from .wind_execution_gui import WindExecutionWindow
+ from .repository import EMSRepository
  class NetworkAwareMainWindow(gui_b.MainWindow):
   def __init__(self):
-   super().__init__();ip=_get_local_ip()
+   super().__init__();self._wind_eval_window=None;ip=_get_local_ip()
    if hasattr(self,'appSubtitle'):self.appSubtitle.setText(f'PC-B · 能量管理与调度系统 · 闭环 EMS · 本机 IP：{ip}')
    self.setWindowTitle(f'南极孤立微电网 EMS 主站 B · 本机 IP：{ip}')
-   self.statusBar().addPermanentWidget(QtWidgets.QLabel(f'本机 IP：{ip}'))
+   button=QtWidgets.QPushButton('风机指令执行评价');button.clicked.connect(self.open_wind_evaluation);self.statusBar().addPermanentWidget(button);self.statusBar().addPermanentWidget(QtWidgets.QLabel(f'本机 IP：{ip}'))
+  def open_wind_evaluation(self):
+   if self._wind_eval_window is None:self._wind_eval_window=WindExecutionWindow(EMSRepository(DEFAULT_DB))
+   self._wind_eval_window.show();self._wind_eval_window.raise_();self._wind_eval_window.activateWindow();self._wind_eval_window.refresh()
  app=QtWidgets.QApplication.instance() or QtWidgets.QApplication([]);w=NetworkAwareMainWindow();w.show();return app.exec()
 
 def _launch_full_runtime():
  from .repository import EMSRepository
- EMSRepository(DEFAULT_DB).initialize();flags=getattr(subprocess,'CREATE_NO_WINDOW',0)
- children=[subprocess.Popen([sys.executable,'-m','B_dispatch','compute','--db',str(DEFAULT_DB)],creationflags=flags),subprocess.Popen([sys.executable,'-m','B_dispatch','io','--db',str(DEFAULT_DB)],creationflags=flags)]
+ EMSRepository(DEFAULT_DB).initialize();flags=getattr(subprocess,'CREATE_NO_WINDOW',0);children=[subprocess.Popen([sys.executable,'-m','B_dispatch','compute','--db',str(DEFAULT_DB)],creationflags=flags),subprocess.Popen([sys.executable,'-m','B_dispatch','io','--db',str(DEFAULT_DB)],creationflags=flags)]
  try:return _launch_gui()
  finally:
   for child in children:
@@ -72,5 +70,4 @@ def main(argv=None):
   from .communication_service import EMSCommunicationService
   EMSCommunicationService(repo).run();return 0
  raise AssertionError('unreachable')
-
 if __name__=='__main__':raise SystemExit(main())
