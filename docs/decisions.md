@@ -149,3 +149,13 @@
 - 发布前在 Python 3.11 与 PyQt6 6.11.0 环境执行完整仓库测试，122 项全部通过；同时完成 B 源码语法与 Git 差异检查。
 - 本版本没有更改公共 TCP version、字段单位或 A/B/C 控制权，也没有把 C 物理参数开放给 B 修改。
 - beta0.3 是 PC 软件验收候选版本，不代表三机公网、STM32/Wi-Fi/UART、真实断线恢复或完整硬件闭环已经在本版本重新实测。
+
+## 2026-09-10：新版风机指令执行评价扩展契约
+
+- 新版评分表在 B 第24项 EMS策略评价后新增“风机指令执行评价”，要求关联启停/功率指令、实际运行状态、实际出力、目标桨距和可用功率；评分表仍写 B/24分且与 C 的25号重复，计分方式待教师确认，但功能先按必做整改。
+- 公共 TCP `version` 保持1。A 的 state 计划增加 `controller_wind_enable`、`pitch_target_deg`、`last_wind_action_seq`、`last_wind_action_step`、`wind_action_applied_at_utc`；精确定义以 `docs/wind-execution-status-extension.md` 为准。
+- C→A `wind_action.payload` 继续严格保持 `wind_enable/pitch_target_deg/wind_available_kw/wind_operating_limit_kw` 四字段。动作序号和引用step来自公共 envelope，应用时间由 A 在合法动作落库时生成，禁止重复塞入payload造成严格校验错误。
+- 采用滚动兼容：A升级后发送全部扩展键；B接收旧A缺字段时保存NULL并标记数据不足，不断线、不把缺失当0；C忽略不认识的state附加键。错误类型、NaN、越界、乱序和冲突仍必须拒绝。
+- B新增独立风机执行评价，不覆盖现有EMS策略评分。默认小组权重为启停30%、功率跟踪35%、桨距响应20%、能力与安全15%；数据不足不评分，保护性停机和A爬坡必须结合上下文解释。
+- C串口新增版本化 `$WIND2/$PARAM2/$PARAMGET`，保留旧 `$WIND/$PARAM` 兼容。MCU参数通过同request_id有效值回读证明生效，再由STM32在TCP单未决事务空档向A发送C白名单parameter_update；GUI分别展示“MCU已生效”和“A副本已同步”。
+- 本次仅冻结规范并生成 B/C 工作流提示词，尚未实现代码、数据库迁移或硬件验证，不得据此宣称新版验收项已完成。
