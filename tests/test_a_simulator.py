@@ -223,6 +223,57 @@ class RepositoryTests(unittest.TestCase):
             self.assertEqual(history_times, {sampled_at})
             self.assertEqual(scada_times, {sampled_at})
 
+    def test_runtime_scenario_update_applies_on_next_step_without_stopping(self):
+        self.repo.set_status("start")
+        first_state = self.repo.step_once()
+        assert first_state is not None
+        self.assertEqual(first_state.step, 1)
+        self.assertEqual(first_state.wind_speed_mps, 2.0)
+
+        original = self.repo.get_scenario()
+        updated = ScenarioCurve(
+            tuple(
+                replace(point, wind_speed_mps=9.5, load_power_kw=77.0)
+                if point.sim_time_s == 2.0
+                else point
+                for point in original.points
+            )
+        )
+        result = self.repo.replace_scenario_values(updated)
+
+        self.assertEqual(result["status"], "running")
+        self.assertEqual(result["effective_step"], 2)
+        self.assertEqual(result["effective_sim_time_s"], 2.0)
+        self.assertEqual(result["changed_points"], 1)
+        self.assertEqual(self.repo.runtime()["status"], "running")
+        self.assertEqual(self.repo.get_state(), first_state)
+
+        next_state = self.repo.step_once()
+        assert next_state is not None
+        self.assertEqual(next_state.step, 2)
+        self.assertEqual(next_state.wind_speed_mps, 9.5)
+        self.assertEqual(next_state.load_power_kw, 77.0)
+        self.assertEqual(self.repo.runtime()["status"], "running")
+        self.assertTrue(
+            any(row["event"] == "scenario_runtime_updated" for row in self.repo.logs())
+        )
+
+    def test_runtime_scenario_update_rejects_time_axis_changes(self):
+        original = self.repo.get_scenario()
+        shifted = ScenarioCurve(
+            tuple(
+                replace(point, sim_time_s=1.25)
+                if point.sim_time_s == 1.0
+                else point
+                for point in original.points
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "time axis or point count"):
+            self.repo.replace_scenario_values(shifted)
+
+        self.assertEqual(self.repo.get_scenario(), original)
+
     def test_command_is_validated_deduplicated_and_ordered(self):
         message = {
             "version": 1, "type": "dispatch", "source": "B", "target": "A",

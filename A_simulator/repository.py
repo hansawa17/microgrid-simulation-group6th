@@ -832,6 +832,90 @@ class Repository:
             )
             return ScenarioCurve(points)
 
+    def replace_scenario_values(self, scenario: ScenarioCurve) -> dict[str, object]:
+        """Atomically apply edited wind/load values from the next simulation step.
+
+        Runtime updates deliberately keep the active session's time axis unchanged.
+        ``step_once`` reads ``scenario_points`` inside its own transaction, so a
+        concurrent calculation observes either the complete old curve or the
+        complete new curve and never a partially updated set of points.
+        """
+
+        self._ensure_exists()
+        with _connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            runtime = connection.execute(
+                "SELECT * FROM simulation_control WHERE singleton_id=1"
+            ).fetchone()
+            if runtime is None:
+                raise RuntimeError("simulation_control row is missing")
+            if runtime["status"] not in {"ready", "running", "paused"}:
+                raise RuntimeError(
+                    "runtime scenario update requires a ready, running or paused simulation"
+                )
+
+            stored_rows = connection.execute(
+                "SELECT step, sim_time_s, wind_speed_mps, load_power_kw "
+                "FROM scenario_points ORDER BY step"
+            ).fetchall()
+            if len(stored_rows) != len(scenario.points):
+                raise ValueError(
+                    "runtime scenario update may change wind/load values only; "
+                    "reinitialize grid.db to change the time axis or point count"
+                )
+
+            updates: list[tuple[float, float, int]] = []
+            for step, (stored, point) in enumerate(zip(stored_rows, scenario.points)):
+                if int(stored["step"]) != step or not math.isclose(
+                    float(stored["sim_time_s"]),
+                    point.sim_time_s,
+                    rel_tol=0.0,
+                    abs_tol=1e-9,
+                ):
+                    raise ValueError(
+                        "runtime scenario update may change wind/load values only; "
+                        "reinitialize grid.db to change the time axis or point count"
+                    )
+                if (
+                    float(stored["wind_speed_mps"]) != point.wind_speed_mps
+                    or float(stored["load_power_kw"]) != point.load_power_kw
+                ):
+                    updates.append(
+                        (point.wind_speed_mps, point.load_power_kw, step)
+                    )
+
+            if updates:
+                connection.executemany(
+                    "UPDATE scenario_points "
+                    "SET wind_speed_mps=?, load_power_kw=? WHERE step=?",
+                    updates,
+                )
+
+            effective_step = int(runtime["step"]) + 1
+            effective_sim_time_s = float(runtime["sim_time_s"]) + float(
+                runtime["step_s"]
+            )
+            if updates:
+                connection.execute(
+                    "INSERT INTO logs VALUES (NULL, 'INFO', 'scenario_runtime_updated', ?, ?, ?, ?)",
+                    (
+                        f"changed_points={len(updates)}; "
+                        f"effective_step={effective_step}; "
+                        f"effective_sim_time_s={effective_sim_time_s:.9g}",
+                        runtime["session_id"],
+                        runtime["step"],
+                        _utc_now(),
+                    ),
+                )
+
+            return {
+                "session_id": str(runtime["session_id"]),
+                "status": str(runtime["status"]),
+                "effective_step": effective_step,
+                "effective_sim_time_s": effective_sim_time_s,
+                "changed_points": len(updates),
+            }
+
     @staticmethod
     def _checked_limit(limit: int) -> int:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100_000:
@@ -1068,7 +1152,8 @@ class Repository:
             log_clauses = [
                 "created_at_utc >= ?",
                 "created_at_utc <= ?",
-                "event IN ('session_created','status_changed','scenario_saved','scenario_loaded','scenario_duration_changed')",
+                "event IN ('session_created','status_changed','scenario_saved','scenario_loaded',"
+                "'scenario_duration_changed','scenario_runtime_updated')",
             ]
             log_values: list[object] = [start, end]
             if session_id is not None:

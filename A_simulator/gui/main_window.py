@@ -374,6 +374,29 @@ class _HistoryLoadTask(QRunnable):
             self.signals.failed.emit(self.request_id, str(error))
 
 
+class _ScenarioApplySignals(QObject):
+    applied = pyqtSignal(int, object)
+    failed = pyqtSignal(int, str)
+
+
+class _ScenarioApplyTask(QRunnable):
+    """Apply a complete edited curve without waiting in the GUI thread."""
+
+    def __init__(self, *, request_id: int, db_path: Path, scenario: ScenarioCurve) -> None:
+        super().__init__()
+        self.request_id = request_id
+        self.db_path = db_path
+        self.scenario = scenario
+        self.signals = _ScenarioApplySignals()
+
+    def run(self) -> None:
+        try:
+            result = Repository(self.db_path).replace_scenario_values(self.scenario)
+            self.signals.applied.emit(self.request_id, result)
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+            self.signals.failed.emit(self.request_id, str(error))
+
+
 class SimulatorWindow(QMainWindow):
     def __init__(
         self,
@@ -392,6 +415,10 @@ class SimulatorWindow(QMainWindow):
         self.scenario_path = scenario_path.resolve()
         self._scenario_source_path: Path | None = None
         self._scenario_dirty = False
+        self._scenario_runtime_dirty = False
+        self._scenario_edit_revision = 0
+        self._scenario_apply_in_progress = False
+        self._scenario_apply_task: _ScenarioApplyTask | None = None
         self._scenario_from_database = False
         self.scenario = self._initial_scenario(self.scenario_path)
         self._scenario_origin_utc = _utc_now()
@@ -399,6 +426,8 @@ class SimulatorWindow(QMainWindow):
         self._tcp_server = QProcess(self)
         self._history_pool = QThreadPool(self)
         self._history_pool.setMaxThreadCount(1)
+        self._scenario_apply_pool = QThreadPool(self)
+        self._scenario_apply_pool.setMaxThreadCount(1)
         self._history_request_id = 0
         self._history_loading = False
         self._history_refresh_pending = False
@@ -735,21 +764,26 @@ class SimulatorWindow(QMainWindow):
         self.open_button = self._button("加载 CSV", "secondary")
         self.sync_button = self._button("保存当前 CSV", "secondary")
         self.save_button = self._button("另存 CSV", "secondary")
+        self.apply_scenario_button = self._button("应用曲线到仿真", "primary")
+        self.apply_scenario_button.setToolTip(
+            "不暂停仿真，原子更新 grid.db 中的风速和负荷曲线，并从下一执行时刻生效"
+        )
         self.initialize_button = self._button("初始化 grid.db", "success")
         grid.addWidget(self.open_button, 1, 0)
         grid.addWidget(self.sync_button, 1, 1)
         grid.addWidget(self.save_button, 1, 2)
-        grid.addWidget(self.initialize_button, 1, 3)
+        grid.addWidget(self.apply_scenario_button, 1, 3)
+        grid.addWidget(self.initialize_button, 1, 4)
         self.source_label = QLabel()
         self.source_label.setProperty("role", "source")
         self.source_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.source_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        grid.addWidget(self.source_label, 1, 4, 1, 2)
+        grid.addWidget(self.source_label, 1, 5, 1, 3)
         self.dbPathLabel = QLabel(f"数据库：{self.db_path}")
         self.dbPathLabel.setProperty("role", "source")
         self.dbPathLabel.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.dbPathLabel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        grid.addWidget(self.dbPathLabel, 1, 6, 1, 2)
+        grid.addWidget(self.dbPathLabel, 2, 0, 1, 8)
         grid.setColumnStretch(2, 1)
         grid.setColumnStretch(4, 1)
         return card
@@ -1183,6 +1217,7 @@ class SimulatorWindow(QMainWindow):
         self.open_button.clicked.connect(self.open_csv)
         self.sync_button.clicked.connect(self.save_csv_in_place)
         self.save_button.clicked.connect(self.save_csv)
+        self.apply_scenario_button.clicked.connect(self.apply_scenario_to_simulation)
         self.initialize_button.clicked.connect(self.initialize_database)
         self.time_slider.valueChanged.connect(self.update_preview)
         self.wind_editor.curveChanged.connect(self._scenario_changed)
@@ -1273,6 +1308,7 @@ class SimulatorWindow(QMainWindow):
         self._scenario_origin_utc = _utc_now()
         self._scenario_source_path = source_path.resolve() if source_path else None
         self._scenario_dirty = False
+        self._scenario_runtime_dirty = False
         if source_path is not None:
             self.scenario_path = source_path.resolve()
         times = [point.sim_time_s for point in scenario.points]
@@ -1289,16 +1325,19 @@ class SimulatorWindow(QMainWindow):
         self.update_preview()
 
     def _update_scenario_source_label(self) -> None:
+        runtime_note = "；待应用到仿真" if self._scenario_runtime_dirty else ""
         if self._scenario_source_path is not None:
             dirty = "（待同步）" if self._scenario_dirty else ""
             self.source_label.setText(
-                f"场景：{self._scenario_source_path.name}{dirty}"
+                f"场景：{self._scenario_source_path.name}{dirty}{runtime_note}"
             )
             self.source_label.setToolTip(str(self._scenario_source_path))
             self.sync_button.setEnabled(True)
         else:
             dirty = "（已修改，请另存 CSV）" if self._scenario_dirty else ""
-            self.source_label.setText(f"场景：当前 grid.db 快照{dirty}")
+            self.source_label.setText(
+                f"场景：当前 grid.db 快照{dirty}{runtime_note}"
+            )
             self.source_label.setToolTip("场景点来自当前 grid.db；修改后请另存为 CSV")
             self.sync_button.setEnabled(False)
 
@@ -1313,6 +1352,8 @@ class SimulatorWindow(QMainWindow):
     def _scenario_changed(self, *_unused) -> None:
         self.scenario = self._scenario_from_editors()
         self._scenario_dirty = True
+        self._scenario_runtime_dirty = True
+        self._scenario_edit_revision += 1
         self._update_scenario_source_label()
         self.update_preview()
 
@@ -1356,6 +1397,8 @@ class SimulatorWindow(QMainWindow):
             self.time_slider.setRange(0, len(new_times) - 1)
             self.scenario = self._scenario_from_editors()
             self._scenario_dirty = True
+            self._scenario_runtime_dirty = True
+            self._scenario_edit_revision += 1
             self._update_scenario_source_label()
             self.update_preview()
             if self.db_path.is_file():
@@ -1415,13 +1458,19 @@ class SimulatorWindow(QMainWindow):
             if scenario.points[0].sim_time_s > self.config.start_s or scenario.points[-1].sim_time_s < self.config.end_s:
                 raise ValueError("CSV 时间轴不能覆盖配置中的仿真起止时刻")
             self._set_scenario(scenario, Path(path))
+            self._scenario_runtime_dirty = self.db_path.is_file()
+            self._scenario_edit_revision += 1
+            self._update_scenario_source_label()
             if self.db_path.is_file():
                 self._record_repository_event(
                     "INFO", "scenario_loaded", str(Path(path).resolve())
                 )
             self.chartStack.setCurrentIndex(1)
             self.btnScenarioCharts.setChecked(True)
-            self.statusBar().showMessage("CSV 已加载｜需初始化新数据库后才用于仿真", 6000)
+            self.statusBar().showMessage(
+                "CSV 已加载｜可应用到当前仿真；时间轴变化仍需重新初始化 grid.db",
+                7000,
+            )
         except (OSError, ValueError) as error:
             QMessageBox.critical(self, "CSV 加载失败", str(error))
 
@@ -1437,6 +1486,62 @@ class SimulatorWindow(QMainWindow):
             self._write_scenario_csv(destination, message="CSV 已另存")
         except (OSError, ValueError) as error:
             QMessageBox.critical(self, "CSV 保存失败", str(error))
+
+    def apply_scenario_to_simulation(self) -> None:
+        """Queue an atomic runtime curve update without stopping the simulator."""
+
+        if self._scenario_apply_in_progress:
+            return
+        if not self.db_path.is_file():
+            QMessageBox.warning(self, "应用失败", "请先初始化 grid.db")
+            return
+        try:
+            scenario = self._scenario_from_editors()
+        except (TypeError, ValueError) as error:
+            QMessageBox.critical(self, "应用失败", str(error))
+            return
+
+        request_id = self._scenario_edit_revision
+        task = _ScenarioApplyTask(
+            request_id=request_id,
+            db_path=self.db_path,
+            scenario=scenario,
+        )
+        task.signals.applied.connect(self._scenario_applied)
+        task.signals.failed.connect(self._scenario_apply_failed)
+        self._scenario_apply_task = task
+        self._scenario_apply_in_progress = True
+        self.apply_scenario_button.setEnabled(False)
+        self.apply_scenario_button.setText("正在应用…")
+        self.statusBar().showMessage("正在原子更新运行曲线；仿真继续运行", 4000)
+        self._scenario_apply_pool.start(task)
+
+    def _scenario_applied(self, request_id: int, result: object) -> None:
+        values = _row_mapping(result)
+        self._scenario_apply_task = None
+        self._scenario_apply_in_progress = False
+        self.apply_scenario_button.setText("应用曲线到仿真")
+        if request_id == self._scenario_edit_revision:
+            self._scenario_runtime_dirty = False
+        changed_points = int(values.get("changed_points", 0))
+        effective_step = int(values.get("effective_step", 0))
+        effective_time = float(values.get("effective_sim_time_s", 0.0))
+        message = (
+            f"运行曲线已更新 {changed_points} 个点；"
+            f"从 step={effective_step}、sim_time_s={effective_time:g} 开始生效"
+        )
+        self._append_ui_event("INFO", "场景", message)
+        self._update_scenario_source_label()
+        self.statusBar().showMessage(message, 7000)
+        self.refresh_state()
+
+    def _scenario_apply_failed(self, _request_id: int, message: str) -> None:
+        self._scenario_apply_task = None
+        self._scenario_apply_in_progress = False
+        self.apply_scenario_button.setText("应用曲线到仿真")
+        self._update_scenario_source_label()
+        self.refresh_state()
+        self._show_fault_popup("应用曲线失败", message, str(self.db_path))
 
     def initialize_database(self) -> None:
         if any(
@@ -1462,6 +1567,8 @@ class SimulatorWindow(QMainWindow):
                 )
             else:
                 self.repository.initialize(self.config, self._scenario_from_editors())
+            self._scenario_runtime_dirty = False
+            self._update_scenario_source_label()
             self._append_ui_event("INFO", "数据库", f"初始化完成：{self.db_path}")
             detail = f"；原库备份：{backup.name}" if backup else ""
             self.statusBar().showMessage(f"grid.db 初始化完成{detail}", 7000)
@@ -1706,6 +1813,7 @@ class SimulatorWindow(QMainWindow):
             self.runtime_detail.setText("数据库未初始化")
             self._set_pill(self.dbDot, self.dbPill, "grid.db 未连接", COLORS["warn"])
             self._set_control_buttons(None)
+            self.apply_scenario_button.setEnabled(False)
             self.initialize_button.setEnabled(True)
             self.initialize_button.setText("初始化 grid.db")
             self.refresh_parameters()
@@ -1722,6 +1830,7 @@ class SimulatorWindow(QMainWindow):
             self.runtime_detail.setText(f"数据库读取失败：{error}")
             self._set_pill(self.dbDot, self.dbPill, "grid.db 异常", COLORS["bad"])
             self._set_control_buttons(None)
+            self.apply_scenario_button.setEnabled(False)
             self.initialize_button.setEnabled(True)
             self.initialize_button.setText("修复 grid.db")
             self._show_fault_popup_once(
@@ -1730,6 +1839,10 @@ class SimulatorWindow(QMainWindow):
             return
 
         status = str(runtime["status"])
+        self.apply_scenario_button.setEnabled(
+            status in {"ready", "running", "paused"}
+            and not self._scenario_apply_in_progress
+        )
         self._database_health = "正常"
         self._reported_faults = {
             key for key in self._reported_faults if not key.startswith("database:")

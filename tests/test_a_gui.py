@@ -61,6 +61,17 @@ class SimulatorWindowTests(unittest.TestCase):
         self.app.processEvents()
         self.assertFalse(self.window._history_loading, "history worker did not finish")
 
+    def _wait_for_scenario_apply(self) -> None:
+        deadline = time.monotonic() + 3.0
+        while self.window._scenario_apply_in_progress and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(0.01)
+        self.app.processEvents()
+        self.assertFalse(
+            self.window._scenario_apply_in_progress,
+            "scenario apply worker did not finish",
+        )
+
     def test_dashboard_pages_endpoint_and_owner_editors(self) -> None:
         self.assertEqual(self.window.pageStack.count(), 5)
         self.assertEqual(
@@ -353,6 +364,28 @@ class SimulatorWindowTests(unittest.TestCase):
         self.assertTrue(destination.is_file())
         self.assertEqual(load_scenario_csv(destination).points[0].load_power_kw, 88.5)
         self.assertEqual(self.window._scenario_source_path, destination.resolve())
+
+    def test_apply_curve_button_updates_next_step_without_stopping_simulation(self) -> None:
+        self.assertEqual(self.window.apply_scenario_button.text(), "应用曲线到仿真")
+        self.assertIsNot(self.window.apply_scenario_button, self.window.sync_button)
+        self.repository.set_status("start")
+
+        self.window.wind_editor._values[1] = 7.25
+        self.window.load_editor._values[1] = 88.5
+        self.window.wind_editor.curveChanged.emit(self.window.wind_editor.values())
+        self.assertTrue(self.window._scenario_runtime_dirty)
+
+        self.window.apply_scenario_button.click()
+        self._wait_for_scenario_apply()
+
+        self.assertFalse(self.window._scenario_runtime_dirty)
+        self.assertEqual(self.repository.runtime()["status"], "running")
+        state = self.repository.step_once()
+        assert state is not None
+        self.assertEqual(state.step, 1)
+        self.assertEqual(state.wind_speed_mps, 7.25)
+        self.assertEqual(state.load_power_kw, 88.5)
+        self.assertEqual(self.repository.runtime()["status"], "running")
 
     def test_runner_exit_recovers_running_database_to_paused(self) -> None:
         self.repository.set_status("start")
