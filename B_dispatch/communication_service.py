@@ -9,6 +9,7 @@ received TCP state appear 50+ seconds old to the dispatch gate.
 from __future__ import annotations
 
 import os
+import socket
 import time
 from dataclasses import replace
 from typing import Callable, Optional
@@ -20,6 +21,7 @@ from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError
 from .wind_execution import evaluate_pair, find_feedback
 
 COMMAND_CHECK_PERIOD_S = 0.2
+RECONNECT_DELAY_S = 1.0
 
 
 class EMSCommunicationService:
@@ -48,7 +50,7 @@ class EMSCommunicationService:
 
     def _schedule_reconnect(self, error):
         self._disconnect()
-        delay = min(15.0, float(2 ** min(self._reconnect_attempt, 4)))
+        delay = RECONNECT_DELAY_S
         self._reconnect_attempt += 1
         self._next_connect_at = self.clock() + delay
         self.repository.record_log("WARNING", "tcp_disconnected", str(error))
@@ -215,6 +217,11 @@ class EMSCommunicationService:
             if self._last_command_check_at is None or now - self._last_command_check_at >= COMMAND_CHECK_PERIOD_S:
                 self._last_command_check_at = now
                 return self._send_next_outbox()
+            return None
+        except socket.timeout:
+            # A non-ready/racy recv timeout is not a broken TCP connection.
+            # Keep the socket and let the next cycle poll it again. The explicit
+            # state-response deadline still handles a genuinely silent A peer.
             return None
         except Exception as error:
             self._schedule_reconnect(error)
