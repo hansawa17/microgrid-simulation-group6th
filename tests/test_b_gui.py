@@ -104,6 +104,15 @@ class BGuiDatabaseBoundaryTests(unittest.TestCase):
         self.assertIsNone(self.window.client)
         self.assertTrue(any(row[0] == "B_GUI" for row in self.window.repo.heartbeats))
 
+    def test_enabled_configuration_stays_green_until_b_io_is_online(self):
+        self.window.repo.communication["enabled"] = 1
+        self.window.poll_socket()
+
+        self.assertEqual(self.window.connect_btn.text(), "启用 B_IO 通信")
+        self.assertEqual(self.window.connect_btn.property("kind"), "success")
+        self.assertEqual(self.window.a_status.text(), "A 未在线")
+        self.assertFalse(self.window.request_btn.isEnabled())
+
     def test_scada_table_explicitly_labels_the_four_remote_categories(self):
         now = utc_now()
         self.window.state = GridState(
