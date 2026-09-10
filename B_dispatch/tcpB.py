@@ -17,7 +17,7 @@ from .operator_core import EMSDecision
 MAX_FRAME_BYTES = 4096
 PROTOCOL_VERSION = 1
 B_STATE_POLL_PERIOD_S = 1.0
-B_DISPATCH_ACK_TIMEOUT_S = 2.0
+B_DISPATCH_ACK_TIMEOUT_S = 10.0
 B_CONNECT_TIMEOUT_S = 5.0
 B_STATE_RESPONSE_TIMEOUT_S = 6.0
 _SEQUENCE_LOCK = threading.Lock()
@@ -198,6 +198,9 @@ class EMSTcpClient:
                 if any(isinstance(r,Ack) and r.ack_seq==seq for r in self.receive_once()):break
         except (socket.timeout,ConnectionError,OSError) as exc:
             self.close(); self._uncertain_dispatch_seq=seq; self._pending_ack_seq=None; raise DispatchDeliveryUnknown(seq,f"dispatch seq {seq} sent but ACK is unknown: {exc}") from exc
+        except Exception:
+            self._pending_ack_seq=None
+            raise
         finally:
             if self.sock is not None:
                 try:self.sock.settimeout(self.timeout_s)
@@ -294,4 +297,12 @@ class EMSTcpClient:
             extension_status="complete"
         else:
             extension_status="legacy_or_incomplete"
-        return GridState(session_id=session_id,step=message["step"],sim_time_s=float(message["sim_time_s"]),wind_speed_mps=float(payload["wind_speed_mps"]),wind_available_kw=float(payload["wind_available_kw"]),wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]),load_power_kw=float(payload["load_power_kw"]),wind_actual_kw=float(payload["wind_actual_kw"]),diesel_actual_kw=float(payload["diesel_actual_kw"]),wind_running=payload["wind_running"],fault=payload["fault"],sampled_at_utc=sampled_at_utc,received_at_utc=received_at_utc,received_age_s=received_age_s,wind_target_kw=float(payload["wind_target_kw"]),diesel_target_kw=float(payload["diesel_target_kw"]),pitch_actual_deg=float(pitch),diesel_running=payload["diesel_running"],power_imbalance_kw=float(imbalance),controller_wind_enable=controller,pitch_target_deg=pitch_target,last_wind_action_seq=seq_value,last_wind_action_step=step_value,wind_action_applied_at_utc=action_time,extension_status=extension_status)
+        parameters=None
+        raw_params=payload.get("parameters")
+        if raw_params is not None:
+            if not isinstance(raw_params,dict):raise ProtocolError("parameters must be an object")
+            parameters={}
+            for key,value in raw_params.items():
+                if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):raise ProtocolError("parameter values must be finite numbers")
+                parameters[str(key)]=float(value)
+        return GridState(session_id=session_id,step=message["step"],sim_time_s=float(message["sim_time_s"]),wind_speed_mps=float(payload["wind_speed_mps"]),wind_available_kw=float(payload["wind_available_kw"]),wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]),load_power_kw=float(payload["load_power_kw"]),wind_actual_kw=float(payload["wind_actual_kw"]),diesel_actual_kw=float(payload["diesel_actual_kw"]),wind_running=payload["wind_running"],fault=payload["fault"],sampled_at_utc=sampled_at_utc,received_at_utc=received_at_utc,received_age_s=received_age_s,wind_target_kw=float(payload["wind_target_kw"]),diesel_target_kw=float(payload["diesel_target_kw"]),pitch_actual_deg=float(pitch),diesel_running=payload["diesel_running"],power_imbalance_kw=float(imbalance),controller_wind_enable=controller,pitch_target_deg=pitch_target,last_wind_action_seq=seq_value,last_wind_action_step=step_value,wind_action_applied_at_utc=action_time,extension_status=extension_status,parameters=parameters)
