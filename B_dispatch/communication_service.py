@@ -1,23 +1,26 @@
 """TCP-only communication process for B.
 
 B_IO owns the A socket, persists state/ACKs, and is deliberately independent
-from the EMS calculation process. The I/O loop prioritizes getting a fresh A
-state whenever a queued command is based on stale data; it never transmits a
-stale dispatch just because an outbox row already exists.
+from the EMS calculation process. Freshness is measured from the time B
+received the TCP state, while sampled_at_utc remains the source timestamp for
+traceability. A delayed source timestamp must not make an otherwise newly
+received TCP state appear 50+ seconds old to the dispatch gate.
 """
 from __future__ import annotations
 
 import os
 import time
+from dataclasses import replace
 from typing import Callable, Optional
 
-from .models import DispatchResult
+from .models import DispatchResult, GridState
 from .operator_core import EMSDecision
 from .repository import EMSRepository, utc_now
 from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError
 from .wind_execution import evaluate_pair, find_feedback
 
 COMMAND_CHECK_PERIOD_S = 0.2
+
 
 class EMSCommunicationService:
     def __init__(self, repository: EMSRepository, *, client_factory: Callable[..., EMSTcpClient] = EMSTcpClient, clock: Callable[[], float] = time.monotonic, sleeper: Callable[[float], None] = time.sleep):
@@ -86,6 +89,17 @@ class EMSCommunicationService:
     def _decision_from_row(state, row):
         result = DispatchResult(wind_target_kw=float(row["wind_target_kw"]), diesel_target_kw=float(row["diesel_target_kw"]), wind_enable=bool(row["wind_enable"]), diesel_enable=bool(row["diesel_enable"]), target_unserved_kw=float(row["target_unserved_kw"]), target_surplus_kw=float(row["target_surplus_kw"]), reason=str(row["reason"]))
         return EMSDecision(state=state, result=result)
+
+    @staticmethod
+    def _freshly_received_state(state: GridState) -> GridState:
+        """Normalize transport freshness at the moment B consumes the TCP frame.
+
+        sampled_at_utc is retained unchanged for simulation-time provenance.
+        received_age_s is the wall-clock age of the copy held by B and therefore
+        starts at zero when the frame is received. repository._grid_state_from_row
+        continues aging it from received_at_utc while it sits in SQLite.
+        """
+        return replace(state, received_age_s=0.0)
 
     def _record_network_result(self, row, *, seq, status, ack: Optional[Ack], reason):
         command_id = self.repository.record_command({"session_id": row["session_id"], "step": row["state_step"], "sim_time_s": row["sim_time_s"], "source": "B", "seq": seq, "wind_target_kw": row["wind_target_kw"], "diesel_target_kw": row["diesel_target_kw"], "wind_enable": bool(row["wind_enable"]), "diesel_enable": bool(row["diesel_enable"]), "status": status, "reason": reason, "ack_accepted": None if ack is None else ack.accepted, "ack_reason": None if ack is None else ack.reason, "ack_received_at_utc": None if ack is None else utc_now()})
@@ -190,8 +204,10 @@ class EMSCommunicationService:
         try:
             messages = self.client.receive_available()
             for message in messages:
-                if not isinstance(message, Ack):
-                    self.repository.save_state(message)
+                if isinstance(message, GridState):
+                    fresh_state = self._freshly_received_state(message)
+                    self.client.latest_state = fresh_state
+                    self.repository.save_state(fresh_state)
             self._persist_wind_execution_for_new_states()
             endpoint = self._endpoint or ("?", 0)
             self.repository.heartbeat("B_IO", pid=os.getpid(), state="ONLINE", detail=f"{endpoint[0]}:{endpoint[1]}")
