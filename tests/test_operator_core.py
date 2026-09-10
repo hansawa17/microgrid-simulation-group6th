@@ -33,8 +33,10 @@ class OperatorCoreTests(unittest.TestCase):
         state = self._state()
         decision = self._core().decide(state)
         self.assertIs(decision.state, state)
-        self.assertEqual(decision.result.wind_target_kw, 70.0)
-        self.assertEqual(decision.result.diesel_target_kw, 10.0)
+        # Diesel cannot run below its 20 kW physical minimum.  Curtail wind
+        # from 70 to 60 kW so the target pair still matches the 80 kW load.
+        self.assertEqual(decision.result.wind_target_kw, 60.0)
+        self.assertEqual(decision.result.diesel_target_kw, 20.0)
         self.assertTrue(decision.result.wind_enable)
         self.assertTrue(decision.result.diesel_enable)
 

@@ -294,8 +294,8 @@ def evaluate_repository(repo, period: str = "5m") -> EvaluationResult:
         + EVALUATION_WEIGHTS["tracking"] * tracking_score
     )
 
-    # Keep the two existing dashboard cards as auxiliary, non-communication
-    # diagnostics. They are not additional components of the comprehensive score.
+    # Keep separate EMS-strategy and wind-execution views required by the
+    # acceptance sheet. They do not add a sixth component to the overall score.
     ems_score = (
         0.35 * balance_score
         + 0.25 * wind_score
@@ -304,10 +304,9 @@ def evaluate_repository(repo, period: str = "5m") -> EvaluationResult:
         + 0.15 * tracking_score
     )
     system_score = (
-        0.35 * balance_score
-        + 0.30 * wind_score
-        + 0.20 * diesel_score
-        + 0.15 * constraint_score
+        0.40 * tracking_score
+        + 0.35 * constraint_score
+        + 0.25 * wind_score
     )
 
     return EvaluationResult(

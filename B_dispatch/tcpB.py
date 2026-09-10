@@ -454,11 +454,17 @@ class EMSTcpClient:
 
     def _parse_state(self, message: dict[str, Any]) -> GridState:
         payload = message["payload"]
-        required = ("sampled_at_utc", "wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw", "load_power_kw", "wind_actual_kw", "diesel_actual_kw", "wind_target_kw", "pitch_actual_deg", "wind_running", "fault")
+        required = (
+            "sampled_at_utc", "wind_speed_mps", "wind_available_kw",
+            "wind_operating_limit_kw", "load_power_kw", "wind_actual_kw",
+            "diesel_actual_kw", "wind_target_kw", "diesel_target_kw",
+            "pitch_actual_deg", "wind_running", "diesel_running", "fault",
+            "power_imbalance_kw",
+        )
         missing = [key for key in required if key not in payload]
         if missing:
             raise ProtocolError(f"missing state payload fields: {', '.join(missing)}")
-        for key in ("wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw", "load_power_kw", "wind_actual_kw", "diesel_actual_kw", "wind_target_kw"):
+        for key in ("wind_speed_mps", "wind_available_kw", "wind_operating_limit_kw", "load_power_kw", "wind_actual_kw", "diesel_actual_kw", "wind_target_kw", "diesel_target_kw"):
             value = payload[key]
             if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
                 raise ProtocolError(f"invalid non-negative numeric field: {key}")
@@ -469,12 +475,43 @@ class EMSTcpClient:
         sampled_dt = datetime.fromisoformat(sampled_at_utc[:-1] + "+00:00")
         received_dt = datetime.fromisoformat(received_at_utc[:-1] + "+00:00")
         received_age_s = max(0.0, (received_dt - sampled_dt).total_seconds())
-        if not isinstance(payload["wind_running"], bool) or not isinstance(payload["fault"], bool):
-            raise ProtocolError("wind_running and fault must be JSON booleans")
+        imbalance = payload["power_imbalance_kw"]
+        if (
+            not isinstance(imbalance, (int, float))
+            or isinstance(imbalance, bool)
+            or not math.isfinite(imbalance)
+        ):
+            raise ProtocolError("power_imbalance_kw must be a finite number")
+        if (
+            not isinstance(payload["wind_running"], bool)
+            or not isinstance(payload["diesel_running"], bool)
+            or not isinstance(payload["fault"], bool)
+        ):
+            raise ProtocolError("wind_running, diesel_running and fault must be JSON booleans")
         pitch = payload["pitch_actual_deg"]
         if not isinstance(pitch, (int, float)) or isinstance(pitch, bool) or not math.isfinite(pitch) or not 0 <= pitch <= 90:
             raise ProtocolError("pitch_actual_deg must be a finite number in [0,90]")
         session_id = message["session_id"]
         if not isinstance(session_id, str) or not session_id:
             raise ProtocolError("state session_id must be a non-empty string")
-        return GridState(session_id=session_id, step=message["step"], sim_time_s=float(message["sim_time_s"]), wind_speed_mps=float(payload["wind_speed_mps"]), wind_available_kw=float(payload["wind_available_kw"]), wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]), load_power_kw=float(payload["load_power_kw"]), wind_actual_kw=float(payload["wind_actual_kw"]), diesel_actual_kw=float(payload["diesel_actual_kw"]), wind_running=payload["wind_running"], fault=payload["fault"], sampled_at_utc=sampled_at_utc, received_at_utc=received_at_utc, received_age_s=received_age_s, wind_target_kw=float(payload["wind_target_kw"]), pitch_actual_deg=float(pitch))
+        return GridState(
+            session_id=session_id,
+            step=message["step"],
+            sim_time_s=float(message["sim_time_s"]),
+            wind_speed_mps=float(payload["wind_speed_mps"]),
+            wind_available_kw=float(payload["wind_available_kw"]),
+            wind_operating_limit_kw=float(payload["wind_operating_limit_kw"]),
+            load_power_kw=float(payload["load_power_kw"]),
+            wind_actual_kw=float(payload["wind_actual_kw"]),
+            diesel_actual_kw=float(payload["diesel_actual_kw"]),
+            wind_running=payload["wind_running"],
+            fault=payload["fault"],
+            sampled_at_utc=sampled_at_utc,
+            received_at_utc=received_at_utc,
+            received_age_s=received_age_s,
+            wind_target_kw=float(payload["wind_target_kw"]),
+            diesel_target_kw=float(payload["diesel_target_kw"]),
+            pitch_actual_deg=float(pitch),
+            diesel_running=payload["diesel_running"],
+            power_imbalance_kw=float(imbalance),
+        )

@@ -38,7 +38,9 @@ def state_message(step=5, session="s1", seq=10, **overrides):
         "sampled_at_utc": "2026-09-07T08:03:25.417Z", "wind_speed_mps": 8.2,
         "wind_available_kw": 70.0, "wind_operating_limit_kw": 60.0,
         "load_power_kw": 76.0, "wind_actual_kw": 0.0, "diesel_actual_kw": 34.0,
-        "wind_target_kw": 45.0, "pitch_actual_deg": 0.0, "wind_running": True, "fault": False,
+        "wind_target_kw": 45.0, "diesel_target_kw": 34.0,
+        "pitch_actual_deg": 0.0, "wind_running": True, "diesel_running": True,
+        "fault": False, "power_imbalance_kw": 42.0,
     }
     payload.update(overrides)
     return {
@@ -171,6 +173,9 @@ class TcpBTests(unittest.TestCase):
         self.assertEqual(state.wind_available_kw, 70.0)
         self.assertEqual(state.wind_operating_limit_kw, 60.0)
         self.assertEqual(state.wind_actual_kw, 0.0)
+        self.assertEqual(state.diesel_target_kw, 34.0)
+        self.assertTrue(state.diesel_running)
+        self.assertEqual(state.power_imbalance_kw, 42.0)
         self.assertEqual(state.sampled_at_utc, "2026-09-07T08:03:25.417Z")
         self.assertTrue(state.received_at_utc.endswith("Z"))
         self.assertNotEqual(state.sampled_at_utc, state.received_at_utc)

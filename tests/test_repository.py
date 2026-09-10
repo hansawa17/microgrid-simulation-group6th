@@ -18,7 +18,8 @@ class RepositoryTests(unittest.TestCase):
             try:
                 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 self.assertTrue({"schema_meta", "physical_parameters", "dispatch_parameters", "ems_runtime_config", "current_state",
-                                 "state_history", "dispatch_commands", "dispatch_evaluation", "event_log"} <= tables)
+                                 "state_history", "dispatch_commands", "dispatch_evaluation", "event_log",
+                                 "dispatch_outbox", "process_status", "communication_config"} <= tables)
                 physical = conn.execute(
                     "SELECT wind_rated_kw, wind_cut_in_mps, wind_rated_speed_mps, wind_cut_out_mps, "
                     "pitch_min_deg, pitch_max_deg, wind_ramp_up_kw_s, wind_ramp_down_kw_s, "
@@ -28,17 +29,18 @@ class RepositoryTests(unittest.TestCase):
                 self.assertEqual(physical, (100.0, 3.0, 12.0, 25.0, 0.0, 90.0, 40.0, 60.0, 20.0, 120.0, 30.0, 40.0))
                 params = conn.execute("SELECT wind_min_kw, wind_max_kw, diesel_max_kw, reserve_kw FROM dispatch_parameters WHERE id=1").fetchone()
                 self.assertEqual(params, (0.0, 100.0, 120.0, 10.0))
-                runtime = conn.execute("SELECT poll_period_s, dispatch_period_s, closed_loop, command_timeout_s FROM ems_runtime_config WHERE id=1").fetchone()
-                self.assertEqual(runtime, (1.0, 5.0, 1, 3.0))
-                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "4")
+                runtime = conn.execute("SELECT poll_period_s, dispatch_period_s, closed_loop, command_timeout_s, max_state_age_s FROM ems_runtime_config WHERE id=1").fetchone()
+                self.assertEqual(runtime, (1.0, 5.0, 1, 3.0, 2.0))
+                self.assertEqual(conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0], "5")
                 state_columns = {row[1] for row in conn.execute("PRAGMA table_info(current_state)")}
-                self.assertTrue({"wind_available_kw", "wind_operating_limit_kw"} <= state_columns)
+                self.assertTrue({"wind_available_kw", "wind_operating_limit_kw", "diesel_target_kw",
+                                 "diesel_running", "power_imbalance_kw"} <= state_columns)
                 command_columns = {row[1] for row in conn.execute("PRAGMA table_info(dispatch_commands)")}
                 self.assertTrue({"ack_accepted", "ack_reason", "ack_received_at_utc"} <= command_columns)
             finally:
                 conn.close()
 
-    def test_parameter_baseline_is_fixed(self):
+    def test_parameters_are_editable_and_survive_initialize(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = EMSRepository(Path(tmp) / "ems.db")
             repo.initialize()
@@ -46,8 +48,11 @@ class RepositoryTests(unittest.TestCase):
             row = repo.get_parameters()
             self.assertEqual(tuple(row[k] for k in ("wind_min_kw", "wind_max_kw", "diesel_max_kw", "reserve_kw")),
                              (0.0, 100.0, 120.0, 10.0))
-            with self.assertRaises(ValueError):
-                repo.set_parameters(wind_min_kw=0.0, wind_max_kw=80.0, diesel_max_kw=100.0, reserve_kw=10.0)
+            repo.set_parameters(wind_min_kw=5.0, wind_max_kw=80.0, diesel_max_kw=100.0, reserve_kw=12.0)
+            repo.initialize()
+            row = repo.get_parameters()
+            self.assertEqual(tuple(row[k] for k in ("wind_min_kw", "wind_max_kw", "diesel_max_kw", "reserve_kw")),
+                             (5.0, 80.0, 100.0, 12.0))
             physical = repo.get_physical_parameters()
             self.assertEqual(physical["wind_rated_kw"], 100.0)
             self.assertEqual(physical["wind_cut_in_mps"], 3.0)
@@ -64,7 +69,7 @@ class RepositoryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 repo.set_parameters(wind_min_kw=0.0, wind_max_kw=80.0, diesel_max_kw=5.0, reserve_kw=10.0)
 
-    def test_runtime_config_is_fixed(self):
+    def test_runtime_config_is_editable_and_survives_initialize(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = EMSRepository(Path(tmp) / "ems.db")
             repo.initialize()
@@ -73,10 +78,14 @@ class RepositoryTests(unittest.TestCase):
             row = repo.get_runtime_config()
             self.assertEqual((row["poll_period_s"], row["dispatch_period_s"], row["closed_loop"], row["command_timeout_s"]),
                              (1.0, 5.0, 1, 3.0))
-            with self.assertRaises(ValueError):
-                repo.set_runtime_config(poll_period_s=2.0)
-            with self.assertRaises(ValueError):
-                repo.set_runtime_config(closed_loop=False)
+            repo.set_runtime_config(poll_period_s=2.0, dispatch_period_s=7.0,
+                                    closed_loop=False, command_timeout_s=4.0,
+                                    max_state_age_s=3.0)
+            repo.initialize()
+            row = repo.get_runtime_config()
+            self.assertEqual((row["poll_period_s"], row["dispatch_period_s"], row["closed_loop"],
+                              row["command_timeout_s"], row["max_state_age_s"]),
+                             (2.0, 7.0, 0, 4.0, 3.0))
 
     def test_runtime_config_rejects_non_positive_values(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -97,7 +106,9 @@ class RepositoryTests(unittest.TestCase):
                 "session_id": "s1", "step": 1, "sim_time_s": 1.0, "wind_speed_mps": 8.0,
                 "wind_available_kw": 70.0, "wind_operating_limit_kw": 60.0,
                 "load_power_kw": 50.0, "wind_actual_kw": 30.0, "diesel_actual_kw": 20.0,
-                "wind_target_kw": 30.0, "pitch_actual_deg": 2.0, "wind_running": True,
+                "wind_target_kw": 30.0, "diesel_target_kw": 20.0,
+                "pitch_actual_deg": 2.0, "wind_running": True, "diesel_running": True,
+                "power_imbalance_kw": 0.0,
                 "fault": False, "sampled_at_utc": "2026-09-07T03:00:00.123Z",
                 "received_at_utc": "2026-09-07T03:00:00.456Z", "received_age_s": 0.1,
             }
@@ -105,6 +116,9 @@ class RepositoryTests(unittest.TestCase):
             current = repo.get_current_state()
             self.assertEqual(current["wind_available_kw"], 70.0)
             self.assertEqual(current["wind_operating_limit_kw"], 60.0)
+            self.assertEqual(current["diesel_target_kw"], 20.0)
+            self.assertEqual(current["diesel_running"], 1)
+            self.assertEqual(current["power_imbalance_kw"], 0.0)
             self.assertEqual(current["pitch_actual_deg"], 2.0)
             self.assertEqual(current["sampled_at_utc"], "2026-09-07T03:00:00.123Z")
             self.assertEqual(current["received_at_utc"], "2026-09-07T03:00:00.456Z")

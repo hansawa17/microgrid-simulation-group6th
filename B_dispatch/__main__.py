@@ -3,16 +3,24 @@
 默认启动 PyQt6 GUI，便于在项目根目录直接使用：
     python -m B_dispatch
 
-也可以显式指定：
+也可以分别启动三个验收进程：
+    python -m B_dispatch io --host 127.0.0.1 --port 5000
+    python -m B_dispatch compute
     python -m B_dispatch gui
 
-当前 GUI 仍是本地演示/接入骨架，不主动建立 A/B/C TCP 连接。
+``io`` 独占 TCP，``compute`` 只读写 ems.db，GUI 负责操作和展示。
 """
 
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import socket
+import subprocess
+import sys
+
+
+DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "runtime" / "ems.db"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -22,6 +30,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("gui", help="启动 B 的 PyQt6 图形界面")
+    subparsers.add_parser("run", help="以三个独立进程启动 B_IO、B_COMPUTE 和 GUI")
+    init_parser = subparsers.add_parser("init", help="初始化或迁移 ems.db")
+    init_parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    io_parser = subparsers.add_parser("io", help="启动独立 TCP/数据库通信进程")
+    io_parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    io_parser.add_argument("--host", help="A 服务端主机；省略时读取 ems.db")
+    io_parser.add_argument("--port", type=int, help="A 服务端端口；省略时读取 ems.db")
+    compute_parser = subparsers.add_parser("compute", help="启动独立数据库调度计算进程")
+    compute_parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     return parser
 
 
@@ -83,12 +100,65 @@ def _launch_gui() -> int:
     return app.exec()
 
 
+def _launch_full_runtime() -> int:
+    """Supervise three independent B processes while the GUI is open."""
+    from .repository import EMSRepository
+
+    EMSRepository(DEFAULT_DB).initialize()
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    children = [
+        subprocess.Popen(
+            [sys.executable, "-m", "B_dispatch", "compute", "--db", str(DEFAULT_DB)],
+            creationflags=creationflags,
+        ),
+        subprocess.Popen(
+            [sys.executable, "-m", "B_dispatch", "io", "--db", str(DEFAULT_DB)],
+            creationflags=creationflags,
+        ),
+    ]
+    try:
+        return _launch_gui()
+    finally:
+        for child in children:
+            if child.poll() is None:
+                child.terminate()
+        for child in children:
+            try:
+                child.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=3.0)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
-    # 不指定子命令时直接进入 GUI，保证 B 一条命令即可启动。
-    if args.command in (None, "gui"):
+    # 不指定子命令时启动完整三进程；仅调试界面时使用显式 gui。
+    if args.command in (None, "run"):
+        return _launch_full_runtime()
+    if args.command == "gui":
         return _launch_gui()
+
+    from .repository import EMSRepository
+
+    repository = EMSRepository(args.db)
+    repository.initialize()
+    if args.command == "init":
+        return 0
+    if args.command == "compute":
+        from .compute_service import EMSComputeService
+
+        EMSComputeService(repository).run()
+        return 0
+    if args.command == "io":
+        current = repository.get_communication_config()
+        host = args.host if args.host is not None else str(current["host"])
+        port = args.port if args.port is not None else int(current["port"])
+        repository.set_communication_config(host=host, port=port, enabled=True)
+        from .communication_service import EMSCommunicationService
+
+        EMSCommunicationService(repository).run()
+        return 0
 
     raise AssertionError("unreachable")
 

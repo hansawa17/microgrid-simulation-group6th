@@ -29,7 +29,10 @@ class GridState:
     sampled_at_utc: str = ""
     received_at_utc: str = ""
     wind_target_kw: float = 0.0
+    diesel_target_kw: float = 0.0
     pitch_actual_deg: float | None = None
+    diesel_running: bool = False
+    power_imbalance_kw: float = 0.0
 
 
 @dataclass(frozen=True)

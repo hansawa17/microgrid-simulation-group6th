@@ -1,19 +1,30 @@
 # B EMS 主站 · 李佳霖
 
-B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 操作界面；B 是 A 的 TCP 客户端，不充当 TCP 中心。
+B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 操作界面；B 是 A 的 TCP 客户端，不充当 TCP 中心。正式运行拆成三个独立进程：`B_IO` 独占 TCP，`B_COMPUTE` 只读写数据库并计算目标，GUI 只读写数据库并展示/配置。
 
 ## 当前 GUI 功能
 
 `B_dispatch/gui_b.py` 已扩展为 B 的 SCADA/操作工作台，并保持 C 主机的浅蓝灰卡片式视觉风格。
 
-- **运行监控**：A IP、TCP 端口、本机 IP、连接/断开；负荷、风电 available、operating limit、target、actual、柴油 actual、功率不平衡、风速、柴油能力余量、状态年龄、桨距 actual、session/step、`sampled_at_utc`。
+- **运行监控**：在数据库中配置 A IP/TCP 端口并启停 `B_IO`；显示负荷、风电 available/operating limit/target/actual、柴油 target/actual、功率不平衡、风速、柴油能力余量、动态状态年龄、桨距 actual、session/step、`sampled_at_utc`。GUI 不直接打开套接字。
 - **实时曲线**：负荷、风电 available/limit、wind target/actual、diesel actual 趋势；可清空并立即请求 A 状态。
 - **本地场景 / 手动调度**：不连接 A 也能构造 mock `GridState`，验证风优先、operating limit、柴油 10 kW reserve、柴油 OFF、C fault 优先、缺电/过剩等结果；明确标记为 mock，不冒充 A 场景。
-- **参数设置**：运行参数按统一基线展示；风机/柴油物理参数、B 调度限值和周期参数均由 `ems.db` 固定初始化，不允许 GUI 写成其他生产基线。
-- **EMS 调度**：手动计算并发送 dispatch；可开启自动闭环；显示 target unserved、target surplus、reason 和 ACK；保留 delivery-unknown 禁止盲目重发的安全边界。
+- **参数设置**：风机/柴油物理参数为只读副本；B 自有调度限值、reserve、采集/调度周期、最大状态年龄和开闭环模式可写入 `ems.db`，重启与重复初始化不会覆盖用户保存值。
+- **EMS 调度**：`B_COMPUTE` 按周期生成决策；闭环写入可执行 outbox，开环只记录/展示而绝不入发送队列。手动按钮同样只入库，由 `B_IO` 核对 session/step/状态年龄后发送并记录 ACK；delivery-unknown 禁止盲目重发。
 - **历史数据**：读取 `ems.db/state_history`，按 session 过滤并支持 CSV 导出。
-- **通信诊断**：TCP 状态、pending state request、full-sync、最近入站 seq、最近 ACK 和 GUI 事件日志。
+- **通信诊断**：显示 `B_IO/B_COMPUTE` 心跳、outbox pending/sending 数量、最近协议 seq、ACK 和事件日志。
 - **报警与评价**：保留原有状态过期、C fault、delivery unknown 等报警；评价部分为只读分析，当前综合评价只包含五项调度/运行指标，并在每项评分右侧提供下拉评分标准。
+
+主监控页的“RTU / SCADA 四遥实时点表”按验收口径明确分类：
+
+| 类别 | B 中的代表点 |
+|---|---|
+| YC 遥测 | 风速、负荷、available、operating limit、风柴 actual、功率不平衡 |
+| YX 遥信 | 风机/柴发运行状态、fault |
+| YT 遥调 | `wind_target_kw`、`diesel_target_kw` 连续功率设定 |
+| YK 遥控 | `wind_enable`、`diesel_enable` 启停命令及 outbox 状态 |
+
+这里的 RTU 是数据采集/执行端的逻辑角色，不表示 B 用软件替代 STM32。点表同时给出值、单位、数据时刻和来源说明，target 与 actual 不混用。
 
 ## EMS 调度评价
 
@@ -103,7 +114,7 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 
 ### 页面说明
 
-顶部保留“综合评价 / EMS 调度评分 / 系统运行评分 / 评价等级”四张卡片。其中综合评价严格按上述五项权重计算；EMS 调度评分和系统运行评分是辅助视图，不额外参与综合评价。
+顶部保留“综合评价 / EMS 调度结果 / 风机执行效果 / 评价等级”四张卡片。其中综合评价严格按上述五项权重计算；EMS 调度结果和风机执行效果是分别面向策略与执行反馈的辅助视图，不额外参与综合评价。
 
 页面明细同时显示：
 
@@ -133,20 +144,23 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 
 ## ems.db 结构与初始化
 
-`EMSRepository.initialize()` 会创建/迁移 `ems.db`。当前 schema version 为 **4**，主要分为四类：
+`EMSRepository.initialize()` 会创建/迁移 `ems.db`。当前 schema version 为 **5**，主要分为五类：
 
 1. `physical_parameters`：A/B 保留的只读物理参数副本；记录风机 100 kW、3/12/25 m/s、0/90 deg、40/60 kW/s，以及柴油 20/120 kW、30/40 kW/s。
-2. `dispatch_parameters`：B 自己使用的调度约束，固定为风电 0-100 kW、柴油最大 120 kW、reserve 10 kW。
-3. `ems_runtime_config`：B 采集 1 s、B 调度 5 s、closed loop、命令超时 3 s 的运行基线。
-4. `current_state / state_history / dispatch_commands / dispatch_evaluation / event_log`：状态、历史、dispatch、评价、通信/运行日志；A 的 `sampled_at_utc` 与 B 的 `received_at_utc` 分开保存。
+2. `dispatch_parameters`：B 自己使用、可持久化配置的风电上下限、柴油上限和 reserve。
+3. `ems_runtime_config / communication_config`：采集周期、调度周期、开闭环、命令超时、最大状态年龄及 A 端点。
+4. `current_state / state_history / dispatch_commands / dispatch_evaluation / event_log`：完整 SCADA 状态、历史、已发送 dispatch、评价、通信/运行日志；A 的 `sampled_at_utc` 与 B 的 `received_at_utc` 分开保存。
+5. `dispatch_outbox / process_status`：计算与通信进程的可靠交接队列，以及三个进程的状态心跳。
 
-初始化时会把上述统一基线写入/重新对齐已有数据库，不需要连接 A；A 连接只负责后续实时状态、dispatch ACK 等运行数据。不会删除已有状态、历史、dispatch 或日志记录。
+初始化只在配置行不存在时写入统一默认值；已有参数、状态、历史、dispatch 和日志不会被重置。状态年龄在读库时叠加本机经过时间，不能通过反复读旧行伪装成新数据。
 
 **不要把真实 `data/runtime/ems.db` 提交到 GitHub。** 仓库只保存 schema 和初始化逻辑。
 
-## A 连接兼容与当前参数同步边界
+## A 连接与进程边界
 
-- `gui_b.py` 已直接使用 `EMSTcpClient` 连接 A，主机/域名和端口分开填写。
+- `communication_service.py` 是唯一允许创建 `EMSTcpClient` 的正式运行进程；接收的完整 state 先入库，待发送决策从 outbox 原子领取。
+- `compute_service.py` 不导入 TCP 模块，只从 `ems.db` 读取最新状态与参数，并将决策写回 outbox。
+- `gui_b.py` 不直接请求 state、不发送 dispatch；连接按钮只更新 `communication_config`。
 - 新建 B 客户端以 UTC epoch 毫秒为发送序号基线，并在进程内保持严格递增，避免 A 会话未变化时重连后从 0 开始而被拒绝为旧序号。
 - A 已实现接收 B 所有权参数 `reserve_kw/b_poll_s/b_dispatch_s` 的 `parameter_update`；B GUI 的参数发送入口尚未接入，当前不能宣称 B 已完成参数发布。
 - 本机软件测试覆盖两个独立 B 客户端连续连接与 dispatch ACK；公网三机、系统时钟异常及 STM32 仍需联调。
@@ -173,9 +187,12 @@ Python 统一为 **3.11.x**，Qt 使用 **PyQt6**。
 
 ```bash
 python -m B_dispatch
+python -m B_dispatch run
 python -m B_dispatch gui
 python -m B_dispatch.gui_b
 ```
+
+前两条命令会启动完整的三个独立进程；`gui`/`gui_b` 仅用于单独调试界面。Windows 也可运行 `scripts/start_b.ps1`。
 
 初始化/重新对齐数据库：
 
@@ -196,6 +213,6 @@ python -m unittest discover -s tests -v
 - GUI 的本地场景输入只用于 B 算法演示，不能替代 A 的 CSV 场景。
 - 评价模块是只读分析，不参与 B dispatch 计算，不修改 A 状态，不发送 C 控制指令。
 - A/B/C socket、STM32/Wi-Fi/串口实机联调仍需单独验收；GUI 能显示通信状态不等于实机联调完成。
-- 自动闭环默认关闭，只有连接 A 并明确开启后才会发送 dispatch。
+- 默认闭环配置由 `ems_runtime_config` 持久化；开环模式只生成 `open_loop` 记录，任何情况下都不会由 `B_IO` 领取或发送。
 - B 只发送 `wind_target_kw / diesel_target_kw / wind_enable / diesel_enable`，不发送 `pitch_target_deg`。
-- 生产数据库基线不可由 GUI 随意改写；测试场景应在独立临时数据库中完成。
+- B 自有参数可由 GUI 修改并持久化；物理参数仍为只读副本，测试场景应在独立临时数据库中完成。

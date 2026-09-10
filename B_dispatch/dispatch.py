@@ -82,6 +82,12 @@ def calculate_dispatch(state: GridState, config: DispatchConfig) -> DispatchResu
 
     if 0.0 < diesel_target < config.diesel_min_kw:
         diesel_target = min(config.diesel_min_kw, config.diesel_dispatch_max_kw)
+        # A running diesel generator cannot be commanded below its physical
+        # minimum.  Curtail the wind target when possible so the target pair
+        # remains balanced; very small loads may still have unavoidable
+        # surplus, which is reported below instead of being hidden.
+        wind_target = min(wind_target, max(state.load_power_kw - diesel_target, 0.0))
+        reason += "; diesel minimum output enforced"
 
     target_generation = wind_target + diesel_target
     target_unserved = max(state.load_power_kw - target_generation, 0.0)

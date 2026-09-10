@@ -11,13 +11,30 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 Push-Location $ProjectRoot
 try {
     uv python install 3.11
-    if (-not (Test-Path -LiteralPath $VenvPython)) {
+    $VenvHealthy = $false
+    if (Test-Path -LiteralPath $VenvPython) {
+        try {
+            $DetectedVersion = & $VenvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+            $VenvHealthy = ($LASTEXITCODE -eq 0 -and $DetectedVersion -eq "3.11")
+        }
+        catch {
+            $VenvHealthy = $false
+        }
+    }
+    if (-not $VenvHealthy) {
+        $ExistingVenv = Join-Path $ProjectRoot ".venv"
+        if (Test-Path -LiteralPath $ExistingVenv) {
+            $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+            $BackupVenv = Join-Path $ProjectRoot ".venv.stale-$Stamp"
+            Move-Item -LiteralPath $ExistingVenv -Destination $BackupVenv
+            Write-Host "Preserved unusable environment at $BackupVenv"
+        }
         uv venv --python 3.11 .venv
     }
 
     $Version = & $VenvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
     if ($Version -ne "3.11") {
-        throw ".venv uses Python $Version; remove or rename .venv, then rerun bootstrap.ps1."
+        throw ".venv uses Python $Version; expected Python 3.11."
     }
 
     uv pip install --python $VenvPython -r $Requirements
