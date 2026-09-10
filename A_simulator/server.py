@@ -100,6 +100,11 @@ class MessageProcessor:
             state_payload["next_command_seq"] = self.repository.next_client_command_seq(
                 source, state.session_id
             )
+            if source == "B":
+                state_payload["parameters"] = {
+                    str(row["name"]): float(row["value"])
+                    for row in self.repository.parameter_snapshot()
+                }
             return {
                 "version": 1,
                 "type": "state",
@@ -271,3 +276,4 @@ def serve(repository: Repository, bind: str, port: int, max_frame_bytes: int) ->
         actual_host, actual_port = server.server_address
         print(f"A simulator TCP server listening on {actual_host}:{actual_port}", flush=True)
         server.serve_forever(poll_interval=0.2)
+
