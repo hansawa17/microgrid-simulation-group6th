@@ -38,9 +38,9 @@ class EMSComputeService:
         runtime = self.repository.get_runtime_config()
         physical = self.repository.get_physical_parameters()
         config = DispatchConfig(
-            wind_min_kw=float(dispatch["wind_min_kw"]),
-            wind_max_kw=float(dispatch["wind_max_kw"]),
-            diesel_max_kw=float(dispatch["diesel_max_kw"]),
+            wind_min_kw=0.0,
+            wind_max_kw=float(physical["wind_rated_kw"]),
+            diesel_max_kw=float(physical["diesel_max_kw"]),
             reserve_kw=float(dispatch["reserve_kw"]),
             diesel_min_kw=float(physical["diesel_min_kw"]),
             max_state_age_s=float(runtime["max_state_age_s"]),
