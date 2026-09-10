@@ -7,11 +7,10 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class GridState:
-    """Snapshot received from A according to the current common TCP protocol.
+    """Snapshot received from A according to the common TCP protocol.
 
-    C computes ``wind_available_kw`` and ``wind_operating_limit_kw``; A
-    validates, stores and relays them. ``wind_actual_kw`` is A's simulated
-    result and must never be used as the capability input for B dispatch.
+    The wind-execution fields are nullable for backward compatibility with old A
+    nodes. Missing extension data must never be silently converted to zero.
     """
 
     session_id: str
@@ -33,17 +32,17 @@ class GridState:
     pitch_actual_deg: float | None = None
     diesel_running: bool = False
     power_imbalance_kw: float = 0.0
+    controller_wind_enable: bool | None = None
+    pitch_target_deg: float | None = None
+    last_wind_action_seq: int | None = None
+    last_wind_action_step: int | None = None
+    wind_action_applied_at_utc: str | None = None
+    extension_status: str = "legacy_or_incomplete"
 
 
 @dataclass(frozen=True)
 class DispatchConfig:
-    """EMS constraints.
-
-    Ratings remain explicit inputs. Diesel may be completely OFF, while any
-    positive diesel target must respect the configured minimum output. The
-    reserve is a B-owned dispatch parameter and is not consumed by normal B
-    dispatch.
-    """
+    """EMS constraints."""
 
     wind_max_kw: float
     diesel_max_kw: float
