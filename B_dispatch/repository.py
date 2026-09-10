@@ -6,7 +6,7 @@ from datetime import datetime,timezone
 from pathlib import Path
 import math,sqlite3
 from typing import Iterator,Mapping,Optional
-from .models import DispatchResult,GridState
+from .models import DispatchConfig,DispatchResult,GridState
 
 SCHEMA='''
 PRAGMA foreign_keys=ON;
@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS process_status(process_name TEXT PRIMARY KEY,pid INTE
 CREATE TABLE IF NOT EXISTS communication_config(id INTEGER PRIMARY KEY CHECK(id=1),host TEXT NOT NULL,port INTEGER NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,updated_at_utc TEXT NOT NULL);
 '''
 UNIFIED_PHYSICAL={"wind_rated_kw":100.0,"wind_cut_in_mps":3.0,"wind_rated_speed_mps":12.0,"wind_cut_out_mps":25.0,"pitch_min_deg":0.0,"pitch_max_deg":90.0,"wind_ramp_up_kw_s":40.0,"wind_ramp_down_kw_s":60.0,"diesel_min_kw":20.0,"diesel_max_kw":120.0,"diesel_ramp_up_kw_s":30.0,"diesel_ramp_down_kw_s":40.0}
+
+REMOTE_PARAM_MAP={
+    "diesel_min_power_kw":"diesel_min_kw",
+    "diesel_max_power_kw":"diesel_max_kw",
+    "wind_rated_power_kw":"wind_rated_kw",
+    "cut_in_speed_mps":"wind_cut_in_mps",
+    "rated_speed_mps":"wind_rated_speed_mps",
+    "cut_out_speed_mps":"wind_cut_out_mps",
+    "pitch_full_output_deg":"pitch_min_deg",
+    "pitch_feather_deg":"pitch_max_deg",
+}
 
 def utc_now()->str:return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')
 class EMSRepository:
@@ -67,6 +78,38 @@ class EMSRepository:
   with self.connection() as c:r=c.execute('SELECT * FROM physical_parameters WHERE id=1').fetchone()
   if r is None:raise RuntimeError('physical parameters are not initialized')
   return r
+ def set_reserve(self,reserve_kw):
+  reserve_kw=float(reserve_kw)
+  if not math.isfinite(reserve_kw) or reserve_kw<=0:raise ValueError('reserve_kw must be > 0')
+  with self.connection() as c:
+   ph=c.execute('SELECT diesel_max_kw FROM physical_parameters WHERE id=1').fetchone()
+   if ph is None:raise RuntimeError('physical parameters are not initialized')
+   if reserve_kw>float(ph['diesel_max_kw']):raise ValueError('reserve_kw must be <= diesel_max_kw')
+   if c.execute('UPDATE dispatch_parameters SET reserve_kw=?,updated_at=? WHERE id=1',(reserve_kw,utc_now())).rowcount!=1:raise RuntimeError('dispatch parameters are not initialized')
+ def apply_remote_parameters(self,parameters):
+  if not isinstance(parameters,dict) or not parameters:return False
+  updates={}
+  for remote,local in REMOTE_PARAM_MAP.items():
+   if remote in parameters:
+    value=parameters[remote]
+    if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or value<0:continue
+    updates[local]=float(value)
+  if not updates:return False
+  with self.connection() as c:
+   row=c.execute('SELECT * FROM physical_parameters WHERE id=1').fetchone()
+   if row is None:return False
+   old=dict(row);changed={k:v for k,v in updates.items() if abs(float(old[k])-v)>1e-9}
+   if not changed:return False
+   merged=dict(old);merged.update(changed)
+   if not merged['wind_cut_in_mps']<merged['wind_rated_speed_mps']<merged['wind_cut_out_mps']:return False
+   if not merged['pitch_min_deg']<merged['pitch_max_deg']:return False
+   if not merged['diesel_min_kw']<merged['diesel_max_kw']:return False
+   setclause=', '.join(f'{k}=?' for k in changed)+', updated_at=?'
+   c.execute(f'UPDATE physical_parameters SET {setclause} WHERE id=1',list(changed.values())+[utc_now()])
+  return True
+ def build_dispatch_config(self):
+  d=self.get_parameters();ph=self.get_physical_parameters();rt=self.get_runtime_config()
+  return DispatchConfig(wind_min_kw=0.0,wind_max_kw=float(ph['wind_rated_kw']),diesel_max_kw=float(ph['diesel_max_kw']),reserve_kw=float(d['reserve_kw']),diesel_min_kw=float(ph['diesel_min_kw']),max_state_age_s=float(rt['max_state_age_s']),c_has_control_priority=True)
  def set_runtime_config(self,*,poll_period_s=1.0,dispatch_period_s=5.0,closed_loop=True,command_timeout_s=3.0,max_state_age_s=2.0):
   p,d,a=float(poll_period_s),float(dispatch_period_s),float(max_state_age_s);t=None if command_timeout_s is None else float(command_timeout_s)
   if not all(math.isfinite(x) and x>0 for x in (p,d,a)):raise ValueError('runtime periods and max_state_age_s must be positive finite numbers')
