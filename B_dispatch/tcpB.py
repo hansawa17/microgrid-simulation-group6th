@@ -149,16 +149,16 @@ class EMSTcpClient:
         if initial_seq is not None and (not isinstance(initial_seq,int) or isinstance(initial_seq,bool) or initial_seq<0): raise ValueError("initial_seq must be a non-negative integer or None")
         if not math.isfinite(state_poll_period_s) or state_poll_period_s<=0: raise ValueError("state_poll_period_s must be a positive finite number")
         self.host,self.port,self.timeout_s=host,port,float(timeout_s); self.connect_timeout_s=float(connect_timeout_s); self.state_response_timeout_s=float(state_response_timeout_s); self.socket_factory=socket_factory; self.state_poll_period_s=float(state_poll_period_s)
-        self.sock=None; self.framer=JsonLineFramer(); self._uses_default_sequence=initial_seq is None; self._next_seq=time.time_ns()//1_000_000 if initial_seq is None else initial_seq; self._last_incoming_seq=None; self._pending_state_request_seq=None; self._pending_ack_seq=None; self._received_acks={}; self._uncertain_dispatch_seq=None; self._last_state_request_monotonic=0.0; self._pending_state_request_started_at=None; self._received_state_on_connection=False; self.session_id=None; self.latest_state=None; self.needs_full_sync=True
+        self.sock=None; self.framer=JsonLineFramer(); self._uses_default_sequence=initial_seq is None; self._next_seq=time.time_ns()//1_000_000 if initial_seq is None else initial_seq; self._last_incoming_seq=None; self._pending_state_request_seq=None; self._pending_ack_seq=None; self._pending_ack_started_at=None; self._received_acks={}; self._uncertain_dispatch_seq=None; self._last_state_request_monotonic=0.0; self._pending_state_request_started_at=None; self._received_state_on_connection=False; self.session_id=None; self.latest_state=None; self.needs_full_sync=True
     @property
     def connected(self)->bool:return self.sock is not None
     def connect(self)->None:
-        self.close(); self.sock=self.socket_factory((self.host,self.port),self.connect_timeout_s); _configure_connected_socket(self.sock); self.sock.settimeout(self.timeout_s); self.framer=JsonLineFramer(); self._last_incoming_seq=None; self._pending_state_request_seq=None; self._pending_ack_seq=None; self._received_acks.clear(); self._uncertain_dispatch_seq=None; self._last_state_request_monotonic=0.0; self._pending_state_request_started_at=None; self._received_state_on_connection=False; self.needs_full_sync=True; self.request_state(full=True)
+        self.close(); self.sock=self.socket_factory((self.host,self.port),self.connect_timeout_s); _configure_connected_socket(self.sock); self.sock.settimeout(self.timeout_s); self.framer=JsonLineFramer(); self._last_incoming_seq=None; self._pending_state_request_seq=None; self._pending_ack_seq=None; self._pending_ack_started_at=None; self._received_acks.clear(); self._uncertain_dispatch_seq=None; self._last_state_request_monotonic=0.0; self._pending_state_request_started_at=None; self._received_state_on_connection=False; self.needs_full_sync=True; self.request_state(full=True)
     def close(self)->None:
         if self.sock is not None:
             try:self.sock.close()
             finally:self.sock=None
-        self._pending_state_request_seq=None; self._pending_state_request_started_at=None; self._pending_ack_seq=None; self._received_acks.clear()
+        self._pending_state_request_seq=None; self._pending_state_request_started_at=None; self._pending_ack_seq=None; self._pending_ack_started_at=None; self._received_acks.clear()
     def _send(self,message:dict[str,Any])->None:
         if self.sock is None: raise ConnectionError("B is not connected to A")
         try:self.sock.sendall(encode_frame(message))
@@ -185,13 +185,24 @@ class EMSTcpClient:
                 if isinstance(result,GridState):return result
         return self.latest_state
     def get_ack(self,seq:int)->Ack|None:return self._received_acks.get(seq)
-    def send_dispatch(self,decision:EMSDecision)->int:
+    def send_dispatch_nowait(self,decision:EMSDecision)->int:
+        """Send one dispatch and let the event-loop polling path collect its ACK."""
         state=decision.state
         if self._pending_state_request_seq is not None: raise ProtocolError("cannot dispatch while a state request is pending")
         if self._uncertain_dispatch_seq is not None: raise ProtocolError(f"dispatch result for seq {self._uncertain_dispatch_seq} is unknown; reconcile before sending another dispatch")
         if self.session_id is not None and state.session_id!=self.session_id: raise ProtocolError("dispatch state belongs to an old or different session")
         if self._pending_ack_seq is not None: raise ProtocolError("another dispatch ACK is still pending")
-        msg=self._envelope("dispatch",session_id=state.session_id,step=state.step,sim_time_s=state.sim_time_s,payload={"wind_target_kw":decision.result.wind_target_kw,"diesel_target_kw":decision.result.diesel_target_kw,"wind_enable":decision.result.wind_enable,"diesel_enable":decision.result.diesel_enable}); seq=int(msg["seq"]); self._send(msg); self._pending_ack_seq=seq
+        msg=self._envelope("dispatch",session_id=state.session_id,step=state.step,sim_time_s=state.sim_time_s,payload={"wind_target_kw":decision.result.wind_target_kw,"diesel_target_kw":decision.result.diesel_target_kw,"wind_enable":decision.result.wind_enable,"diesel_enable":decision.result.diesel_enable}); seq=int(msg["seq"]); self._send(msg); self._pending_ack_seq=seq; self._pending_ack_started_at=time.monotonic(); return seq
+    def _check_ack_response_deadline(self)->None:
+        started=self._pending_ack_started_at
+        if started is None or time.monotonic()-started<=B_DISPATCH_ACK_TIMEOUT_S:return
+        seq=self._pending_ack_seq
+        self.close()
+        if seq is not None:self._uncertain_dispatch_seq=seq
+        raise DispatchDeliveryUnknown(int(seq) if seq is not None else -1,f"dispatch seq {seq} sent but ACK is unknown after {B_DISPATCH_ACK_TIMEOUT_S:g}s")
+    def send_dispatch(self,decision:EMSDecision)->int:
+        """Compatibility API for worker/service callers that synchronously await ACK."""
+        seq=self.send_dispatch_nowait(decision)
         try:
             if self.sock is not None:self.sock.settimeout(max(self.timeout_s,B_DISPATCH_ACK_TIMEOUT_S))
             while self._pending_ack_seq is not None:
@@ -219,7 +230,7 @@ class EMSTcpClient:
         return self.receive(data)
     def receive_available(self)->list[GridState|Ack]:
         if self.sock is None: raise ConnectionError("B is not connected to A")
-        self._maybe_poll_state(); self._check_state_response_deadline()
+        self._maybe_poll_state(); self._check_state_response_deadline(); self._check_ack_response_deadline()
         try:r,_,x=select.select([self.sock],[],[self.sock],0)
         except (OSError,ValueError):self.close();raise
         if x:self.close();raise ConnectionError("A TCP socket entered an exceptional state")
@@ -242,7 +253,7 @@ class EMSTcpClient:
                 if not isinstance(ack_seq,int) or isinstance(ack_seq,bool) or ack_seq<0: raise ProtocolError("invalid ack_seq")
                 if not isinstance(payload.get("accepted"),bool) or not isinstance(payload.get("reason"),str): raise ProtocolError("invalid ack payload")
                 ack=Ack(ack_seq,payload["accepted"],payload["reason"]); self._received_acks[ack_seq]=ack
-                if self._pending_ack_seq==ack_seq:self._pending_ack_seq=None
+                if self._pending_ack_seq==ack_seq:self._pending_ack_seq=None; self._pending_ack_started_at=None
                 results.append(ack)
             else: raise ProtocolError(f"unsupported A→B message type: {message['type']}")
         return results

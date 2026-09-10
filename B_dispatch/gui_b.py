@@ -311,6 +311,12 @@ class MainWindow(_LegacyMainWindow):
                 self._try_send_queued_dispatch()
             elif got_ack and self._manual_dispatch_pending and c._pending_state_request_seq is None and c._pending_ack_seq is None:
                 self._try_send_queued_dispatch()
+        except DispatchDeliveryUnknown as exc:
+            self.last_ack = None
+            self.auto_dispatch = False
+            self.auto_box.blockSignals(True); self.auto_box.setChecked(False); self.auto_box.blockSignals(False)
+            self.log(f"ACK 未知：seq={exc.seq}，已停止自动调度，禁止盲目重发")
+            self._handle_connection_loss(str(exc))
         except socket.timeout:
             # A transient/racy recv timeout is not a broken connection; keep
             # the socket and let the next poll cycle read again.
@@ -369,7 +375,7 @@ class MainWindow(_LegacyMainWindow):
             if self.last_decision is None:
                 self._cancel_queued_dispatch("最新 state 无法生成有效 EMS decision", show_message=False)
                 return
-            seq = c.send_dispatch(self.last_decision)
+            seq = c.send_dispatch_nowait(self.last_decision)
             ack = c.get_ack(seq)
             if ack is not None:
                 self.last_ack = ack
@@ -422,7 +428,7 @@ class MainWindow(_LegacyMainWindow):
             self.calculate_current()
             if self.last_decision is None:
                 return
-            seq = self.client.send_dispatch(self.last_decision)
+            seq = self.client.send_dispatch_nowait(self.last_decision)
             ack = self.client.get_ack(seq)
             if ack is not None:
                 self.last_ack = ack

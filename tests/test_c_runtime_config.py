@@ -57,6 +57,16 @@ class CRuntimeConfigTests(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_firmware_uses_configured_c_timeout_for_tcp_responses(self):
+        firmware = HOST_DIR.parent / "firmware" / "Core"
+        wifi_source = (firmware / "Src" / "wifi_client.c").read_text(encoding="utf-8")
+        turbine_source = (firmware / "Src" / "wind_turbine.c").read_text(encoding="utf-8")
+        turbine_header = (firmware / "Inc" / "wind_turbine.h").read_text(encoding="utf-8")
+        self.assertIn("now - wf_response_tick > WindTurbine_GetTimeoutMs()", wifi_source)
+        self.assertIn("uint32_t WindTurbine_GetTimeoutMs(void)", turbine_source)
+        self.assertIn("uint32_t WindTurbine_GetTimeoutMs(void);", turbine_header)
+        self.assertNotIn("WF_RESPONSE_TIMEOUT_MS", wifi_source)
+
 
 if __name__ == "__main__":
     unittest.main()

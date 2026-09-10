@@ -141,6 +141,7 @@ python main.py
 
 1. **端口已统一到 5000**（C 固件已改，与 A/common 一致）；C 参数名已对齐 A 的 canonical 名
    （`cut_in_speed_mps/rated_speed_mps/cut_out_speed_mps/wind_rated_power_kw/pitch_feather_deg/c_control_s/c_timeout_s`）。
+   Wi-Fi TCP 的 state/ACK 等待现已实际使用运行期 `c_timeout_s`（固件限制 0.5～30 s），不再固定为 3 s。
 2. （已完成）STM32→A 实机联调：A 已解析 `wind_action` 四字段并据此算 `wind_actual_kw`，
    C 侧按冻结职责计算并上报；state_request/state/wind_action/ack 全链路已跑通。
    **下一步转入异常情况排查**（断线重连、超时、半帧/粘包、故障与保护、上电恢复）。

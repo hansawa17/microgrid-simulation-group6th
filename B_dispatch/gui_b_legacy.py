@@ -342,7 +342,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def build_timers(self) -> None:
         self.clock_timer = QtCore.QTimer(self); self.clock_timer.timeout.connect(self.tick_clock); self.clock_timer.start(500)
-        self.poll_timer = QtCore.QTimer(self); self.poll_timer.timeout.connect(self.poll_socket); self.poll_timer.start(250)
+        # Keep socket work non-blocking while collecting state/ACK promptly on LAN.
+        self.poll_timer = QtCore.QTimer(self); self.poll_timer.timeout.connect(self.poll_socket); self.poll_timer.start(50)
         self.runtime_timer = QtCore.QTimer(self); self.runtime_timer.timeout.connect(self.runtime_tick)
         self.set_runtime_timer()
         self.history_timer = QtCore.QTimer(self); self.history_timer.timeout.connect(self.refresh_views); self.history_timer.start(3000)

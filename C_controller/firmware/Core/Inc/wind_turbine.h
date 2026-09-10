@@ -61,6 +61,7 @@ void     WindTurbine_Init(void);            /* 初始化状态与默认参数   
 void     WindTurbine_StartRx(void);         /* 启动 USART2 中断接收        */
 void     WindTurbine_PeriodicTask(void);    /* 每个控制周期调用一次        */
 uint32_t WindTurbine_GetPeriodMs(void);     /* 返回当前控制周期(ms)        */
+uint32_t WindTurbine_GetTimeoutMs(void);    /* 返回当前通信超时(ms)        */
 void     WindTurbine_OnRxByte(uint8_t byte);/* USART2 收到一个字节         */
 
 #ifdef __cplusplus

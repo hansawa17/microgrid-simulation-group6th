@@ -447,6 +447,14 @@ uint32_t WindTurbine_GetPeriodMs(void)
     return ms;
 }
 
+uint32_t WindTurbine_GetTimeoutMs(void)
+{
+    uint32_t ms = (uint32_t)(wt.c_timeout_s * 1000.0f);
+    if (ms < 500u)   ms = 500u;
+    if (ms > 30000u) ms = 30000u;
+    return ms;
+}
+
 void WindTurbine_PeriodicTask(void)
 {
     if (!WifiClient_IsOnline())

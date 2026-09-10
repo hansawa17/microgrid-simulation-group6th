@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication
 
 from B_dispatch import gui_b, gui_b_legacy
+from B_dispatch import __main__ as b_main
 from B_dispatch.models import GridState
 from B_dispatch.repository import utc_now
 
@@ -71,6 +72,9 @@ class FakeConnectedClient:
     _pending_state_request_seq = None
     _pending_ack_seq = None
     _uncertain_dispatch_seq = None
+
+    def close(self):
+        self.connected = False
 
 
 class BGuiConnectionTests(unittest.TestCase):
@@ -144,6 +148,14 @@ class BGuiConnectionTests(unittest.TestCase):
             for row in range(self.window.scada_table.rowCount())
         }
         self.assertTrue({"YC 遥测", "YX 遥信", "YT 遥调", "YK 遥控"} <= categories)
+
+    def test_default_runtime_launches_only_the_gui_tcp_owner(self):
+        with patch.object(b_main, "_launch_gui", return_value=17) as launch_gui, patch(
+            "B_dispatch.repository.EMSRepository.initialize"
+        ) as initialize:
+            self.assertEqual(b_main._launch_full_runtime(), 17)
+        initialize.assert_called_once()
+        launch_gui.assert_called_once_with()
 
 
 if __name__ == "__main__":

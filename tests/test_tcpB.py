@@ -246,6 +246,39 @@ class TcpBTests(unittest.TestCase):
         self.assertIsNone(client._pending_ack_seq)
         self.assertEqual(client.get_ack(dispatch_seq), Ack(dispatch_seq, True, "accepted"))
 
+    def test_gui_dispatch_send_is_nonblocking_and_ack_arrives_via_poll(self):
+        fake = FakeSocket()
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)
+        client.connect()
+        client.receive(encode_frame(state_message()))
+        decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(ready_state())
+        dispatch_seq = client.send_dispatch_nowait(decision)
+        self.assertEqual(client._pending_ack_seq, dispatch_seq)
+        self.assertIsNone(client.get_ack(dispatch_seq))
+
+        fake.recv_queue.append(encode_frame(ack_message(dispatch_seq)))
+        with patch("B_dispatch.tcpB.select.select", return_value=([fake], [], [])):
+            results = client.receive_available()
+        self.assertEqual(results, [Ack(dispatch_seq, True, "accepted")])
+        self.assertIsNone(client._pending_ack_seq)
+
+    def test_nonblocking_dispatch_timeout_marks_delivery_unknown(self):
+        fake = FakeSocket()
+        client = EMSTcpClient(
+            "192.168.1.20", socket_factory=lambda *args: fake, initial_seq=0,
+        )
+        client.connect()
+        client.receive(encode_frame(state_message()))
+        decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(ready_state())
+        dispatch_seq = client.send_dispatch_nowait(decision)
+        client._pending_ack_started_at = 10.0
+        with patch("B_dispatch.tcpB.time.monotonic", return_value=20.1):
+            with self.assertRaises(DispatchDeliveryUnknown) as ctx:
+                client.receive_available()
+        self.assertEqual(ctx.exception.seq, dispatch_seq)
+        self.assertFalse(client.connected)
+        self.assertEqual(client._uncertain_dispatch_seq, dispatch_seq)
+
     def test_rejected_ack_is_retained_as_rejection(self):
         fake = FakeSocket()
         client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: fake)

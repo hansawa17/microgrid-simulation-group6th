@@ -8,12 +8,12 @@
 
 ### beta0.3（2026-09-10）
 
-- B：正式拆分为 `B_IO` 通信、`B_COMPUTE` 调度计算和 GUI 三个独立进程；SQLite 仅用于 B 本机进程交接，A/B 跨电脑仍通过 TCP 通信。
+- B：正式运行改为单一 GUI 进程直接持有 B→A TCP，并由 Qt 定时器执行采集、计算和闭环调度；SQLite 只用于 B 本机持久化与追溯，A/B 跨电脑仍通过 TCP 通信。
 - B：`ems.db` 当前为 schema v6，在 v5 的可靠 dispatch outbox、进程心跳、通信配置和完整 SCADA 状态字段基础上，新增风机指令执行评价；参数重复初始化不覆盖用户保存值，状态年龄随本机时间持续增长。
-- B：开环决策只记录展示，闭环命令才由通信进程领取；发送前复核 session、step 和状态年龄，进程异常退出后的在途命令标记为 `delivery_unknown`，禁止盲目重发。
+- B：开环决策只记录展示，闭环命令由 GUI 直接发送；发送前复核 session、step 和状态年龄，ACK 未知时停止自动调度并禁止盲目重发。
 - B：补齐 YC/YX/YT/YK 四遥实时点表、UTC 时间段历史曲线、目标/实际区分、调度与后续反馈对应，以及 EMS 调度结果和风机执行效果两类评价展示。
-- B：柴油机投运遵守 20 kW 小组最小出力配置，并在可行时协调下调风电目标；新增三进程一键启动入口和失效虚拟环境恢复流程。
-- 验证范围：Python 3.11/PyQt6 环境下完整仓库 122 项 PC 自动测试全部通过；本次未重新执行三机公网、STM32/Wi-Fi/UART 或真实设备闭环验收。
+- B：柴油机投运遵守 20 kW 小组最小出力配置，并在可行时协调下调风电目标；默认入口和启动脚本只启动 GUI TCP 所有者，并保留失效虚拟环境恢复流程。
+- 验证范围：Python 3.11.14 / PyQt6 6.11.0 环境下完整 PC 自动测试 150 项全部通过；STM32/Wi-Fi/UART 与真实跨机局域网仍需现场验收。
 
 ### beta0.2（2026-09-10）
 
@@ -110,16 +110,16 @@ tests/
 └── test_b_process_services.py
 ```
 
-B 正式运行由 `communication_service.py`、`compute_service.py` 和 `gui_b.py` 三个独立进程组成，进程间只通过 B 本机 `ems.db` 短事务交接；A/B 跨电脑仍只走 TCP。
+B 正式运行由 `gui_b.py` 单一进程持有 B→A TCP，并通过 Qt 定时器完成周期采集、调度计算与发送；`ems.db` 用于本机持久化和追溯，A/B 跨电脑仍只走 TCP。`communication_service.py` 与 `compute_service.py` 仅保留为兼容/诊断入口，默认启动不会拉起它们。
 
 ## 开发时间节点 / 功能增量
 
-### 2026-09-10 · B 通信/计算/界面三进程整改
+### 2026-09-10 · B GUI 直接持有 TCP（取代三进程正式入口）
 
-- B_IO 独占 TCP，B_COMPUTE 只读写 `ems.db` 并计算调度，GUI 只监视、配置和把人工闭环请求写入 outbox。
-- 开环决策仅记录为 `open_loop`，通信进程永不领取；闭环发送前再次核对 session、step 与动态状态年龄。
+- GUI 是正式运行时唯一的 B→A TCP 所有者，直接接收 state、计算调度并发送 dispatch；不会再并行启动 B_IO/B_COMPUTE 与 GUI 争用连接。
+- 开环决策仅记录展示；闭环发送前再次核对 session、step 与动态状态年龄，ACK 由非阻塞轮询收取。
 - `ems.db` 当前为 schema v6，补齐完整 SCADA 字段、outbox、进程心跳、通信配置及风机指令执行评价；重复初始化不覆盖已保存参数。
-- `python -m B_dispatch` 或 `scripts/start_b.ps1` 启动完整三进程，`python -m B_dispatch gui` 仅调试界面。
+- `python -m B_dispatch`、`python -m B_dispatch run`、`python -m B_dispatch gui` 与 `scripts/start_b.ps1` 都进入同一 GUI TCP 运行路径。
 
 ### 2026-09-10 · C 参数设置运行期可调 + 只读实时展示
 
@@ -182,10 +182,17 @@ B 正式运行由 `communication_service.py`、`compute_service.py` 和 `gui_b.p
 - ready/running/paused 状态下可把当前风速与负荷曲线原子写入 A 本机 `grid.db`；计算进程保持运行，并从提交后的下一 `step/sim_time_s` 使用新值。
 - 运行期更新不修改当前状态或既有历史，并写入包含实际生效步号的追溯日志；时间轴、点数及总时长变化仍需重新初始化。
 
+### 2026-09-10 · A/B、A/C 局域网延迟路径核对
+
+- B GUI 的 dispatch 改为非阻塞发送，ACK/超时由 50 ms socket 轮询处理；连接仍在后台线程执行，避免局域网抖动冻结界面。
+- A 对 B/C 继续采用每连接独立处理线程，并启用 TCP_NODELAY、keepalive、30 s 应用层空闲窗口；分包/粘包、双客户端与命令 ACK 由 PC socket 回归覆盖。
+- C 固件的 state/ACK 等待不再固定为 3 s，而是使用运行期 `c_timeout_s`（500 ms～30 s）；默认控制周期仍为 1 s，因此一次 C 控制动作在最坏相位下可额外等待接近一个控制周期。
+- PC loopback 不能代表 ESP8266、热点拥塞或真实局域网 RTT；硬件侧仍需用 A 日志时间、STM32 `$WIND2`/`last_wind_action_seq` 做现场测量。
+
 ### 2026-09-09 · B Dispatch ACK 超时与连接状态修复
 
 - 定位到 B GUI 使用 `timeout_s=0.25`，而 `EMSTcpClient.send_dispatch()` 原先直接复用这个短 socket timeout 等待 A 的 ACK；A 已经收到 dispatch 后，只要处理超过 250 ms，B 就会错误进入 `DispatchDeliveryUnknown` 并主动关闭 TCP。
-- `B_dispatch/tcpB.py` 现在为 dispatch ACK 使用独立的至少 **2 s** 等待窗口，普通 state polling 仍可保持短 timeout，ACK 成功后恢复普通 polling timeout。
+- `B_dispatch/tcpB.py` 的兼容同步接口为 dispatch ACK 使用独立的 10 s 等待窗口；GUI 使用非阻塞发送，ACK 与超时由 50 ms socket 轮询驱动，不阻塞界面线程。
 - 保留 delivery-unknown 安全边界：真正超时仍禁止自动换新 seq 盲目重发。
 - 这同时解释并修复了“**A 端 dispatch 已更新、B 弹 ACK 错误并断连，但主页仍显示已连接**”这一现象的主要来源。
 
@@ -236,22 +243,22 @@ B 正式运行由 `communication_service.py`、`compute_service.py` 和 `gui_b.p
 
 `B_dispatch/gui_b.py` 现为完整的本地 SCADA/操作工作台，保持 C GUI 的浅蓝灰卡片、蓝色主色、左侧导航和顶部状态布局，同时保留 A IP/端口功能。
 
-> 本节页面说明已按 2026-09-10 三进程整改更新；GUI 的 IP/端口操作现在写入本地数据库，由 B_IO 实际连接。
+> 本节页面说明已按 2026-09-10 GUI 直连方案更新；GUI 保存 IP/端口并直接建立 B→A TCP 连接。
 
 当前页面：
 
-1. **运行监控**：A 可达 IP、TCP 端口、本机 IP、B_IO 启停；负荷、available、operating limit、actual、target、功率不平衡、柴油余量、动态状态年龄及 YC/YX/YT/YK 点表。
+1. **运行监控**：A 可达 IP、TCP 端口、本机 IP、GUI TCP 连接/重连；负荷、available、operating limit、actual、target、功率不平衡、柴油余量、动态状态年龄及 YC/YX/YT/YK 点表。
 2. **实时曲线**：负荷、风电能力/限制、目标/实际及柴油实际趋势。
 3. **本地场景 / 手动调度**：构造 mock `GridState`，验证风优先、operating limit、10 kW reserve、柴油 OFF、C fault 优先和缺供结果。
 4. **参数设置**：物理参数按职责只读；B 自有调度、周期、状态年龄和开闭环参数可修改并持久化。
-5. **EMS 调度**：手动请求只写 outbox，自动决策由 B_COMPUTE 完成，B_IO 核对最新状态后发送；显示 target unserved、target surplus、reason 和 ACK。
+5. **EMS 调度**：GUI 获取最新 state 后计算并直接发送，闭环可按调度周期自动运行；显示 target unserved、target surplus、reason 和 ACK。
 6. **历史数据**：按 UTC 时间段/session 查询 SCADA 曲线、目标/实际、调度及后续反馈、运行日志，并导出筛选结果。
-7. **通信诊断**：B_IO/B_COMPUTE 心跳、outbox、seq、ACK 和 GUI 事件日志。
+7. **通信诊断**：GUI TCP 状态、待处理 state/ACK、seq、ACK 和事件日志。
 8. **报警与评价**：C fault、状态过期、delivery unknown 以及数据库评价 KPI。
 
 `EMSRepository.initialize()` 会创建/迁移本地 `ems.db` 到 schema v6；已有参数不再被重复初始化覆盖，并包含完整 SCADA state、outbox、通信配置、进程心跳和风机指令执行评价。真实 `data/runtime/ems.db` 不提交仓库。
 
-GUI 可以单独调试（不会自行连接 A 或计算自动调度）：
+GUI 模块入口与包入口使用同一套直连和调度逻辑：
 
 ```bash
 python B_dispatch/gui_b.py
@@ -267,7 +274,7 @@ python -m B_dispatch gui
 
 ### 当前边界
 
-本阶段 B_IO 具备真实 TCP 接入能力，GUI 只通过本地数据库观察通信状态，**不能把“GUI 能显示 ONLINE”当作 A/B/C 已完成本次联调**。开环不下发，闭环由持久化配置控制；B 不发送 pitch。
+本阶段 B GUI 具备真实 TCP 接入能力，但**不能把“GUI 能显示 ONLINE”当作 A/B/C 已完成本次联调**。开环不下发，闭环由持久化配置控制；B 不发送 pitch。
 
 ## 当前状态与下一步
 
@@ -279,8 +286,8 @@ python -m B_dispatch gui
 - JSON Lines、4096 bytes、seq/session/step、双时间字段、ACK 风险处理。
 - `wind_available_kw` / `wind_operating_limit_kw` 已进入 B 模型、TCP parser、dispatch、数据库和测试。
 - `ems.db` schema v6 已包含完整物理参数只读副本、完整 SCADA state、进程心跳、通信配置、outbox 和风机指令执行评价；B 自有参数可持久化且初始化不覆盖。
-- B PyQt6 GUI 支持 A 端点配置、本地 mock、参数设置、历史导出、通信诊断和调度评价，但不直接接触 TCP。
-- B_IO / B_COMPUTE / GUI 已拆为三个独立进程；手动 GUI dispatch 只写入队列，由 B_IO 安全核对后下发。
+- B PyQt6 GUI 支持 A 端点配置并直接持有 TCP，同时提供本地 mock、参数设置、历史导出、通信诊断和调度评价。
+- 默认启动只运行 GUI；采集、调度计算、dispatch 与 ACK 接收均由 GUI 的非阻塞定时器路径驱动。
 - STM32 硬件接入调试与三机（A/B/C）主链条联调已完成，状态/调度/动作数据传递暂时正常。
 
 ### 尚需完成
@@ -294,7 +301,7 @@ python -m B_dispatch gui
 
 ## 测试说明
 
-本次 B 三进程整改完成后，在修复 Qt 环境并补齐四遥界面测试后，完整仓库 **122 项测试全部通过**。公网三机、STM32/Wi-Fi/UART 和真实设备动作没有在本次 PC 整改中重新验证。
+本次在 Python 3.11.14 / PyQt6 6.11.0 环境执行完整仓库测试，**150 项全部通过**。公网三机、STM32/Wi-Fi/UART 和真实设备动作没有在本次 PC 整改中重新验证。
 
 建议在 Python 3.11 环境执行：
 

@@ -142,6 +142,8 @@
 
 ## 2026-09-10：B 正式运行拆分为通信、计算、GUI 三进程
 
+> 已由下方“B GUI 直接持有 TCP”决策取代；本节仅保留历史背景。
+
 - 参与：B 模块整改；依据为作业原文“通信、计算、界面独立进程”和本仓库不得通过共享 SQLite 跨电脑通信的约束。
 - `B_IO` 是 B 内唯一 TCP 所有者：向 A 周期请求完整 state、落入 B 本机 `ems.db`，从 `dispatch_outbox` 原子领取闭环命令并记录 ACK。`B_COMPUTE` 不导入 TCP，只从数据库读取状态/参数并写决策；GUI 不持有套接字、不运行自动调度，只操作本机数据库。
 - SQLite 仅用于同一台 B 电脑上的进程交接，不用于 A/B/C 跨电脑通信。每次仓储操作使用独立短连接，outbox 通过 `BEGIN IMMEDIATE` 领取，避免计算和通信进程重复发送同一条命令。
@@ -151,6 +153,17 @@
 - 柴油机一旦启动必须满足小组配置的最小出力；为避免可消除的目标过剩，B 会在允许范围内同步下调风电目标。无法消除的过剩仍显式记录，不伪装为平衡。
 - 本次没有改变公共 TCP version、字段单位或 A/B/C 控制权；B 仍只发送风机/柴油 target 与 enable，C 动作和 A actual 职责不变。受影响文件为 B 调度、仓储、TCP、GUI、启动入口、数据库 schema、测试和 B 文档。
 - 当前验证仅覆盖 PC 端自动测试与语法检查；三机 TCP、公网穿透、STM32/Wi-Fi/UART 和真实设备动作尚未在本次整改中验证。
+
+## 2026-09-10：B GUI 直接持有 TCP（取代三进程正式运行）
+
+- 参与：B 启动、TCP/GUI 运行路径、测试和文档。根据当前项目决定，`gui_b.py` 是正式运行时唯一的 B→A TCP 所有者，并在同一 GUI 进程中通过 Qt 定时器完成 state 采集、EMS 计算和闭环 dispatch。
+- `python -m B_dispatch`、`python -m B_dispatch run` 与 `scripts/start_b.ps1` 只初始化 `ems.db` 后启动 GUI，不再拉起 `B_IO/B_COMPUTE` 子进程，避免同一 B 上出现多个 TCP 所有者。
+- `communication_service.py`、`compute_service.py`、outbox 与相关子命令作为兼容/诊断能力保留，不属于默认正式启动链路；SQLite 仍只用于 B 本机持久化和追溯，不用于跨电脑通信。
+- GUI 建连继续使用后台线程；已连接 socket 每 50 ms 非阻塞检查。GUI 发送 dispatch 后立即返回事件循环，ACK 与 10 s 超时由轮询处理，从而避免高延迟链路冻结界面。
+- 本决策不改变公共协议、字段单位或控制权：B 仍只发功率 target/enable，A 计算 actual，C/STM32 负责风机动作与桨距；C 上位机仍不替代 STM32 直接连接 A。
+- 软件验证使用 Python 3.11.14 / PyQt6 6.11.0，当前完整仓库 150 项测试通过；局域网、ESP8266、UART 和真实 STM32 延迟仍须现场测量，PC loopback 结果不得冒充硬件验收。
+- A/B 路径保持 TCP_NODELAY、keepalive、每连接独立处理和 30 s 空闲窗口；B GUI 将 ACK 收取间隔从 250 ms 降为 50 ms，并从 GUI 线程移除最长 10 s 的同步 ACK 等待。
+- A/C 核对发现固件原先未使用运行期 `c_timeout_s`，现由 `WindTurbine_GetTimeoutMs()` 将该配置用于 state/ACK 等待（限制 500 ms～30 s）。C 默认 1 s 控制周期仍是预期控制延迟的一部分，不作为网络 RTT 处理。
 
 ## 2026-09-10：beta0.3 发布范围
 

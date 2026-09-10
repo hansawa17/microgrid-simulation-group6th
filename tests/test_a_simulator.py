@@ -660,6 +660,64 @@ class ProtocolTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
+    def test_tcp_matches_c_state_wind_action_ack_flow(self):
+        """Exercise the C firmware transaction order through A's real socket server."""
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "grid.db")
+            config = replace(load_config(CONFIG_PATH), end_s=10.0)
+            session_id = repo.initialize(config, load_scenario_csv(SCENARIO_PATH))
+            server = SimulatorTCPServer(("127.0.0.1", 0), repo, 4096)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = {
+                    "version": 1, "type": "state_request", "source": "C", "target": "A",
+                    "session_id": None, "seq": 0, "step": 0, "sim_time_s": 0.0,
+                    "payload": {"full": True},
+                }
+                with socket.create_connection(server.server_address, timeout=2) as client:
+                    client.settimeout(2)
+                    request_frame = (json.dumps(request) + "\n").encode("utf-8")
+                    client.sendall(request_frame[:11])
+                    client.sendall(request_frame[11:])
+                    with client.makefile("rwb") as stream:
+                        state = json.loads(stream.readline())
+                        self.assertEqual((state["type"], state["target"]), ("state", "C"))
+                        self.assertNotIn("parameters", state["payload"])
+                        self.assertLessEqual(len((json.dumps(state, separators=(",", ":")) + "\n").encode("utf-8")), 1024)
+
+                        action_seq = state["payload"]["next_command_seq"]
+                        action = {
+                            "version": 1, "type": "wind_action", "source": "C", "target": "A",
+                            "session_id": session_id, "seq": action_seq,
+                            "step": state["step"], "sim_time_s": state["sim_time_s"],
+                            "payload": {
+                                "wind_enable": True, "pitch_target_deg": 6.0,
+                                "wind_available_kw": 72.0,
+                                "wind_operating_limit_kw": 65.0,
+                            },
+                        }
+                        action_frame = (json.dumps(action) + "\n").encode("utf-8")
+                        stream.write(action_frame[:23])
+                        stream.flush()
+                        stream.write(action_frame[23:])
+                        stream.flush()
+                        ack = json.loads(stream.readline())
+                        self.assertEqual(ack["payload"], {
+                            "ack_seq": action_seq, "accepted": True, "reason": "accepted",
+                        })
+
+                        follow_up = {**request, "session_id": session_id, "seq": action_seq + 1}
+                        stream.write((json.dumps(follow_up) + "\n").encode("utf-8"))
+                        stream.flush()
+                        updated = json.loads(stream.readline())
+                        self.assertEqual(updated["payload"]["last_wind_action_seq"], action_seq)
+                        self.assertEqual(updated["payload"]["pitch_target_deg"], 6.0)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
     def test_real_b_client_keeps_polling_past_three_seconds(self):
         """B must accept startup states where the previous target exceeds C's limit."""
         with tempfile.TemporaryDirectory() as directory:

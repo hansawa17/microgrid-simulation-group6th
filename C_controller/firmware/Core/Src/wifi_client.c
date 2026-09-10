@@ -24,7 +24,6 @@
 #define WF_CLOSE_TIMEOUT_MS       2000u
 #define WF_PROMPT_TIMEOUT_MS      1000u
 #define WF_SEND_OK_TIMEOUT_MS     2000u
-#define WF_RESPONSE_TIMEOUT_MS    3000u
 
 /* ------------------------------------------------------------------ */
 /*  A 服务端地址/端口（运行期可配，默认值来自 wifi_config.h）           */
@@ -601,7 +600,7 @@ void WifiClient_Task(void)
             return;
         }
         if (wf_app_state != WF_APP_IDLE &&
-            now - wf_response_tick > WF_RESPONSE_TIMEOUT_MS)
+            now - wf_response_tick > WindTurbine_GetTimeoutMs())
         {
             wf_reconnect();
             return;
