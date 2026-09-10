@@ -95,7 +95,8 @@ class ProcessServiceTests(unittest.TestCase):
             service = EMSCommunicationService(repo, client_factory=lambda *args, **kwargs: fake, clock=lambda: 0.0, sleeper=lambda _: None); service.initialize()
             self.assertIsNone(service.run_cycle())
             self.assertTrue(fake.connected)
-            self.assertEqual(repo.get_process_status("B_IO")["state"], "ONLINE")
+            statuses = {str(row["process_name"]): row for row in repo.get_process_status()}
+            self.assertEqual(statuses["B_IO"]["state"], "ONLINE")
 
     def test_io_process_claims_and_records_accepted_ack(self):
         with tempfile.TemporaryDirectory() as tmp:
