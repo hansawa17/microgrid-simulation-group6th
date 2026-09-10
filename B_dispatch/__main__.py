@@ -54,7 +54,7 @@ def _get_local_ip():
     return "未获取"
 
 
-def _embed_wind_evaluation(main_window, repository, QtWidgets):
+def _embed_wind_evaluation(main_window, repository, QtCore, QtWidgets):
     """Embed the wind execution evaluation into the main GUI as a tab.
 
     The evaluation view remains read-only and reuses the same repository. If
@@ -68,23 +68,25 @@ def _embed_wind_evaluation(main_window, repository, QtWidgets):
     if tab_widgets:
         tabs = tab_widgets[0]
         tabs.addTab(evaluation, "风机执行评价")
-        tabs.setCurrentWidget(tabs.widget(0))
         return evaluation
 
     dock = QtWidgets.QDockWidget("风机执行评价", main_window)
     dock.setObjectName("windExecutionEvaluationDock")
     dock.setWidget(evaluation)
-    main_window.addDockWidget(QtWidgets.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+    main_window.addDockWidget(
+        QtCore.Qt.DockWidgetArea.BottomDockWidgetArea,
+        dock,
+    )
     dock.hide()
 
-    action = QtWidgets.QAction("风机执行评价", main_window)
+    action = QtGui.QAction("风机执行评价", main_window)
     action.triggered.connect(lambda: dock.show())
     main_window.menuBar().addAction(action)
     return evaluation
 
 
 def _launch_gui():
-    from PyQt6 import QtWidgets
+    from PyQt6 import QtCore, QtGui, QtWidgets
     from . import gui_b
     from .repository import EMSRepository
 
@@ -100,7 +102,10 @@ def _launch_gui():
             self._wind_eval_repo = EMSRepository(DEFAULT_DB)
             self._wind_eval_repo.initialize()
             self._wind_eval_widget = _embed_wind_evaluation(
-                self, self._wind_eval_repo, QtWidgets
+                self,
+                self._wind_eval_repo,
+                QtCore,
+                QtWidgets,
             )
             self._wind_eval_widget.refresh()
             self.statusBar().addPermanentWidget(QtWidgets.QLabel(f"本机 IP：{ip}"))
