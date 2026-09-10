@@ -1,138 +1,21 @@
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS physical_parameters (id INTEGER PRIMARY KEY CHECK(id=1),wind_rated_kw REAL NOT NULL DEFAULT 100,wind_cut_in_mps REAL NOT NULL DEFAULT 3,wind_rated_speed_mps REAL NOT NULL DEFAULT 12,wind_cut_out_mps REAL NOT NULL DEFAULT 25,pitch_min_deg REAL NOT NULL DEFAULT 0,pitch_max_deg REAL NOT NULL DEFAULT 90,wind_ramp_up_kw_s REAL NOT NULL DEFAULT 40,wind_ramp_down_kw_s REAL NOT NULL DEFAULT 60,diesel_min_kw REAL NOT NULL DEFAULT 20,diesel_max_kw REAL NOT NULL DEFAULT 120,diesel_ramp_up_kw_s REAL NOT NULL DEFAULT 30,diesel_ramp_down_kw_s REAL NOT NULL DEFAULT 40,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS dispatch_parameters (id INTEGER PRIMARY KEY CHECK(id=1),wind_min_kw REAL NOT NULL DEFAULT 0,wind_max_kw REAL NOT NULL DEFAULT 100,diesel_max_kw REAL NOT NULL DEFAULT 120,reserve_kw REAL NOT NULL DEFAULT 10,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ems_runtime_config (id INTEGER PRIMARY KEY CHECK(id=1),poll_period_s REAL NOT NULL DEFAULT 1,dispatch_period_s REAL NOT NULL DEFAULT 5,closed_loop INTEGER NOT NULL DEFAULT 1,command_timeout_s REAL DEFAULT 3,max_state_age_s REAL NOT NULL DEFAULT 2,updated_at TEXT NOT NULL);
 
-CREATE TABLE IF NOT EXISTS physical_parameters (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    wind_rated_kw REAL NOT NULL DEFAULT 100.0 CHECK (wind_rated_kw > 0),
-    wind_cut_in_mps REAL NOT NULL DEFAULT 3.0 CHECK (wind_cut_in_mps >= 0),
-    wind_rated_speed_mps REAL NOT NULL DEFAULT 12.0 CHECK (wind_rated_speed_mps > wind_cut_in_mps),
-    wind_cut_out_mps REAL NOT NULL DEFAULT 25.0 CHECK (wind_cut_out_mps > wind_rated_speed_mps),
-    pitch_min_deg REAL NOT NULL DEFAULT 0.0 CHECK (pitch_min_deg >= 0),
-    pitch_max_deg REAL NOT NULL DEFAULT 90.0 CHECK (pitch_max_deg >= pitch_min_deg),
-    wind_ramp_up_kw_s REAL NOT NULL DEFAULT 40.0 CHECK (wind_ramp_up_kw_s > 0),
-    wind_ramp_down_kw_s REAL NOT NULL DEFAULT 60.0 CHECK (wind_ramp_down_kw_s > 0),
-    diesel_min_kw REAL NOT NULL DEFAULT 20.0 CHECK (diesel_min_kw >= 0),
-    diesel_max_kw REAL NOT NULL DEFAULT 120.0 CHECK (diesel_max_kw >= diesel_min_kw),
-    diesel_ramp_up_kw_s REAL NOT NULL DEFAULT 30.0 CHECK (diesel_ramp_up_kw_s > 0),
-    diesel_ramp_down_kw_s REAL NOT NULL DEFAULT 40.0 CHECK (diesel_ramp_down_kw_s > 0),
-    updated_at TEXT NOT NULL
-);
+CREATE TABLE IF NOT EXISTS current_state (id INTEGER PRIMARY KEY CHECK(id=1),session_id TEXT NOT NULL,step INTEGER NOT NULL,sim_time_s REAL NOT NULL,wind_speed_mps REAL NOT NULL,wind_available_kw REAL NOT NULL,wind_operating_limit_kw REAL NOT NULL,load_power_kw REAL NOT NULL,wind_actual_kw REAL NOT NULL,diesel_actual_kw REAL NOT NULL,wind_target_kw REAL NOT NULL,diesel_target_kw REAL NOT NULL DEFAULT 0,pitch_actual_deg REAL NOT NULL,wind_running INTEGER NOT NULL,fault INTEGER NOT NULL,diesel_running INTEGER NOT NULL DEFAULT 0,power_imbalance_kw REAL NOT NULL DEFAULT 0,sampled_at_utc TEXT NOT NULL,received_at_utc TEXT NOT NULL,received_age_s REAL NOT NULL,controller_wind_enable INTEGER,pitch_target_deg REAL,last_wind_action_seq INTEGER,last_wind_action_step INTEGER,wind_action_applied_at_utc TEXT,extension_status TEXT NOT NULL DEFAULT 'legacy_or_incomplete');
+CREATE TABLE IF NOT EXISTS state_history (id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,step INTEGER NOT NULL,sim_time_s REAL NOT NULL,wind_speed_mps REAL NOT NULL,wind_available_kw REAL NOT NULL,wind_operating_limit_kw REAL NOT NULL,load_power_kw REAL NOT NULL,wind_actual_kw REAL NOT NULL,diesel_actual_kw REAL NOT NULL,wind_target_kw REAL NOT NULL,diesel_target_kw REAL NOT NULL DEFAULT 0,pitch_actual_deg REAL NOT NULL,wind_running INTEGER NOT NULL,fault INTEGER NOT NULL,diesel_running INTEGER NOT NULL DEFAULT 0,power_imbalance_kw REAL NOT NULL DEFAULT 0,sampled_at_utc TEXT NOT NULL,received_at_utc TEXT NOT NULL,received_age_s REAL NOT NULL,controller_wind_enable INTEGER,pitch_target_deg REAL,last_wind_action_seq INTEGER,last_wind_action_step INTEGER,wind_action_applied_at_utc TEXT,extension_status TEXT NOT NULL DEFAULT 'legacy_or_incomplete');
 
-CREATE TABLE IF NOT EXISTS dispatch_parameters (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    wind_min_kw REAL NOT NULL DEFAULT 0.0 CHECK (wind_min_kw >= 0),
-    wind_max_kw REAL NOT NULL DEFAULT 100.0 CHECK (wind_max_kw >= wind_min_kw),
-    diesel_max_kw REAL NOT NULL DEFAULT 120.0 CHECK (diesel_max_kw >= 0),
-    reserve_kw REAL NOT NULL DEFAULT 10.0 CHECK (reserve_kw >= 0),
-    updated_at TEXT NOT NULL
-);
+CREATE TABLE IF NOT EXISTS dispatch_commands (id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,step INTEGER NOT NULL,sim_time_s REAL NOT NULL,source TEXT NOT NULL,seq INTEGER NOT NULL,wind_target_kw REAL NOT NULL,diesel_target_kw REAL NOT NULL,wind_enable INTEGER NOT NULL,diesel_enable INTEGER NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,ack_accepted INTEGER,ack_reason TEXT,ack_received_at_utc TEXT,created_at_utc TEXT NOT NULL,UNIQUE(session_id,source,seq));
+CREATE TABLE IF NOT EXISTS dispatch_evaluation (id INTEGER PRIMARY KEY AUTOINCREMENT,command_id INTEGER NOT NULL REFERENCES dispatch_commands(id),target_unserved_kw REAL NOT NULL,target_surplus_kw REAL NOT NULL,actual_unserved_kw REAL,actual_surplus_kw REAL,evaluated_at_utc TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS event_log (id INTEGER PRIMARY KEY AUTOINCREMENT,level TEXT NOT NULL,event_type TEXT NOT NULL,message TEXT NOT NULL,session_id TEXT,step INTEGER,created_at_utc TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS dispatch_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,state_step INTEGER NOT NULL,sim_time_s REAL NOT NULL,wind_target_kw REAL NOT NULL,diesel_target_kw REAL NOT NULL,wind_enable INTEGER NOT NULL,diesel_enable INTEGER NOT NULL,target_unserved_kw REAL NOT NULL,target_surplus_kw REAL NOT NULL,reason TEXT NOT NULL,executable INTEGER NOT NULL,status TEXT NOT NULL,protocol_seq INTEGER,command_id INTEGER,ack_accepted INTEGER,ack_reason TEXT,detail TEXT,created_at_utc TEXT NOT NULL,claimed_at_utc TEXT,completed_at_utc,UNIQUE(session_id,state_step,executable));
+CREATE TABLE IF NOT EXISTS process_status(process_name TEXT PRIMARY KEY,pid INTEGER,state TEXT NOT NULL,detail TEXT NOT NULL,heartbeat_at_utc TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS communication_config(id INTEGER PRIMARY KEY CHECK(id=1),host TEXT NOT NULL,port INTEGER NOT NULL,enabled INTEGER NOT NULL,updated_at_utc TEXT NOT NULL);
 
-CREATE TABLE IF NOT EXISTS ems_runtime_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    poll_period_s REAL NOT NULL DEFAULT 1.0 CHECK (poll_period_s > 0),
-    dispatch_period_s REAL NOT NULL DEFAULT 5.0 CHECK (dispatch_period_s > 0),
-    closed_loop INTEGER NOT NULL DEFAULT 1 CHECK (closed_loop IN (0,1)),
-    command_timeout_s REAL DEFAULT 3.0 CHECK (command_timeout_s IS NULL OR command_timeout_s > 0),
-    max_state_age_s REAL NOT NULL DEFAULT 2.0 CHECK (max_state_age_s > 0),
-    updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS current_state (
-    id INTEGER PRIMARY KEY CHECK (id = 1), session_id TEXT NOT NULL,
-    step INTEGER NOT NULL CHECK (step >= 0), sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0),
-    wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0),
-    wind_available_kw REAL NOT NULL CHECK (wind_available_kw >= 0),
-    wind_operating_limit_kw REAL NOT NULL CHECK (wind_operating_limit_kw >= 0 AND wind_operating_limit_kw <= wind_available_kw),
-    load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
-    diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
-    diesel_target_kw REAL NOT NULL DEFAULT 0 CHECK (diesel_target_kw >= 0),
-    pitch_actual_deg REAL NOT NULL CHECK (pitch_actual_deg >= 0 AND pitch_actual_deg <= 90),
-    wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
-    diesel_running INTEGER NOT NULL DEFAULT 0 CHECK (diesel_running IN (0,1)),
-    power_imbalance_kw REAL NOT NULL DEFAULT 0,
-    sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
-);
-
-CREATE TABLE IF NOT EXISTS state_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
-    step INTEGER NOT NULL CHECK (step >= 0), sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0),
-    wind_speed_mps REAL NOT NULL CHECK (wind_speed_mps >= 0),
-    wind_available_kw REAL NOT NULL CHECK (wind_available_kw >= 0),
-    wind_operating_limit_kw REAL NOT NULL CHECK (wind_operating_limit_kw >= 0 AND wind_operating_limit_kw <= wind_available_kw),
-    load_power_kw REAL NOT NULL CHECK (load_power_kw >= 0), wind_actual_kw REAL NOT NULL CHECK (wind_actual_kw >= 0),
-    diesel_actual_kw REAL NOT NULL CHECK (diesel_actual_kw >= 0), wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
-    diesel_target_kw REAL NOT NULL DEFAULT 0 CHECK (diesel_target_kw >= 0),
-    pitch_actual_deg REAL NOT NULL CHECK (pitch_actual_deg >= 0 AND pitch_actual_deg <= 90),
-    wind_running INTEGER NOT NULL CHECK (wind_running IN (0,1)), fault INTEGER NOT NULL CHECK (fault IN (0,1)),
-    diesel_running INTEGER NOT NULL DEFAULT 0 CHECK (diesel_running IN (0,1)),
-    power_imbalance_kw REAL NOT NULL DEFAULT 0,
-    sampled_at_utc TEXT NOT NULL, received_at_utc TEXT NOT NULL, received_age_s REAL NOT NULL CHECK (received_age_s >= 0)
-);
-
-CREATE TABLE IF NOT EXISTS dispatch_commands (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
-    step INTEGER NOT NULL CHECK (step >= 0), sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0),
-    source TEXT NOT NULL, seq INTEGER NOT NULL CHECK (seq >= 0),
-    wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0), diesel_target_kw REAL NOT NULL CHECK (diesel_target_kw >= 0),
-    wind_enable INTEGER NOT NULL CHECK (wind_enable IN (0,1)), diesel_enable INTEGER NOT NULL CHECK (diesel_enable IN (0,1)),
-    status TEXT NOT NULL, reason TEXT NOT NULL,
-    ack_accepted INTEGER CHECK (ack_accepted IN (0,1)), ack_reason TEXT, ack_received_at_utc TEXT,
-    created_at_utc TEXT NOT NULL,
-    UNIQUE(session_id, source, seq)
-);
-
-CREATE TABLE IF NOT EXISTS dispatch_evaluation (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, command_id INTEGER NOT NULL REFERENCES dispatch_commands(id),
-    target_unserved_kw REAL NOT NULL CHECK (target_unserved_kw >= 0), target_surplus_kw REAL NOT NULL CHECK (target_surplus_kw >= 0),
-    actual_unserved_kw REAL, actual_surplus_kw REAL, evaluated_at_utc TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS event_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL, event_type TEXT NOT NULL, message TEXT NOT NULL,
-    session_id TEXT, step INTEGER, created_at_utc TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS dispatch_outbox (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL,
-    state_step INTEGER NOT NULL CHECK (state_step >= 0),
-    sim_time_s REAL NOT NULL CHECK (sim_time_s >= 0),
-    wind_target_kw REAL NOT NULL CHECK (wind_target_kw >= 0),
-    diesel_target_kw REAL NOT NULL CHECK (diesel_target_kw >= 0),
-    wind_enable INTEGER NOT NULL CHECK (wind_enable IN (0,1)),
-    diesel_enable INTEGER NOT NULL CHECK (diesel_enable IN (0,1)),
-    target_unserved_kw REAL NOT NULL CHECK (target_unserved_kw >= 0),
-    target_surplus_kw REAL NOT NULL CHECK (target_surplus_kw >= 0),
-    reason TEXT NOT NULL,
-    executable INTEGER NOT NULL CHECK (executable IN (0,1)),
-    status TEXT NOT NULL CHECK (status IN ('open_loop','pending','sending','accepted','rejected','delivery_unknown','cancelled','local_error')),
-    protocol_seq INTEGER CHECK (protocol_seq IS NULL OR protocol_seq >= 0),
-    command_id INTEGER REFERENCES dispatch_commands(id),
-    ack_accepted INTEGER CHECK (ack_accepted IN (0,1)),
-    ack_reason TEXT,
-    detail TEXT,
-    created_at_utc TEXT NOT NULL,
-    claimed_at_utc TEXT,
-    completed_at_utc TEXT,
-    UNIQUE(session_id, state_step, executable)
-);
-
-CREATE INDEX IF NOT EXISTS idx_dispatch_outbox_status_id
-    ON dispatch_outbox(status, id);
-
-CREATE TABLE IF NOT EXISTS process_status (
-    process_name TEXT PRIMARY KEY,
-    pid INTEGER,
-    state TEXT NOT NULL,
-    detail TEXT NOT NULL,
-    heartbeat_at_utc TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS communication_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    host TEXT NOT NULL,
-    port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
-    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
-    updated_at_utc TEXT NOT NULL
-);
+CREATE TABLE IF NOT EXISTS wind_execution_evaluation (id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,dispatch_command_id INTEGER NOT NULL REFERENCES dispatch_commands(id),outbox_id INTEGER,c_wind_action_seq INTEGER,dispatch_step INTEGER NOT NULL,feedback_step INTEGER NOT NULL,dispatch_created_at_utc TEXT NOT NULL,feedback_sampled_at_utc TEXT NOT NULL,wind_action_applied_at_utc TEXT,response_latency_s REAL,b_wind_enable INTEGER NOT NULL,b_wind_target_kw REAL NOT NULL,c_controller_wind_enable INTEGER NOT NULL,c_pitch_target_deg REAL NOT NULL,c_wind_available_kw REAL NOT NULL,c_wind_operating_limit_kw REAL NOT NULL,a_wind_running INTEGER NOT NULL,a_wind_actual_kw REAL NOT NULL,a_pitch_actual_deg REAL NOT NULL,a_fault INTEGER NOT NULL,start_stop_score REAL,power_tracking_score REAL,pitch_response_score REAL,capability_safety_score REAL,total_score REAL,verdict TEXT NOT NULL,reason TEXT NOT NULL,evaluated_at_utc TEXT NOT NULL,UNIQUE(dispatch_command_id));
+CREATE INDEX IF NOT EXISTS idx_dispatch_outbox_status_id ON dispatch_outbox(status,id);
+CREATE INDEX IF NOT EXISTS idx_wind_exec_session_step ON wind_execution_evaluation(session_id,feedback_step);
+INSERT INTO schema_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value='6';
