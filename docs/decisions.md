@@ -216,3 +216,14 @@
 - C 原 1 s `CIPSEND` 提示符、2 s `SEND OK`、3 s state/ACK 窗口与高延迟/短抖动太接近，且每次事务超时都会主动拆除 TCP；“连续 3 次”只是 ESP8266 软复位阈值，不是断链去抖。现改为 3/6/8 s，模组软复位门槛改为 5 次。ACK 未知时仍通过重连对账，不冒险在原 socket 上换 seq 重发。
 - B 原 GUI socket I/O 0.5 s、建连 5 s、state 响应 6 s 和状态年龄 2 s 在现场链路上余量不足。现分别放宽为 3/8/12/8 s，dispatch ACK 窗口由 10 s 放宽为 15 s；`ems.db` schema 升至 v7，仅迁移仍等于旧默认值 2 s 的状态年龄，其他人工设置保持不变。瞬时 `socket.timeout` 继续只等待下一轮询，不拆链、不弹窗。
 - A 对最后一条同源连接的正常 EOF `peer_connection_closed` 只记 INFO，状态仍立即显示离线，但不再弹故障框；`peer_timeout`、`peer_connection_error`、非法帧和数据库/进程异常仍保持 WARNING 弹窗。
+
+## 2026-09-11：B 对 A 柴油机上下限的即时调度约束
+
+- A 的 `state.parameters` 已能把 `diesel_min_power_kw/diesel_max_power_kw` 发送给 B，B 也能映射为本地只读 `diesel_min_kw/diesel_max_kw`；原缺陷是 GUI 先展示 state、后应用参数，且未作废上一轮 EMS decision，导致最长一个 5 s 调度周期内仍可能发送旧目标并被 A 以 `diesel_target_out_of_range` 拒绝。
+- B 现先原子保存 A 参数并重建 `DispatchConfig`，再展示新 state；参数变化会立即清除旧 decision、重算目标，并在下一次 1 s 调度检查生效。柴油非零目标不得低于 A 最小功率，最大可调目标为 A 最大功率减去 B 自有 reserve；仍不把目标冒充 A 实际出力。
+
+## 2026-09-11：A GUI、计算与通信进程解耦
+
+- Python 线程不能在所属 GUI 进程退出后继续存在，因此 A 不采用“两个线程随 GUI 启动”的生命周期。A GUI 仅作为观察/控制端，计算循环和 TCP server 分别作为独立 Python 进程运行，共享同一 `grid.db` 的持久状态，不共享 Python 对象。
+- GUI 关闭不再修改仿真状态，也不终止工作进程；重新打开后通过 `grid.db` 同目录的 PID/心跳状态文件识别现有服务。每个数据库、每个角色使用进程级文件锁保证单实例，防止重复点击或多个 GUI 同时拉起第二个计算/TCP 服务。
+- 显式停止计算服务时，运行态先转为 `paused` 再退出；显式停止 TCP 只结束监听，不中断计算。后台日志合并写入 `.grid.db.a-services.log`，数据库业务读写继续使用 WAL 和短事务。

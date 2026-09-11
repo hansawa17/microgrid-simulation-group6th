@@ -432,6 +432,12 @@ class SimulatorWindowTests(unittest.TestCase):
         self.assertEqual(self.repository.runtime()["status"], "paused")
         self.assertTrue(self.window.resume_button.isEnabled())
 
+    def test_closing_gui_does_not_pause_running_simulation(self) -> None:
+        self.repository.set_status("start")
+        self.window.close()
+        self.app.processEvents()
+        self.assertEqual(self.repository.runtime()["status"], "running")
+
 
 if __name__ == "__main__":
     unittest.main()

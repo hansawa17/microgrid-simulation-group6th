@@ -27,6 +27,7 @@ class MainWindow(_LegacyMainWindow):
 
     def __init__(self) -> None:
         self._communication_enabled = False
+        self._initialized_repo_identity: int | None = None
         self._last_db_state_key: tuple[str, int, str] | None = None
         self._last_diag_text = ""
         self._last_sent_command: tuple[float, float, bool, bool] | None = None
@@ -59,15 +60,32 @@ class MainWindow(_LegacyMainWindow):
         super().refresh_state_views(); self._refresh_scada_table()
 
     def set_state_snapshot(self, state: GridState) -> None:
-        """Treat a just-received TCP state as fresh (age starts at zero)."""
-        super().set_state_snapshot(replace(state, received_age_s=0.0))
+        """Apply A-owned constraints before calculating from the fresh state."""
+        parameters_changed = False
         if getattr(state, "parameters", None):
             try:
                 self._ensure_db()
-                if self.repo.apply_remote_parameters(state.parameters):
+                parameters_changed = self.repo.apply_remote_parameters(state.parameters)
+                if parameters_changed:
                     self._reload_physical_widgets()
+                    # A parameter changes invalidate any decision calculated
+                    # with the previous diesel/wind bounds.  The next 1 s
+                    # runtime tick must recalculate even when the normal 5 s
+                    # dispatch period has not elapsed yet.
+                    self.last_decision = None
+                    self._last_decision_monotonic = 0.0
             except Exception as exc:
                 self.log(f"参数同步失败：{exc}")
+        fresh_state = replace(state, received_age_s=0.0)
+        super().set_state_snapshot(fresh_state)
+        if parameters_changed:
+            self.calculate_current()
+            physical = self.repo.get_physical_parameters()
+            self.log(
+                "A 参数已应用到调度约束："
+                f"柴油 {float(physical['diesel_min_kw']):g}–"
+                f"{float(physical['diesel_max_kw']):g} kW；下一调度检查生效"
+            )
         self._persist_wind_execution()
 
     def _reload_physical_widgets(self) -> None:
@@ -126,9 +144,12 @@ class MainWindow(_LegacyMainWindow):
         return DispatchConfig(wind_min_kw=0.0, wind_max_kw=float(ph.get("wind_rated_kw", 100.0)), diesel_max_kw=float(ph.get("diesel_max_kw", 120.0)), reserve_kw=self.params['reserve_kw'], diesel_min_kw=float(ph.get("diesel_min_kw", 20.0)), max_state_age_s=self.params['max_age_s'], c_has_control_priority=True)
 
     def _ensure_db(self) -> None:
-        """Create the schema only when it is missing; never reset user parameters."""
-        try: self.repo.get_parameters(); self.repo.get_runtime_config(); self.repo.get_physical_parameters()
-        except Exception: self.repo.initialize()
+        """Initialize/migrate each repository object once without resetting rows."""
+        identity = id(self.repo)
+        if self._initialized_repo_identity == identity:
+            return
+        self.repo.initialize()
+        self._initialized_repo_identity = identity
 
     def params_page(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('参数设置'))

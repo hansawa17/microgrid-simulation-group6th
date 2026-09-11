@@ -192,6 +192,61 @@ class BGuiConnectionTests(unittest.TestCase):
         finally:
             self.window.repo = original_repo
 
+    def test_a_diesel_limits_immediately_replace_stale_dispatch_constraints(self):
+        original_repo = self.window.repo
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                repo = EMSRepository(Path(temp_dir) / "ems.db")
+                repo.initialize()
+                self.window.repo = repo
+                self.window._initialized_repo_identity = None
+                now = utc_now()
+                self.window.last_decision = SimpleNamespace(
+                    result=SimpleNamespace(
+                        wind_target_kw=0.0,
+                        diesel_target_kw=100.0,
+                        wind_enable=False,
+                        diesel_enable=True,
+                    )
+                )
+                self.window._last_decision_monotonic = time.monotonic()
+
+                self.window.set_state_snapshot(GridState(
+                    session_id="parameter-sync", step=1, sim_time_s=1.0,
+                    wind_speed_mps=0.0, wind_available_kw=0.0,
+                    wind_operating_limit_kw=0.0, load_power_kw=100.0,
+                    wind_actual_kw=0.0, diesel_actual_kw=0.0,
+                    wind_running=False, diesel_running=False, fault=False,
+                    sampled_at_utc=now, received_at_utc=now,
+                    pitch_actual_deg=90.0, power_imbalance_kw=100.0,
+                    parameters={
+                        "diesel_min_power_kw": 40.0,
+                        "diesel_max_power_kw": 60.0,
+                    },
+                ))
+
+                physical = repo.get_physical_parameters()
+                self.assertEqual(
+                    (physical["diesel_min_kw"], physical["diesel_max_kw"]),
+                    (40.0, 60.0),
+                )
+                self.assertEqual(self.window.a_physical_widgets["diesel_min_kw"].value(), 40.0)
+                self.assertEqual(self.window.a_physical_widgets["diesel_max_kw"].value(), 60.0)
+                self.assertEqual(self.window.last_decision.result.diesel_target_kw, 50.0)
+                self.assertEqual(self.window.last_decision.result.target_unserved_kw, 50.0)
+                self.assertEqual(self.window._last_decision_monotonic, 0.0)
+                client = FakeConnectedClient()
+                client.needs_full_sync = False
+                self.window.client = client
+                self.window.params["closed_loop"] = True
+                self.window.auto_dispatch = True
+                self.window.runtime_tick()
+                self.assertEqual(len(client.sent), 1)
+                self.assertEqual(client.sent[0].result.diesel_target_kw, 50.0)
+        finally:
+            self.window.repo = original_repo
+            self.window._initialized_repo_identity = None
+
     def test_real_default_closed_loop_enables_automatic_dispatch(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = EMSRepository(Path(temp_dir) / "ems.db")

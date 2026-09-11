@@ -53,6 +53,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..background import (
+    ServiceStatus,
+    launch_background_process,
+    read_service_status,
+    request_service_stop,
+)
 from ..config import SimulationConfig, load_config
 from ..repository import Repository
 from ..scenario import ScenarioCurve, ScenarioPoint, load_scenario_csv, save_scenario_csv
@@ -422,8 +428,6 @@ class SimulatorWindow(QMainWindow):
         self._scenario_from_database = False
         self.scenario = self._initial_scenario(self.scenario_path)
         self._scenario_origin_utc = _utc_now()
-        self._runner = QProcess(self)
-        self._tcp_server = QProcess(self)
         self._history_pool = QThreadPool(self)
         self._history_pool.setMaxThreadCount(1)
         self._scenario_apply_pool = QThreadPool(self)
@@ -1273,16 +1277,6 @@ class SimulatorWindow(QMainWindow):
         self.refreshDatabaseButton.clicked.connect(lambda: self.refresh_database_categories(force=True))
         self.clearUiEventsButton.clicked.connect(self._clear_ui_events)
 
-        self._tcp_server.stateChanged.connect(self._tcp_state_changed)
-        self._tcp_server.readyReadStandardOutput.connect(lambda: self._read_process_output(self._tcp_server, "TCP", False))
-        self._tcp_server.readyReadStandardError.connect(lambda: self._read_process_output(self._tcp_server, "TCP", True))
-        self._tcp_server.errorOccurred.connect(lambda error: self._process_error("TCP", error))
-        self._tcp_server.finished.connect(lambda code, _status: self._process_finished("TCP", code))
-        self._runner.readyReadStandardOutput.connect(lambda: self._read_process_output(self._runner, "仿真", False, discard=True))
-        self._runner.readyReadStandardError.connect(lambda: self._read_process_output(self._runner, "仿真", True))
-        self._runner.errorOccurred.connect(lambda error: self._process_error("仿真", error))
-        self._runner.finished.connect(lambda code, _status: self._runner_finished(code))
-
     def _start_timers(self) -> None:
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setInterval(500)
@@ -1652,10 +1646,7 @@ class SimulatorWindow(QMainWindow):
         self._show_fault_popup("应用曲线失败", message, str(self.db_path))
 
     def initialize_database(self) -> None:
-        if any(
-            process.state() != QProcess.ProcessState.NotRunning
-            for process in (self._runner, self._tcp_server)
-        ):
+        if any(read_service_status(self.db_path, role).active for role in ("simulation", "tcp")):
             QMessageBox.warning(self, "初始化失败", "请先停止仿真和 TCP 服务")
             return
         try:
@@ -1697,10 +1688,16 @@ class SimulatorWindow(QMainWindow):
         )
 
     def _ensure_runner(self) -> None:
-        if self._runner.state() != QProcess.ProcessState.NotRunning:
+        service = read_service_status(self.db_path, "simulation")
+        if service.active:
             return
-        self._runner.setWorkingDirectory(str(ROOT_DIR))
-        self._runner.start(sys.executable, ["-m", "A_simulator", "run", "--db", str(self.db_path)])
+        pid = launch_background_process(
+            self.db_path,
+            "simulation",
+            [sys.executable, "-m", "A_simulator", "run", "--db", str(self.db_path)],
+            working_directory=ROOT_DIR,
+        )
+        self._append_ui_event("INFO", "仿真", f"后台计算进程启动请求已提交，pid={pid}")
 
     def control_simulation(self, action: str) -> None:
         try:
@@ -1730,18 +1727,18 @@ class SimulatorWindow(QMainWindow):
             QMessageBox.warning(self, "新建会话失败", str(error))
 
     def toggle_tcp_server(self) -> None:
-        if self._tcp_server.state() != QProcess.ProcessState.NotRunning:
-            self._append_ui_event("INFO", "TCP", "正在停止服务")
-            self._tcp_server.terminate()
-            # Windows console processes do not always react to terminate().  Keep
-            # the GUI responsive and escalate to kill only if it is still alive.
-            QTimer.singleShot(1200, self._force_stop_tcp)
+        if read_service_status(self.db_path, "tcp").active:
+            request_service_stop(self.db_path, "tcp")
+            self._append_ui_event("INFO", "TCP", "已请求后台 TCP 服务安全停止")
+            self.statusBar().showMessage("TCP 服务正在停止", 3000)
             return
         self._ensure_tcp_server()
 
     def _ensure_tcp_server(self) -> bool:
         """Start A's TCP child when needed and report whether startup was accepted."""
-        if self._tcp_server.state() != QProcess.ProcessState.NotRunning:
+        service = read_service_status(self.db_path, "tcp")
+        if service.active:
+            self._adopt_tcp_endpoint(service)
             return True
         if not self.db_path.is_file():
             QMessageBox.warning(self, "TCP 服务", "请先初始化 grid.db")
@@ -1759,30 +1756,34 @@ class SimulatorWindow(QMainWindow):
             QMessageBox.warning(self, "TCP 服务", "监听地址不能为空")
             return False
         port = self.portSpin.value()
-        self._tcp_server.setWorkingDirectory(str(ROOT_DIR))
         self._active_bind = bind
         self._active_port = port
-        self._tcp_server.start(
-            sys.executable,
+        pid = launch_background_process(
+            self.db_path,
+            "tcp",
             [
-                "-m", "A_simulator", "serve", "--db", str(self.db_path),
+                sys.executable, "-m", "A_simulator", "serve", "--db", str(self.db_path),
                 "--config", str(self.config_path), "--bind", bind, "--port", str(port),
             ],
+            working_directory=ROOT_DIR,
         )
-        self._append_ui_event("INFO", "TCP", f"启动监听 {bind}:{port}")
+        self._append_ui_event("INFO", "TCP", f"后台监听启动请求 {bind}:{port}，pid={pid}")
         return True
 
     def _force_stop_tcp(self) -> None:
-        if self._tcp_server.state() != QProcess.ProcessState.NotRunning:
-            self._append_ui_event("WARNING", "TCP", "服务未响应停止请求，已强制结束子进程")
-            self._tcp_server.kill()
+        if read_service_status(self.db_path, "tcp").active:
+            request_service_stop(self.db_path, "tcp")
+            self._append_ui_event("WARNING", "TCP", "后台服务仍在运行，已再次提交安全停止请求")
 
-    def _tcp_state_changed(self, state: QProcess.ProcessState) -> None:
-        running = state != QProcess.ProcessState.NotRunning
+    def _adopt_tcp_endpoint(self, service: ServiceStatus) -> None:
+        bind = service.metadata.get("bind")
+        port = service.metadata.get("port")
+        self._active_bind = str(bind) if bind else None
+        self._active_port = int(port) if isinstance(port, int) else None
+
+    def _render_tcp_state(self, running: bool) -> None:
         self.tcp_button.setText("停止 TCP 服务" if running else "启动 TCP 服务")
         self._set_button_role(self.tcp_button, "danger" if running else "primary")
-        # Endpoint inputs remain editable while running.  Changes are retained
-        # for the next start instead of presenting disabled spin buttons.
         self.bindCombo.setEnabled(True)
         self.portSpin.setEnabled(True)
         if not running:
@@ -1793,6 +1794,19 @@ class SimulatorWindow(QMainWindow):
             "TCP 运行" if running else "TCP 停止",
             COLORS["good"] if running else COLORS["bad"],
         )
+
+    def _refresh_service_status(self) -> tuple[ServiceStatus, ServiceStatus]:
+        simulation = read_service_status(self.db_path, "simulation")
+        tcp = read_service_status(self.db_path, "tcp")
+        if tcp.active:
+            self._adopt_tcp_endpoint(tcp)
+        self._render_tcp_state(tcp.active)
+        return simulation, tcp
+
+    def _tcp_state_changed(self, state: QProcess.ProcessState) -> None:
+        """Compatibility hook for tests and older integrations using QProcess states."""
+        running = state != QProcess.ProcessState.NotRunning
+        self._render_tcp_state(running)
         self._update_communication_summary()
 
     def _read_process_output(self, process: QProcess, source: str, stderr: bool, discard: bool = False) -> None:
@@ -1914,6 +1928,7 @@ class SimulatorWindow(QMainWindow):
         label.update()
 
     def refresh_state(self) -> None:
+        simulation_service, _tcp_service = self._refresh_service_status()
         self._update_communication_summary()
         if not self.db_path.is_file():
             self._database_health = "未初始化"
@@ -1969,12 +1984,19 @@ class SimulatorWindow(QMainWindow):
             label.setText(f"{float(getattr(state, key)):.1f}")
 
         state_names = {"ready": "就绪", "running": "运行", "paused": "暂停", "stopped": "停止", "completed": "完成"}
-        sim_state = "good" if status == "running" else "warn"
+        simulation_online = simulation_service.active
+        sim_state = "good" if status == "running" and simulation_online else "warn"
         if status == "stopped":
             sim_state = "bad"
+        process_detail = (
+            f"后台 pid={simulation_service.pid}"
+            if simulation_online
+            else "后台计算进程未运行"
+        )
         self._update_status_card(
-            "simulation", sim_state, f"●  {state_names.get(status, status)}",
-            f"step={state.step}　采样 {format_beijing_time(state.sampled_at_utc)} UTC+8",
+            "simulation", sim_state,
+            f"●  {state_names.get(status, status)}" if simulation_online or status != "running" else "●  进程离线",
+            f"step={state.step}　{process_detail}　采样 {format_beijing_time(state.sampled_at_utc)} UTC+8",
         )
         self._update_status_card(
             "wind", "good" if state.wind_running else "bad",
@@ -2661,7 +2683,10 @@ class SimulatorWindow(QMainWindow):
     def _update_communication_summary(self) -> None:
         bind = self.bindCombo.currentText().strip()
         port = self.portSpin.value()
-        running = self._tcp_server.state() != QProcess.ProcessState.NotRunning
+        service = read_service_status(self.db_path, "tcp")
+        running = service.active
+        if running:
+            self._adopt_tcp_endpoint(service)
         self.communicationLabels["local"].setText(self.localIpEdit.text())
         if running and self._active_bind is not None and self._active_port is not None:
             active = f"{self._active_bind}:{self._active_port}　运行"
@@ -2691,21 +2716,8 @@ class SimulatorWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self._history_debounce_timer.stop()
         self._history_pool.clear()
-        if (
-            self._runner.state() != QProcess.ProcessState.NotRunning
-            and self.db_path.is_file()
-        ):
-            try:
-                if self.repository.runtime()["status"] == "running":
-                    self.repository.set_status("pause")
-            except (OSError, RuntimeError, ValueError, sqlite3.Error):
-                pass
-        for process in (self._runner, self._tcp_server):
-            if process.state() != QProcess.ProcessState.NotRunning:
-                process.terminate()
-                if not process.waitForFinished(1000):
-                    process.kill()
-                    process.waitForFinished(1000)
+        # The calculation and TCP workers are intentionally detached services.
+        # Closing this observer/controller must not pause or terminate them.
         super().closeEvent(event)
 
 

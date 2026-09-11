@@ -10,7 +10,7 @@
 - 纯函数单步模型：A 独立复算风速物理上限用于 actual 安全裁剪，并执行桨距降额、风/柴目标跟踪、上下限和爬坡约束。
 - 明确区分 B 的功率目标、C 的启停/桨距动作与 A 计算的实际出力。
 - SQLite `grid.db`：仿真状态、场景、设备参数、控制状态、当前状态、状态历史、SCADA 当前/历史、命令、连接状态和日志。
-- 独立计算循环与线程化 TCP 服务；TCP 使用协议草案中的 UTF-8 JSON + LF，处理半帧/粘包、帧长、非法 JSON、NaN/Infinity、重复和乱序命令。
+- GUI、计算循环和线程化 TCP 服务彼此独立；计算与 TCP 各自运行在独立 Python 进程，TCP 使用协议草案中的 UTF-8 JSON + LF，处理半帧/粘包、帧长、非法 JSON、NaN/Infinity、重复和乱序命令。
 - PyQt6 综合监控界面：在“运行监控”同页展示通信配置、仿真/CSV 控制、关键指标、设备与连接状态、实时风速和实时功率曲线，并可切换到场景编辑模式。
 - 参数设置页按 `owner/source/updated_at_utc` 展示当前参数；只允许在 A 界面编辑 A 负责的可编辑项，B/C 参数通过协议同步后以只读副本显示，避免跨模块越权修改。
 - 历史数据页按 UTC+8 所选时段和 session 查询 `state_history`、运行日志与场景/控制变化，返回值严格落在同一 UTC 闭区间；曲线标题明确变量、单位和时间制，会话选择器避免重放后把不同 `session_id` 的曲线错误相连。
@@ -23,7 +23,7 @@
 - 协议/数据库/进程异常会写日志并显示非阻塞错误弹窗，主界面轮询与绘制继续运行；正常 `peer_connection_closed` 只记 INFO，不把主动断开或快速换链误报为弹窗故障。`scripts/fault_injection/` 提供坏帧、断线/空闲和非法输入副本脚本。
 - 停止或完成后可从界面“新建会话”：生成新的 `session_id`，安全清零目标/实际出力并完全顺桨，同时保留场景、参数与旧会话历史。
 - 旧数据库损坏或版本不兼容时，GUI 显示 `grid.db 异常`并启用修复按钮；确认后先把数据库及 WAL 文件备份为带 UTC 时间戳的 `.bak`，再用当前曲线初始化新库，失败时自动恢复原文件。
-- GUI 通过独立 `QProcess` 启动计算循环和 TCP 服务，不在界面线程内执行阻塞收发或仿真循环。
+- GUI 只负责观察和控制，通过 PID、文件锁及周期心跳识别后台计算/TCP 进程。关闭 GUI 不会暂停仿真或关闭通信；再次打开 GUI 会从同一 `grid.db` 恢复显示并接管控制。每个数据库的每类服务最多运行一个实例。
 - 标准库 `unittest` 测试和本地 TCP 冒烟测试。
 
 ## 尚未实现或尚未确认
@@ -74,6 +74,16 @@ uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 .\scripts\run_a.ps1 show
 ```
 
+GUI 中点击“启动（含 TCP）”会拉起两个脱离 GUI 生命周期的后台进程。关闭窗口后计算和 A server 都继续运行；需要显式查看或停止后台服务时使用：
+
+```powershell
+.\.venv\Scripts\python.exe -m A_simulator services status
+.\.venv\Scripts\python.exe -m A_simulator services start --role all
+.\.venv\Scripts\python.exe -m A_simulator services stop --role all
+```
+
+`services stop --role simulation` 会先把仍在运行的仿真安全转为暂停，再结束计算进程；停止 TCP 不影响计算。后台状态文件、互斥锁和合并日志位于 `grid.db` 同目录，名称以 `.grid.db.a-` 开头，不替代数据库内的业务日志。
+
 不使用一键脚本时，也可直接启动综合监控界面：
 
 ```powershell
@@ -96,7 +106,7 @@ CSV 表头固定为 `step,sim_time_s,wind_speed_mps,load_power_kw`。从 CSV 加
 
 数据库默认生成在 `data/runtime/grid.db`，已由根目录 `.gitignore` 排除。`init` 不覆盖已有数据库。当前 `grid.db` schema 为 v6；完整的 v4/v5 数据库会在首次访问时原地迁移并保留状态历史，v4 以下或结构损坏的旧库不会猜测迁移，应先备份再初始化新库。
 
-GUI 可启动独立 TCP 子进程；命令行调试时也可在另一个终端启动：
+GUI 可启动独立 TCP 后台进程；命令行调试时也可在另一个终端启动：
 
 ```powershell
 .\scripts\run_a.ps1 serve
@@ -125,6 +135,12 @@ FRP/raw TCP 穿透时，要区分 A 的本地监听端点和客户端访问的�
 ```
 
 ## 更新日志
+
+### 2026-09-11 · A GUI 与后台服务生命周期解耦
+
+- 计算循环和 TCP server 改为两个 GUI 外独立 Python 进程；关闭或重开界面不再暂停计算、断开 A server 或中断 B/C 会话。
+- 每个 `grid.db` 分别以系统文件锁限制一个计算实例和一个 TCP 实例，并发布 PID、端点和心跳；GUI 重开后自动识别现有进程，避免重复启动。
+- 增加 `services start/status/stop` 运维入口和进程级回归，验证启动者返回后数据库仍推进、TCP 仍能响应；SQLite 继续采用 WAL 与短事务，不以共享内存跨进程传递状态。
 
 ### 2026-09-10 · A 场景曲线运行期热更新
 
@@ -203,7 +219,7 @@ FRP/raw TCP 穿透时，要区分 A 的本地监听端点和客户端访问的�
 ## 测试
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest tests.test_a_simulator tests.test_a_gui -v
+.\.venv\Scripts\python.exe -m unittest tests.test_a_simulator tests.test_a_gui tests.test_a_background -v
 ```
 
-测试覆盖无风、适宜风速、切出风速、负荷与出力不平衡、柴油机上下限/爬坡、场景插值与 CSV 往返、综合界面离屏构造、参数写权限、UTC 曲线、数据库历史、命令去重/越序、TCP 半帧与粘包。测试不等同于真实硬件联调。
+测试覆盖无风、适宜风速、切出风速、负荷与出力不平衡、柴油机上下限/爬坡、场景插值与 CSV 往返、综合界面离屏构造、GUI 关闭不暂停、独立后台计算/TCP、参数写权限、UTC 曲线、数据库历史、命令去重/越序、TCP 半帧与粘包。测试不等同于真实硬件联调。

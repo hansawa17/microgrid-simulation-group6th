@@ -7,6 +7,7 @@ import math
 import socket
 import socketserver
 import threading
+from typing import Callable
 
 from .repository import Repository
 
@@ -292,8 +293,25 @@ class SimulatorTCPServer(socketserver.ThreadingTCPServer):
                 self.repository.log(level, event, f"{peer}: {detail}")
 
 
-def serve(repository: Repository, bind: str, port: int, max_frame_bytes: int) -> None:
+def serve(
+    repository: Repository,
+    bind: str,
+    port: int,
+    max_frame_bytes: int,
+    *,
+    stop_requested: Callable[[], bool] | None = None,
+    heartbeat: Callable[[], None] | None = None,
+) -> None:
     with SimulatorTCPServer((bind, port), repository, max_frame_bytes) as server:
         actual_host, actual_port = server.server_address
         print(f"A simulator TCP server listening on {actual_host}:{actual_port}", flush=True)
-        server.serve_forever(poll_interval=0.2)
+        if stop_requested is None:
+            server.serve_forever(poll_interval=0.2)
+            return
+        server.timeout = 0.2
+        if heartbeat is not None:
+            heartbeat()
+        while not stop_requested():
+            server.handle_request()
+            if heartbeat is not None:
+                heartbeat()
