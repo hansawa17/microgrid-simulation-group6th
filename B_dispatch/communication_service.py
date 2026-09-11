@@ -125,6 +125,7 @@ class EMSCommunicationService:
                 keep = {"session_id", "dispatch_command_id", "dispatch_step", "feedback_step", "c_wind_action_seq", "dispatch_created_at_utc", "feedback_sampled_at_utc", "wind_action_applied_at_utc", "response_latency_s", "b_wind_enable", "b_wind_target_kw", "c_controller_wind_enable", "c_pitch_target_deg", "c_wind_available_kw", "c_wind_operating_limit_kw", "a_wind_running", "a_wind_actual_kw", "a_pitch_actual_deg", "a_fault", "start_stop_score", "power_tracking_score", "pitch_response_score", "capability_safety_score", "total_score", "verdict", "reason"}
                 data = {key: getattr(result, key) for key in result.__dataclass_fields__ if key in keep}
                 data["outbox_id"] = None
+                data["evaluated_at_utc"] = utc_now()
                 self.repository.record_wind_execution_evaluation(data)
                 self.repository.record_log("INFO", "wind_execution_evaluated", f"dispatch={cmd['id']} feedback_step={feedback['step']} score={result.total_score:.1f}", session_id=cmd["session_id"], step=feedback["step"])
 
