@@ -19,6 +19,7 @@ from .evaluation import EVALUATION_WEIGHTS, EvaluationResult, SCORING_RULES, eva
 from .gui_b_legacy import MainWindow as _LegacyMainWindow, TrendChart
 from .models import DispatchConfig, DispatchResult, GridState
 from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError, parse_endpoint
+from .wind_execution import evaluate_pair, find_feedback
 
 
 class MainWindow(_LegacyMainWindow):
@@ -30,6 +31,7 @@ class MainWindow(_LegacyMainWindow):
         self._last_diag_text = ""
         self._last_sent_command: tuple[float, float, bool, bool] | None = None
         self._last_decision_monotonic = 0.0
+        self._pending_dispatch_record: dict[int, object] = {}
         super().__init__()
         self.client = None
         self._ensure_db()
@@ -66,6 +68,7 @@ class MainWindow(_LegacyMainWindow):
                     self._reload_physical_widgets()
             except Exception as exc:
                 self.log(f"参数同步失败：{exc}")
+        self._persist_wind_execution()
 
     def _reload_physical_widgets(self) -> None:
         try:
@@ -252,6 +255,8 @@ class MainWindow(_LegacyMainWindow):
             self._manual_dispatch_pending = False
             self._last_sent_command = None
             self._last_decision_monotonic = 0.0
+            if hasattr(self, "_pending_dispatch_record"):
+                self._pending_dispatch_record.clear()
             if hasattr(self, "send_btn"):
                 self.send_btn.setEnabled(True)
                 self.send_btn.setText("下发当前调度")
@@ -273,6 +278,73 @@ class MainWindow(_LegacyMainWindow):
             or command[2] != last[2]
             or command[3] != last[3]
         )
+
+    def _record_dispatch_result(self, decision, seq: int, status: str, ack) -> None:
+        """Persist a B dispatch command so wind-execution evaluation has source data."""
+        try:
+            self._ensure_db()
+            state = decision.state
+            result = decision.result
+            self.repo.record_command({
+                "session_id": state.session_id,
+                "step": state.step,
+                "sim_time_s": state.sim_time_s,
+                "source": "B",
+                "seq": seq,
+                "wind_target_kw": result.wind_target_kw,
+                "diesel_target_kw": result.diesel_target_kw,
+                "wind_enable": result.wind_enable,
+                "diesel_enable": result.diesel_enable,
+                "status": status,
+                "reason": result.reason,
+                "ack_accepted": None if ack is None else bool(ack.accepted),
+                "ack_reason": None if ack is None else ack.reason,
+                "ack_received_at_utc": None if ack is None else datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            })
+        except Exception as exc:
+            self.log(f"dispatch 命令落库失败：{exc}")
+
+    def _persist_wind_execution(self) -> None:
+        """Evaluate accepted dispatches against later A feedback and store the rows."""
+        try:
+            self._ensure_db()
+            max_age = float(self.params.get("max_age_s", 2.0))
+            keep = {
+                "session_id", "dispatch_command_id", "dispatch_step", "feedback_step",
+                "c_wind_action_seq", "dispatch_created_at_utc", "feedback_sampled_at_utc",
+                "wind_action_applied_at_utc", "response_latency_s", "b_wind_enable",
+                "b_wind_target_kw", "c_controller_wind_enable", "c_pitch_target_deg",
+                "c_wind_available_kw", "c_wind_operating_limit_kw", "a_wind_running",
+                "a_wind_actual_kw", "a_pitch_actual_deg", "a_fault", "start_stop_score",
+                "power_tracking_score", "pitch_response_score", "capability_safety_score",
+                "total_score", "verdict", "reason",
+            }
+            with self.repo.connection() as conn:
+                cmds = conn.execute(
+                    "SELECT c.* FROM dispatch_commands c "
+                    "WHERE c.status='accepted' AND c.ack_accepted=1 "
+                    "AND NOT EXISTS(SELECT 1 FROM wind_execution_evaluation w WHERE w.dispatch_command_id=c.id) "
+                    "ORDER BY c.id"
+                ).fetchall()
+                for cmd in cmds:
+                    feedback, _reason = find_feedback(conn, cmd, max_age_s=max_age)
+                    if feedback is None:
+                        continue
+                    try:
+                        result = evaluate_pair(cmd, feedback)
+                    except ValueError:
+                        continue
+                    data = {key: getattr(result, key) for key in result.__dataclass_fields__ if key in keep}
+                    data["outbox_id"] = None
+                    data["evaluated_at_utc"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                    self.repo.record_wind_execution_evaluation(data)
+                    self.repo.record_log(
+                        "INFO", "wind_execution_evaluated",
+                        f"dispatch={cmd['id']} feedback_step={feedback['step']} score={result.total_score:.1f}",
+                        session_id=cmd["session_id"], step=feedback["step"],
+                    )
+        except Exception as exc:
+            self.log(f"风机执行评价落库失败：{exc}")
 
     def set_runtime_timer(self) -> None:
         """Run the YK/YT check every poll period (1 s); decisions are gated inside ``runtime_tick``."""
@@ -345,6 +417,9 @@ class MainWindow(_LegacyMainWindow):
             elif got_ack and self._manual_dispatch_pending and c._pending_state_request_seq is None and c._pending_ack_seq is None:
                 self._try_send_queued_dispatch()
         except DispatchDeliveryUnknown as exc:
+            decision = self._pending_dispatch_record.pop(exc.seq, None)
+            if decision is not None:
+                self._record_dispatch_result(decision, exc.seq, "delivery_unknown", None)
             self.last_ack = None
             self.auto_dispatch = False
             self.auto_box.blockSignals(True); self.auto_box.setChecked(False); self.auto_box.blockSignals(False)
@@ -409,6 +484,7 @@ class MainWindow(_LegacyMainWindow):
                 self._cancel_queued_dispatch("最新 state 无法生成有效 EMS decision", show_message=False)
                 return
             seq = c.send_dispatch_nowait(self.last_decision)
+            self._pending_dispatch_record[seq] = self.last_decision
             self._last_sent_command = self._decision_command(self.last_decision)
             self._last_decision_monotonic = time.monotonic()
             ack = c.get_ack(seq)
@@ -421,6 +497,9 @@ class MainWindow(_LegacyMainWindow):
             self.send_btn.setText("下发当前调度")
             self.statusBar().showMessage(f"调度已下发 seq={seq}" + (f" / ACK={ack.accepted}" if ack else ""))
         except DispatchDeliveryUnknown as exc:
+            decision = self._pending_dispatch_record.pop(exc.seq, None)
+            if decision is not None:
+                self._record_dispatch_result(decision, exc.seq, "delivery_unknown", None)
             self.last_ack = None
             self._manual_dispatch_pending = False
             self.send_btn.setEnabled(True)
@@ -480,6 +559,7 @@ class MainWindow(_LegacyMainWindow):
             return
         try:
             seq = self.client.send_dispatch_nowait(self.last_decision)
+            self._pending_dispatch_record[seq] = self.last_decision
             ack = self.client.get_ack(seq)
             if ack is not None:
                 self.last_ack = ack
@@ -487,6 +567,9 @@ class MainWindow(_LegacyMainWindow):
             self._last_sent_command = command
             self.log(f"自动下发 dispatch seq={seq}" + (f" / ACK={ack.accepted}" if ack else ""))
         except DispatchDeliveryUnknown as exc:
+            decision = self._pending_dispatch_record.pop(exc.seq, None)
+            if decision is not None:
+                self._record_dispatch_result(decision, exc.seq, "delivery_unknown", None)
             self.log(f"自动调度 ACK 未知 seq={exc.seq}，禁止盲目重发")
         except ProtocolError as exc:
             self.log(f"自动调度等待中：{exc}")
@@ -516,6 +599,11 @@ class MainWindow(_LegacyMainWindow):
 
     def handle_ack(self,ack) -> None:
         super().handle_ack(ack)
+        decision = self._pending_dispatch_record.pop(ack.ack_seq, None)
+        if decision is not None:
+            self._record_dispatch_result(decision, ack.ack_seq, "accepted" if ack.accepted else "rejected", ack)
+            if ack.accepted:
+                self._persist_wind_execution()
         try:
             session_id=self.state.session_id if self.state else None; step=self.state.step if self.state else None; self._ensure_db(); self.repo.record_log('INFO' if ack.accepted else 'WARNING','ack_received',f'ACK seq={ack.ack_seq} accepted={ack.accepted} reason={ack.reason}',session_id=session_id,step=step)
         except Exception as exc: self.log(f'ACK 日志写库失败：{exc}')
