@@ -41,6 +41,7 @@ class Controller(QObject):
         self._sim_on = False
         self._param_request_id = 0  # $PARAM2/$PARAMGET? 请求序号（递增）
         self._pending_param = None  # 等待 MCU 回读验证的 {"request_id": int, "params": dict}
+        self._readback_request_id = None  # 手动"读回 MCU 参数"按键的 request_id
 
         # 通信超时检测定时器
         self._timeout_timer = QTimer(self)
@@ -87,6 +88,7 @@ class Controller(QObject):
         # 参数
         ui.applyParamsButton.clicked.connect(self.apply_params)
         ui.resetParamsButton.clicked.connect(self.reset_params)
+        ui.readParamsButton.clicked.connect(self.read_params_from_mcu)
 
         # 远程控制
         ui.startButton.clicked.connect(lambda: self.send_command("START"))
@@ -142,6 +144,7 @@ class Controller(QObject):
         self.ui.set_comm_pills(pca_online=None, stm32_online=ok)
         self.ui.connectSerialButton.setEnabled(not ok)
         self.ui.disconnectSerialButton.setEnabled(ok)
+        self.ui.readParamsButton.setEnabled(ok)   # 读回 MCU 参数仅在串口连接时可用
         if ok:
             self.ui.status_message("STM32 串口已连接")
             self.db.insert_system_log("INFO", "UART_CONNECT", "STM32 串口连接成功", source="UART")
@@ -263,31 +266,68 @@ class Controller(QObject):
             QMessageBox.warning(self.ui, "参数错误", "切出风速必须大于额定风速。")
             return
 
-        # 更新数据库（含 remote_adjust 记录）
+        # 更新数据库（含 remote_adjust 记录，source=GUI：仅代表"界面下发意图"）
         try:
-            changes = self.db.update_params(params)
+            changes = self.db.update_params(params, source="GUI")
         except Exception as e:
             QMessageBox.warning(self.ui, "数据库错误", str(e))
             return
+
+        has_link = self.serial is not None and self.serial.is_open()
 
         # 下发到数据源（$PARAM2 原子应用；MCU 确认后经 $PARAMGET 回读验证）
         self._send_params(params)
 
         self.simulator.set_params(params)
-        self.ui.status_message(f"参数已下发（{len(changes)} 项改动），等待 MCU 回读确认")
-        self.db.insert_system_log("INFO", "PARAM_APPLY", f"参数下发成功，共 {len(changes)} 项改动", source="GUI")
+        if has_link:
+            # 写库后先置"未验证"，等 MCU 回读 $PARAMGET 一致后才置 verified=1
+            self.db.mark_param_verified(0, reason="等待 MCU 回读确认")
+            self.ui.set_param_verify_status(False, reason="等待 MCU 回读确认")
+            self.ui.status_message(f"参数已下发（{len(changes)} 项改动），等待 MCU 回读确认")
+            self.db.insert_system_log("INFO", "PARAM_APPLY", f"参数下发成功，共 {len(changes)} 项改动", source="GUI")
+        else:
+            # 未连接 MCU：改动只写入本地数据库（remote_adjust.source=GUI），从未下发到单片机；
+            # 显式标记"未下发"，之后可用"读回 MCU 参数"按键以 MCU 实际值覆盖回数据库。
+            reason = "未下发：串口未连接，仅写入本地数据库"
+            self.db.mark_param_verified(0, reason=reason)
+            self.ui.set_param_verify_status(False, reason=reason)
+            self.ui.status_message(f"参数仅写入本地数据库（{len(changes)} 项改动，未连接 STM32 未下发）；"
+                                   "连接后点“读回 MCU 参数”可核对")
+            self.db.insert_system_log("WARNING", "PARAM_APPLY_LOCAL",
+                                      f"串口未连接，参数仅写入本地数据库未下发，共 {len(changes)} 项改动", source="GUI")
 
     def _send_params(self, params):
         # 使用 $PARAM2（原子应用）：MCU 完整解析校验后一次性应用并递增 parameter_revision，
         # 随后返回同 request_id 的 $PARAMGET 供上位机回读验证。
         self._param_request_id += 1
         request_id = self._param_request_id
-        self._pending_param = {"request_id": request_id, "params": params}
         frame = protocol.build_param2_frame(request_id, params)
         if self.serial is not None and self.serial.is_open():
             ok = self.serial.send(frame)
+            if ok:
+                # 仅在帧真正发出后才登记待验证请求，避免离线改动被后续读回误判为"已验证"
+                self._pending_param = {"request_id": request_id, "params": params}
             self.db.insert_communication_log("UART", "TX", "PARAM2", data_length=len(frame), result=1 if ok else 0)
         # 仿真模式：simulator.set_params 已在调用处处理
+
+    def read_params_from_mcu(self):
+        """「读回 MCU 参数」按键：发 $PARAMGET? 查询，用 MCU 实际生效值覆盖 GUI 与数据库。
+
+        验证语义：数据库 parameter 表以单片机经串口读回的值为准，而非 GUI 面板输入值。
+        """
+        if self.serial is None or not self.serial.is_open():
+            QMessageBox.warning(self.ui, "无法读回", "未连接 STM32 串口，无法读回 MCU 参数。")
+            self.db.insert_system_log("WARNING", "PARAM_READBACK_REQ",
+                                      "串口未连接，读回 MCU 参数请求未发出", source="GUI")
+            return
+        self._param_request_id += 1
+        self._readback_request_id = self._param_request_id
+        frame = protocol.build_paramget_query_frame(self._readback_request_id)
+        ok = self.serial.send(frame)
+        self.db.insert_communication_log("UART", "TX", "PARAMGET?", data_length=len(frame), result=1 if ok else 0)
+        self.db.insert_system_log("INFO", "PARAM_READBACK_REQ",
+                                  f"请求读回 MCU 参数 request_id={self._readback_request_id}", source="GUI")
+        self.ui.status_message("已发送 $PARAMGET?，等待 MCU 读回…")
 
     def reset_params(self):
         self.ui.load_params_form(config.DEFAULT_PARAMS)
@@ -383,6 +423,18 @@ class Controller(QObject):
         self.ui.load_params_form(payload)
         self.simulator.set_params(payload)
         self.ui.set_param_revision(revision)
+
+        # 手动"读回 MCU 参数"按键的应答：用 MCU 实际生效值覆盖数据库（source=MCU 留审计痕迹）
+        if self._readback_request_id is not None and request_id == self._readback_request_id:
+            self._readback_request_id = None
+            changes = self.db.sync_params_from_mcu(payload, revision=revision)
+            self.ui.set_param_verify_status(True, revision=revision)
+            overwritten = ", ".join(f"{k}: {o} → {n}" for k, o, n in changes) or "无差异"
+            self.ui.status_message(f"已用 MCU 读回值覆盖数据库（版本 {revision}，覆盖 {len(changes)} 项：{overwritten}）")
+            self.db.insert_system_log("INFO", "PARAM_READBACK",
+                                      f"数据库以 MCU 读回值为准 revision={revision}，覆盖 {len(changes)} 项 [{overwritten}]",
+                                      source="MCU")
+            return
 
         if self._pending_param is not None and self._pending_param["request_id"] == request_id:
             expected = self._pending_param["params"]

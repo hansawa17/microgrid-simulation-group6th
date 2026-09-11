@@ -281,8 +281,12 @@ class Database:
             )
             self._conn.commit()
 
-    def update_params(self, new_params):
-        """更新参数表，并把改动逐项写入 remote_adjust。返回改动项列表。"""
+    def update_params(self, new_params, source="GUI"):
+        """更新参数表，并把改动逐项写入 remote_adjust。返回改动项列表。
+
+        source 记录改动来源（GUI=界面下发；MCU=从单片机读回覆盖），
+        供审计区分"本地意图"与"MCU 实际生效值"。
+        """
         with self._lock:
             old = self.get_params()
             cur = self._conn.cursor()
@@ -304,9 +308,32 @@ class Database:
                     cur.execute(
                         "INSERT INTO remote_adjust (device_id, parameter_name, old_value, new_value, unit, adjust_time, source, result) "
                         "VALUES (?,?,?,?,?,?,?,?)",
-                        (1, k, old_v, new_v, unit, now_ms(), "GUI", 1),
+                        (1, k, old_v, new_v, unit, now_ms(), source, 1),
                     )
                     changes.append((k, old_v, new_v))
+            self._conn.commit()
+            return changes
+
+    def sync_params_from_mcu(self, params, revision=None):
+        """用 MCU 经 $PARAMGET 串口读回的生效参数覆盖本地 parameter 表。
+
+        - 库中参数以 MCU 返回值为准（证明数据库参数来自单片机而非 GUI 面板）；
+        - 有差异的字段逐项写 remote_adjust（source="MCU"，old=本地值，new=MCU 值），
+          作为可审计证据；
+        - 同时刷新 parameter_revision 并置 parameter_verified=1（库值 == MCU 值）。
+        返回被覆盖的改动项列表 [(key, old, new), ...]。
+        """
+        with self._lock:
+            old = self.get_params()
+            new_params = {k: params.get(k, old.get(k)) for k in config.PARAM_FIELDS}
+            changes = self.update_params(new_params, source="MCU")
+            sql = "UPDATE parameter SET parameter_verified=1, verified_at_utc=?, verify_reason=?"
+            args = [now_ms(), "MCU 读回同步"]
+            if revision is not None:
+                sql += ", parameter_revision=?"
+                args.append(int(revision))
+            sql += " WHERE device_id=1"
+            self._conn.execute(sql, args)
             self._conn.commit()
             return changes
 

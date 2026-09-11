@@ -599,6 +599,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.applyParamsButton = self._button("应用参数", "primary")
         self.resetParamsButton = self._button("恢复默认", "secondary")
+        # 读回 MCU 参数：发 $PARAMGET? 查询，用单片机实际生效值覆盖表单与 wind.db
+        # （验证数据库参数来自 MCU 串口回读，而非 GUI 面板；仅串口连接时可用）
+        self.readParamsButton = self._button("读回 MCU 参数", "secondary")
+        self.readParamsButton.setEnabled(False)
+        self.readParamsButton.setToolTip("向单片机发送 $PARAMGET? 查询，用 MCU 实际生效参数覆盖界面与数据库")
+        grid.addWidget(self.readParamsButton, 8, 0)
         grid.addWidget(self.applyParamsButton, 8, 1)
         grid.addWidget(self.resetParamsButton, 8, 2)
 

@@ -122,6 +122,34 @@ C_controller/
 - 验证：本地上位机测试 40/40 通过；**固件未编译**（本机无交叉工具链），
   「开环 + A 在线不回 wind_action」待烧录后实机复测。
 
+### 2026-09-11 · 「读回 MCU 参数」按键 + 参数来源审计（数据库以 MCU 为准）
+
+仅上位机改动（`gui.py / controller.py / database.py`），固件与 TCP `version=1` 协议不变，
+不影响 A/B 功能。
+
+- **「读回 MCU 参数」按键**（参数页，未连串口时置灰）：发 `$PARAMGET?,<request_id>`，
+  收到 MCU 应答后用**单片机实际生效值**覆盖 GUI 表单、本地仿真器与 `wind.db`：
+  - `database.sync_params_from_mcu()`：`parameter` 表写 MCU 值、`parameter_verified=1`、
+    `verify_reason="MCU 读回同步"`、刷新 `parameter_revision`；
+  - 被覆盖字段逐项写 `remote_adjust`（**`source="MCU"`**，old=本地值、new=MCU 值），
+    与 GUI 下发行（`source="GUI"`）在来源列上可区分——数据库参数来自 MCU 串口回读
+    而非界面输入的直接审计证据；
+  - `system_log` 记 `PARAM_READBACK_REQ → PARAM_READBACK`，`communication_log` 记
+    TX `PARAMGET?` / RX `PARAMGET` 配对。
+- **离线改动显式标记**：串口未连接时「应用参数」仍写本地库（保留操作意图），但强制
+  `parameter_verified=0`、`verify_reason="未下发：串口未连接，仅写入本地数据库"`，
+  `system_log` 记 WARNING `PARAM_APPLY_LOCAL`；在线下发则先置「等待 MCU 回读确认」，
+  回读一致后才 `verified=1`。`$PARAM2` 只有帧真正发出才登记待验证请求，杜绝离线改动
+  被后续读回误判为「MCU 已生效」。
+- 验证方式（无需额外工具，全部在 `wind.db` 可复核）：
+  1. 断连改参数（如额定功率 100→150）→ `parameter`=150、`remote_adjust(source=GUI)`、
+     `verified=0`；
+  2. 连串口点「读回 MCU 参数」→ `parameter` 被覆盖回 MCU 值 100、`verified=1`、
+     `remote_adjust` 新行 `source=MCU, old=150, new=100`。
+- 测试：新增 `tests/test_c_wind_extension.py::ParamReadbackDbTests`（GUI/MCU 来源审计、
+  读回覆盖、无差异不留痕、部分字段读回容错 4 项），C 上位机测试 44/44 通过；
+  仓库全量测试通过（见 v1.1.0-beta.2 发布说明）。
+
 ## 尚未完成 / 待确认
 
 - v1.0.2 后续网络容错修正：启动同步后软复位 ESP8266，连续 5 次建链/通信失败后再执行 `AT+RST`；`CIPSEND` 提示符/`SEND OK` 等待放宽为 3/6 s，state/ACK 默认超时放宽为 8 s。然后重新加入 Wi-Fi、核对 STA IP 并建立 A TCP；USART1 错误会清理半帧并重新挂载接收。C 上位机在 USB 串口拔插后会循环尝试重开原 COM 口。这些代码路径有 PC 静态回归，但仍必须用实物验证断电、拔线、热点断开与 A 重启。
