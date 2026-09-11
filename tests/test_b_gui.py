@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -13,7 +15,7 @@ from PyQt6.QtWidgets import QApplication
 from B_dispatch import gui_b, gui_b_legacy
 from B_dispatch import __main__ as b_main
 from B_dispatch.models import GridState
-from B_dispatch.repository import utc_now
+from B_dispatch.repository import EMSRepository, utc_now
 
 
 class FakeRepository:
@@ -156,6 +158,25 @@ class BGuiConnectionTests(unittest.TestCase):
             self.assertEqual(b_main._launch_full_runtime(), 17)
         initialize.assert_called_once()
         launch_gui.assert_called_once_with()
+
+    def test_real_sqlite_row_can_refresh_physical_parameters(self):
+        original_repo = self.window.repo
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                repo = EMSRepository(Path(temp_dir) / "ems.db")
+                repo.initialize()
+                self.assertFalse(hasattr(repo.get_physical_parameters(), "items"))
+                self.window.repo = repo
+
+                self.window._reload_physical_widgets()
+                self.assertEqual(self.window._physical["wind_rated_kw"], 100.0)
+                self.assertEqual(self.window.c_physical_widgets["wind_cut_out_mps"].value(), 25.0)
+
+                self.window.load_db_config()
+                self.assertEqual(self.window._physical["diesel_max_kw"], 120.0)
+                self.assertEqual(self.window.a_physical_widgets["diesel_min_kw"].value(), 20.0)
+        finally:
+            self.window.repo = original_repo
 
 
 if __name__ == "__main__":
