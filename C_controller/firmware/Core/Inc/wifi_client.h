@@ -17,9 +17,13 @@ void WifiClient_Task(void);       /* 主循环周期性调用（非阻塞） */
 int  WifiClient_IsOnline(void);   /* 是否已连上 A（TCP 已建立） */
 int  WifiClient_HasState(void);   /* 是否已收到 A 的 state（可读取其字段） */
 
-/* 上报风机动作（C 的启停许可 + 桨距目标 + 可用功率 + 稳态上限），仅在线时有效 */
+/* 上报风机动作（C 的启停许可 + 桨距目标 + 可用功率 + 稳态上限），仅在线且闭环时有效 */
 void WifiClient_SendWindAction(uint8_t wind_enable, float pitch_target_deg,
                                float wind_available_kw, float wind_operating_limit_kw);
+
+/* 开环只读消费 A 的 state（不发 wind_action）：清 got_state，
+   使 WifiClient_Task 继续发起下一轮 state_request（验收项31）。 */
+void WifiClient_ReleaseState(void);
 
 /* A 下发的 state 快照（供 wind_turbine 控制使用） */
 float WifiClient_GetWindSpeedMps(void);

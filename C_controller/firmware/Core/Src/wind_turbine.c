@@ -16,8 +16,9 @@
   *   4) 稳态运行上限 power_operating_limit：运行 -> power_available；停机/保护 -> 0。
   *   5) 实际功率 power_actual：联调后由 A 计算；本地兜底 min(available, set)。
   *
-  * 联调时：风速 / B 目标经 Wi-Fi 来自 A；可用功率/稳态上限/桨距由 C 计算后随
-  * wind_action 上报 A；实际功率回读 A。
+  * 联调时：风速 / B 目标经 Wi-Fi 来自 A；闭环下可用功率/稳态上限/桨距由 C 计算后
+  * 随 wind_action 上报 A，实际功率回读 A；开环只读 A 数据、不回 wind_action
+  * （验收项31），计算结果仍经 $WIND2 串口上报。
   ******************************************************************************
   */
 #include "wind_turbine.h"
@@ -455,6 +456,11 @@ uint32_t WindTurbine_GetTimeoutMs(void)
     return ms;
 }
 
+uint8_t WindTurbine_GetControlMode(void)
+{
+    return wt.control_mode;
+}
+
 void WindTurbine_PeriodicTask(void)
 {
     if (!WifiClient_IsOnline())
@@ -475,8 +481,18 @@ void WindTurbine_PeriodicTask(void)
         wt.power_available = wt_power_available();   /* C 计算可用功率（三次方） */
         wt_compute_status_pitch();                   /* 算启停 + 桨距（0-90°） */
         wt_compute_operating_limit();                /* 算稳态上限 */
-        WifiClient_SendWindAction(wt.run_enable, wt.deg,
-                                  wt.power_available, wt.power_operating_limit);
+        if (wt.control_mode == WT_MODE_CLOSED_LOOP)
+        {
+            /* 闭环：向 A 返回启停许可与桨距目标，参与仿真（验收项31） */
+            WifiClient_SendWindAction(wt.run_enable, wt.deg,
+                                      wt.power_available, wt.power_operating_limit);
+        }
+        else
+        {
+            /* 开环：不输出可执行的闭环控制命令（不发 wind_action），只读 A 数据；
+               消费 state 以便下一轮 state_request 继续刷新。 */
+            WifiClient_ReleaseState();
+        }
         wt.power_actual = WifiClient_GetWindActualKw();
     }
     /* 在线但等待 state/ack 时保持上一状态；Wi-Fi 状态机继续推进事务。 */

@@ -10,6 +10,7 @@
 #include "wifi_client.h"
 #include "esp8266.h"
 #include "wifi_config.h"
+#include "wind_turbine.h"   /* WindTurbine_GetTimeoutMs()：运行期通信超时 */
 #include "main.h"
 #include <math.h>
 #include <stdio.h>
@@ -609,9 +610,18 @@ void WifiClient_Task(void)
         {
             if (wf_resend_pending)
             {
-                if (wf_start_frame(wf_pending_frame, wf_pending_len,
-                                   WF_MSG_WIND_ACTION, wf_pending_seq) == 0)
+                if (WindTurbine_GetControlMode() == WT_MODE_OPEN_LOOP)
+                {
+                    /* 已切到开环：丢弃未获 ACK 的 wind_action，不再重发闭环控制命令 */
+                    wf_pending_valid  = 0u;
+                    wf_pending_len    = 0u;
                     wf_resend_pending = 0u;
+                }
+                else if (wf_start_frame(wf_pending_frame, wf_pending_len,
+                                        WF_MSG_WIND_ACTION, wf_pending_seq) == 0)
+                {
+                    wf_resend_pending = 0u;
+                }
             }
             else if (wf_param_update_queued)
             {
@@ -640,6 +650,9 @@ void WifiClient_SendWindAction(uint8_t wind_enable, float pitch_target_deg,
     char frame[WF_FRAME_SIZE];
     char pitch[20], available[20], operating_limit[20];
     int n;
+
+    /* 开环不输出可执行的闭环控制命令（验收项31）；双重保险，上层已按模式分流 */
+    if (WindTurbine_GetControlMode() == WT_MODE_OPEN_LOOP) return;
 
     if (wf_state != WF_ONLINE || !wf.got_state ||
         wf_tx_state != WF_TX_IDLE || wf_app_state != WF_APP_IDLE ||
@@ -703,6 +716,7 @@ const char *WifiClient_GetParamSyncReason(void) { return wf_psync_reason; }
 
 int WifiClient_IsOnline(void)                    { return (wf_state == WF_ONLINE) ? 1 : 0; }
 int WifiClient_HasState(void)                    { return (wf.got_state != 0u) ? 1 : 0; }
+void WifiClient_ReleaseState(void)               { wf.got_state = 0u; }
 float WifiClient_GetWindSpeedMps(void)           { return wf.wind_speed_mps; }
 float WifiClient_GetWindAvailableKw(void)        { return wf.wind_available_kw; }
 float WifiClient_GetWindOperatingLimitKw(void)   { return wf.wind_operating_limit_kw; }

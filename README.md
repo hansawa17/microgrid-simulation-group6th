@@ -114,6 +114,14 @@ B 正式运行由 `gui_b.py` 单一进程持有 B→A TCP，并通过 Qt 定时�
 
 ## 开发时间节点 / 功能增量
 
+### 2026-09-11 · C 开环不回 wind_action（验收项31）+ Wi-Fi 超时接入 c_timeout_s
+
+- C 固件：开环模式不再向 A 发送 `wind_action`，只周期 `state_request` 读取数据，计算结果仍经
+  `$WIND2` 上报串口；切到开环后丢弃未获 ACK 的挂起动作。闭环行为不变，A/B 无需改动。
+- C 固件：state/ACK 等待超时接入运行期 `c_timeout_s`（0.5～30 s 钳位，同步 55b9781），并修复
+  `wifi_client.c` 缺失 include 的隐式声明。
+- C 上位机测试 40/40 通过；固件待重新编译烧录后复测开环场景。
+
 ### 2026-09-10 · B GUI 直接持有 TCP（取代三进程正式入口）
 
 - GUI 是正式运行时唯一的 B→A TCP 所有者，直接接收 state、计算调度并发送 dispatch；不会再并行启动 B_IO/B_COMPUTE 与 GUI 争用连接。

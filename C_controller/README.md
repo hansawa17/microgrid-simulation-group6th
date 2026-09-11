@@ -106,6 +106,22 @@ C_controller/
   parameter_update 白名单、旧库迁移）与 A 侧 `test_a_simulator.py` 五字段/幂等/新会话用例，
   PC 全部通过；**未重新编译 STM32 固件**，未执行三机/串口/硬件实测。
 
+### 2026-09-11 · 开环不回 wind_action（验收项31整改）+ Wi-Fi 超时接入 c_timeout_s
+
+- **开环整改**（`wind_turbine.{c,h}` / `wifi_client.{c,h}`）：开环（`control_mode=0`）不再向
+  A 发送 `wind_action`，只按周期 `state_request` 读取 A 数据；计算结果仍经 `$WIND2` 上报串口。
+  - `WindTurbine_PeriodicTask` 按模式分流：闭环发 `wind_action`，开环调用新增的
+    `WifiClient_ReleaseState()` 只读消费 state，维持轮询继续。
+  - `WifiClient_SendWindAction` 入口对开环双重拦截；切到开环后丢弃未获 ACK 的挂起
+    `wind_action`（不再重发闭环控制命令）。
+  - A 侧无需改动：开环缺 `wind_action` 不触发故障（A 沿用上次控制值），C 持续轮询不会
+    触发 A 的 TCP 空闲超时。
+- **Wi-Fi 超时**（同步 55b9781 并补修）：state/ACK 等待超时由固定 3 s 改为运行期
+  `c_timeout_s`（钳位 0.5～30 s，`WindTurbine_GetTimeoutMs()`）；补上 `wifi_client.c` 缺失的
+  `#include "wind_turbine.h"`（隐式声明修复）。
+- 验证：本地上位机测试 40/40 通过；**固件未编译**（本机无交叉工具链），
+  「开环 + A 在线不回 wind_action」待烧录后实机复测。
+
 ## 尚未完成 / 待确认
 
 - **C 已对齐冻结参数**：额定 100 kW、三次曲线、桨距 0-90°；C 计算 `wind_available_kw`/
