@@ -10,10 +10,11 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 - **实时曲线**：负荷、风电 available/limit、wind target/actual、diesel actual 趋势；可清空并立即请求 A 状态。
 - **本地场景 / 手动调度**：不连接 A 也能构造 mock `GridState`，验证风优先、operating limit、柴油 10 kW reserve、柴油 OFF、C fault 优先、缺电/过剩等结果；明确标记为 mock，不冒充 A 场景。
 - **参数设置**：风机/柴油物理参数为只读副本；B 自有调度限值、reserve、采集/调度周期、最大状态年龄和开闭环模式可写入 `ems.db`，重启与重复初始化不会覆盖用户保存值。
-- **EMS 调度**：GUI 按周期生成决策；开环只记录/展示，闭环核对 session/step/状态年龄后直接发送并记录 ACK；delivery-unknown 会停止自动调度，禁止盲目重发。
+- **EMS 调度**：GUI 按周期生成决策；开环只记录/展示，闭环核对 session/step/状态年龄后直接发送并记录 ACK；accepted/rejected/delivery-unknown 均写入 `dispatch_commands`，delivery-unknown 会停止自动调度并禁止盲目重发。
 - **历史数据**：读取 `ems.db/state_history`，按 session 过滤并支持 CSV 导出。
 - **通信诊断**：显示 GUI TCP 状态、待处理 state/ACK、最近协议 seq、ACK 和事件日志。
 - **报警与评价**：保留原有状态过期、C fault、delivery unknown 等报警；评价部分为只读分析，当前综合评价只包含五项调度/运行指标，并在每项评分右侧提供下拉评分标准。
+- **风机执行追溯**：已确认的 B 调度会与后续完整 C 动作/A actual 状态配对，并写入 `wind_execution_evaluation`；缺少完整反馈时保持“数据不足”，不伪造评分。
 
 主监控页的“RTU / SCADA 四遥实时点表”按验收口径明确分类：
 

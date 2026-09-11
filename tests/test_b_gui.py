@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -16,7 +17,8 @@ from PyQt6.QtWidgets import QApplication
 
 from B_dispatch import gui_b, gui_b_legacy
 from B_dispatch import __main__ as b_main
-from B_dispatch.models import GridState
+from B_dispatch.models import DispatchResult, GridState
+from B_dispatch.operator_core import EMSDecision
 from B_dispatch.repository import EMSRepository, utc_now
 
 
@@ -77,6 +79,7 @@ class FakeConnectedClient:
         self._pending_state_request_seq = None
         self._pending_ack_seq = None
         self._uncertain_dispatch_seq = None
+        self._last_incoming_seq = None
         self.sent = []
 
     def close(self):
@@ -231,6 +234,75 @@ class BGuiConnectionTests(unittest.TestCase):
         self.window.runtime_tick()
         self.assertEqual(len(client.sent), 1)
         self.assertEqual(self.window._last_sent_command, (60.0, 25.0, True, True))
+
+    def test_ack_records_dispatch_and_later_state_persists_wind_execution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = EMSRepository(Path(temp_dir) / "ems.db")
+            repo.initialize()
+            with patch.object(gui_b_legacy, "EMSRepository", return_value=repo):
+                window = gui_b.MainWindow()
+            try:
+                sent_at = datetime.now(timezone.utc)
+                sent_at_utc = sent_at.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                command_state = GridState(
+                    session_id="gui-evaluation", step=1, sim_time_s=1.0,
+                    wind_speed_mps=8.0, wind_available_kw=70.0,
+                    wind_operating_limit_kw=60.0, load_power_kw=80.0,
+                    wind_actual_kw=55.0, diesel_actual_kw=25.0,
+                    wind_running=True, diesel_running=True, fault=False,
+                    sampled_at_utc=sent_at_utc, received_at_utc=sent_at_utc,
+                    wind_target_kw=60.0, diesel_target_kw=20.0,
+                    pitch_actual_deg=5.0, power_imbalance_kw=0.0,
+                )
+                decision = EMSDecision(
+                    state=command_state,
+                    result=DispatchResult(
+                        wind_target_kw=60.0, diesel_target_kw=20.0,
+                        wind_enable=True, diesel_enable=True,
+                        target_unserved_kw=0.0, target_surplus_kw=0.0,
+                        reason="test dispatch",
+                    ),
+                )
+                window._pending_dispatch_record[77] = decision
+                window.handle_ack(gui_b.Ack(ack_seq=77, accepted=True, reason="accepted"))
+
+                with repo.connection() as conn:
+                    command = conn.execute(
+                        "SELECT * FROM dispatch_commands WHERE seq=77"
+                    ).fetchone()
+                self.assertIsNotNone(command)
+                self.assertEqual((command["status"], command["ack_accepted"]), ("accepted", 1))
+
+                feedback_at = sent_at + timedelta(seconds=1)
+                feedback_at_utc = feedback_at.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                window.client = FakeConnectedClient()
+                window.set_state_snapshot(GridState(
+                    session_id="gui-evaluation", step=2, sim_time_s=2.0,
+                    wind_speed_mps=8.0, wind_available_kw=70.0,
+                    wind_operating_limit_kw=60.0, load_power_kw=80.0,
+                    wind_actual_kw=59.0, diesel_actual_kw=21.0,
+                    wind_running=True, diesel_running=True, fault=False,
+                    sampled_at_utc=feedback_at_utc, received_at_utc=feedback_at_utc,
+                    wind_target_kw=60.0, diesel_target_kw=20.0,
+                    pitch_actual_deg=4.0, power_imbalance_kw=0.0,
+                    controller_wind_enable=True, pitch_target_deg=4.0,
+                    last_wind_action_seq=88, last_wind_action_step=2,
+                    wind_action_applied_at_utc=feedback_at_utc,
+                    extension_status="complete",
+                ))
+
+                with repo.connection() as conn:
+                    evaluation = conn.execute(
+                        "SELECT * FROM wind_execution_evaluation WHERE dispatch_command_id=?",
+                        (command["id"],),
+                    ).fetchone()
+                self.assertIsNotNone(evaluation)
+                self.assertTrue(evaluation["evaluated_at_utc"])
+                self.assertEqual(evaluation["feedback_step"], 2)
+            finally:
+                window.close()
+                window.deleteLater()
+                self.app.processEvents()
 
 
 if __name__ == "__main__":

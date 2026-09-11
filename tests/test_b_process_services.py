@@ -114,5 +114,47 @@ class ProcessServiceTests(unittest.TestCase):
             outbox_id, _ = repo.queue_decision(state, result, executable=True); self.assertIsNotNone(repo.claim_next_outbox())
             EMSCommunicationService(repo).initialize(); self.assertEqual(repo.get_outbox(outbox_id)["status"], "delivery_unknown")
 
+    def test_io_wind_execution_persists_evaluated_timestamp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(tmp)
+            created_at = datetime.now(timezone.utc)
+            created_at_utc = created_at.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+            command_id = repo.record_command({
+                "session_id": "process-test", "step": 1, "sim_time_s": 1.0,
+                "source": "B", "seq": 77,
+                "wind_target_kw": 60.0, "diesel_target_kw": 20.0,
+                "wind_enable": True, "diesel_enable": True,
+                "status": "accepted", "reason": "accepted",
+                "ack_accepted": True, "ack_reason": "accepted",
+                "ack_received_at_utc": created_at_utc,
+                "created_at_utc": created_at_utc,
+            })
+            feedback_at_utc = (created_at + timedelta(seconds=1)).isoformat(
+                timespec="milliseconds"
+            ).replace("+00:00", "Z")
+            repo.save_state(replace(
+                fresh_state(step=2),
+                sampled_at_utc=feedback_at_utc,
+                received_at_utc=feedback_at_utc,
+                controller_wind_enable=True,
+                pitch_target_deg=4.0,
+                last_wind_action_seq=88,
+                last_wind_action_step=2,
+                wind_action_applied_at_utc=feedback_at_utc,
+                extension_status="complete",
+            ))
+
+            service = EMSCommunicationService(repo)
+            service._persist_wind_execution_for_new_states()
+
+            with repo.connection() as conn:
+                evaluation = conn.execute(
+                    "SELECT * FROM wind_execution_evaluation WHERE dispatch_command_id=?",
+                    (command_id,),
+                ).fetchone()
+            self.assertIsNotNone(evaluation)
+            self.assertTrue(evaluation["evaluated_at_utc"])
+            self.assertEqual(evaluation["feedback_step"], 2)
+
 
 if __name__ == "__main__": unittest.main()
