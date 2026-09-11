@@ -137,7 +137,7 @@ C_controller/
 ## 快速运行（上位机）
 
 ```powershell
-# Python 3.11.x；依赖见根目录 requirements.txt（PyQt6==6.11.0）
+# Python 3.11.x；依赖见根目录 requirements.txt（PyQt6、pyserial、pyqtgraph）
 cd C_controller/host
 python main.py
 ```

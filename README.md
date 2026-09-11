@@ -6,6 +6,14 @@
 
 ## 版本说明
 
+### v1.0.0（2026-09-11）
+
+- A：保留 beta0.4 的场景曲线运行期热更新、实际功率仿真、TCP 服务和历史追溯能力。
+- B：合入远端最新 GUI 调度逻辑；每 1 s 检查运行状态、默认每 5 s 形成决策，仅当 YK/YT 组合变化时发送 `dispatch`，新数据库默认闭环。
+- C：固件支持开环只读、闭环动作、运行期 A 端点设置、参数回读和 C→A 参数副本同步；上位机依赖已完整写入 `requirements.txt`。
+- 交付：新增完整源码与运行、Git 版本管理、系统与接口、硬件工程与部署四份验收文档。
+- 验证范围：Python 3.11.14 / PyQt6 6.11.0 环境下完整 PC 自动测试 **153 项全部通过**；C 固件未在本次发布机器重新交叉编译、烧录，真实三机局域网、STM32/Wi-Fi/UART 和异常断线仍需现场验收。
+
 ### beta0.4（2026-09-11）
 
 - A：场景曲线支持在仿真运行期间原子热更新，保留原 CSV 保存功能；新曲线从提交后的下一执行时刻生效，不中断计算进程。
@@ -317,7 +325,7 @@ python -m B_dispatch gui
 
 ## 测试说明
 
-本次在 Python 3.11.14 / PyQt6 6.11.0 环境执行完整仓库测试，**150 项全部通过**。公网三机、STM32/Wi-Fi/UART 和真实设备动作没有在本次 PC 整改中重新验证。
+正式版在 Python 3.11.14 / PyQt6 6.11.0 环境执行完整仓库测试，**153 项全部通过**。公网三机、STM32/Wi-Fi/UART 和真实设备动作没有在本次 PC 整改中重新验证。
 
 建议在 Python 3.11 环境执行：
 
@@ -348,3 +356,11 @@ python -m unittest discover -s tests -v
 - `docs/database.md`
 - `docs/decisions.md`
 - `docs/acceptance.md`
+
+## v1.0.0 验收交付文档
+
+- [完整源码与运行说明](docs/v1.0.0/01-source-and-run.md)
+- [Git 仓库与版本管理](docs/v1.0.0/02-version-management.md)
+- [系统与接口说明](docs/v1.0.0/03-system-and-interfaces.md)
+- [硬件工程与部署说明](docs/v1.0.0/04-hardware-and-deployment.md)
+- [验收交付索引](docs/v1.0.0/README.md)

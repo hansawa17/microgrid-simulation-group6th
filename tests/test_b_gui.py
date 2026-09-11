@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import tempfile
+import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -69,14 +71,23 @@ class FakeRepository:
 
 
 class FakeConnectedClient:
-    connected = True
-    needs_full_sync = True
-    _pending_state_request_seq = None
-    _pending_ack_seq = None
-    _uncertain_dispatch_seq = None
+    def __init__(self):
+        self.connected = True
+        self.needs_full_sync = True
+        self._pending_state_request_seq = None
+        self._pending_ack_seq = None
+        self._uncertain_dispatch_seq = None
+        self.sent = []
 
     def close(self):
         self.connected = False
+
+    def send_dispatch_nowait(self, decision):
+        self.sent.append(decision)
+        return len(self.sent)
+
+    def get_ack(self, _seq):
+        return None
 
 
 class BGuiConnectionTests(unittest.TestCase):
@@ -177,6 +188,49 @@ class BGuiConnectionTests(unittest.TestCase):
                 self.assertEqual(self.window.a_physical_widgets["diesel_min_kw"].value(), 20.0)
         finally:
             self.window.repo = original_repo
+
+    def test_real_default_closed_loop_enables_automatic_dispatch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = EMSRepository(Path(temp_dir) / "ems.db")
+            repo.initialize()
+            with patch.object(gui_b_legacy, "EMSRepository", return_value=repo):
+                window = gui_b.MainWindow()
+            try:
+                self.assertTrue(window.params["closed_loop"])
+                self.assertTrue(window.auto_dispatch)
+                self.assertTrue(window.auto_box.isChecked())
+                self.assertEqual(window.runtime_timer.interval(), 1000)
+            finally:
+                window.close()
+                window.deleteLater()
+                self.app.processEvents()
+
+    def test_runtime_tick_sends_only_when_yk_yt_changes(self):
+        client = FakeConnectedClient()
+        self.window.client = client
+        self.window.state = object()
+        self.window.auto_dispatch = True
+        self.window.params["closed_loop"] = True
+        self.window._last_decision_monotonic = time.monotonic()
+        self.window.last_decision = SimpleNamespace(
+            result=SimpleNamespace(
+                wind_target_kw=60.0,
+                diesel_target_kw=20.0,
+                wind_enable=True,
+                diesel_enable=True,
+            )
+        )
+        self.window._last_sent_command = (60.0, 20.0, True, True)
+
+        with patch.object(self.window, "calculate_current") as calculate:
+            self.window.runtime_tick()
+        calculate.assert_not_called()
+        self.assertEqual(client.sent, [])
+
+        self.window.last_decision.result.diesel_target_kw = 25.0
+        self.window.runtime_tick()
+        self.assertEqual(len(client.sent), 1)
+        self.assertEqual(self.window._last_sent_command, (60.0, 25.0, True, True))
 
 
 if __name__ == "__main__":

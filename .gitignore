@@ -8,6 +8,7 @@ config.local.json
 __pycache__/
 *.py[cod]
 .venv/
+.venv.stale-*/
 venv/
 .pytest_cache/
 .idea/

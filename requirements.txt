@@ -3,4 +3,6 @@
 # Manual equivalent: uv python install 3.11; uv venv --python 3.11 .venv;
 # uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 PyQt6==6.11.0
+pyqtgraph==0.13.7
+pyserial==3.5
 
