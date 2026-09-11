@@ -7,7 +7,7 @@ from .wind_execution import WEIGHTS as WIND_EXECUTION_WEIGHTS, evaluate_pair, fi
 
 EVALUATION_WEIGHTS={"balance":0.30,"wind":0.25,"diesel":0.15,"constraint":0.15,"tracking":0.15}
 SCORING_RULES={
- "balance":{"title":"供需平衡","weight":30,"metric":"平均绝对功率不平衡","rules":["≤ 1 kW：100 分","≤ 3 kW：90 分","≤ 5 kW：80 分","≤ 10 kW：60 分","> 10 kW：40 分"]},
+ "balance":{"title":"供需平衡","weight":30,"metric":"平均绝对功率不平衡","rules":["≤ 3 kW：100 分","≤ 10 kW：80 分","≤ 50 kW：60 分","> 50 kW：40 分"]},
  "wind":{"title":"风能利用","weight":25,"metric":"实际风电 / 可利用风电","rules":["≥ 90%：100 分","≥ 80%：90 分","≥ 70%：80 分","≥ 60%：70 分","< 60%：按利用率计分，最低 40 分"]},
  "diesel":{"title":"柴油经济性","weight":15,"metric":"柴油实际供电 / 负荷","rules":["≤ 20%：100 分","≤ 30%：95 分","≤ 40%：85 分","≤ 50%：75 分","> 50%：60 分"]},
  "constraint":{"title":"运行约束","weight":15,"metric":"风电运行边界违反次数","rules":["0 次：100 分","每增加 1 次：扣 10 分","最低 0 分","检查 actual ≤ operating limit ≤ available"]},
@@ -24,7 +24,7 @@ class EvaluationResult:
  def grade(self)->str:
   return "优秀" if self.overall_score>=90 else "良好" if self.overall_score>=80 else "合格" if self.overall_score>=70 else "需改进"
 
-def _score_balance(e:float)->float:return 100.0 if e<=1 else 90.0 if e<=3 else 80.0 if e<=5 else 60.0 if e<=10 else 40.0
+def _score_balance(e:float)->float:return 100.0 if e<=3 else 80.0 if e<=10 else 60.0 if e<=50 else 40.0
 def _score_wind(u:float)->float:return 100.0 if u>=90 else 90.0 if u>=80 else 80.0 if u>=70 else 70.0 if u>=60 else max(40.0,u)
 def _score_diesel(s:float)->float:return 100.0 if s<=20 else 95.0 if s<=30 else 85.0 if s<=40 else 75.0 if s<=50 else 60.0
 def _score_tracking(e:float)->float:return 100.0 if e<=1 else 95.0 if e<=3 else 85.0 if e<=5 else 70.0 if e<=10 else 50.0
