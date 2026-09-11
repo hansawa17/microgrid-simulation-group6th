@@ -26,12 +26,16 @@ try:
     from B_dispatch.models import DispatchConfig, GridState
     from B_dispatch.operator_core import EMSCore
     from B_dispatch.repository import EMSRepository
-    from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError, parse_endpoint
+    from B_dispatch.tcpB import (Ack, B_CONNECT_TIMEOUT_S, B_SOCKET_TIMEOUT_S,
+                                 B_STATE_RESPONSE_TIMEOUT_S, DispatchDeliveryUnknown,
+                                 EMSTcpClient, ProtocolError, parse_endpoint)
 except ImportError:
     from .models import DispatchConfig, GridState
     from .operator_core import EMSCore
     from .repository import EMSRepository
-    from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError, parse_endpoint
+    from .tcpB import (Ack, B_CONNECT_TIMEOUT_S, B_SOCKET_TIMEOUT_S,
+                       B_STATE_RESPONSE_TIMEOUT_S, DispatchDeliveryUnknown,
+                       EMSTcpClient, ProtocolError, parse_endpoint)
 
 BLUE = '#2f6fd6'
 BG = '#e9eff6'
@@ -171,7 +175,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.demo_mode = True
         self.db_path = Path(__file__).resolve().parents[1] / 'data' / 'runtime' / 'ems.db'
         self.repo = EMSRepository(self.db_path)
-        self.params = {'wind_min_kw':0.0,'wind_max_kw':100.0,'diesel_max_kw':120.0,'reserve_kw':10.0,'max_age_s':2.0,
+        self.params = {'wind_min_kw':0.0,'wind_max_kw':100.0,'diesel_max_kw':120.0,'reserve_kw':10.0,'max_age_s':8.0,
                        'poll_period_s':1.0,'dispatch_period_s':5.0,'closed_loop':True}
         self.core = EMSCore(self.config())
         self.auto_dispatch = False
@@ -390,13 +394,13 @@ class MainWindow(QtWidgets.QMainWindow):
         candidate = EMSTcpClient(
             host,
             port,
-            timeout_s=0.5,
-            connect_timeout_s=5.0,
-            state_response_timeout_s=6.0,
+            timeout_s=B_SOCKET_TIMEOUT_S,
+            connect_timeout_s=B_CONNECT_TIMEOUT_S,
+            state_response_timeout_s=B_STATE_RESPONSE_TIMEOUT_S,
             state_poll_period_s=self.params['poll_period_s'],
         )
         self._set_connecting_state(f'正在连接 A（第 {self._reconnect_attempt + 1} 次）')
-        self.log(f'尝试连接 A：{host}:{port}（建连超时 5 s）')
+        self.log(f'尝试连接 A：{host}:{port}（建连超时 {B_CONNECT_TIMEOUT_S:g} s）')
         if host in {'127.0.0.1', 'localhost', '::1'}:
             self.log('提示：回环地址只适用于 A 与 B 在同一台电脑；跨电脑请填写 A 的局域网 IP 或公网隧道地址')
 

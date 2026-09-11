@@ -284,7 +284,12 @@ class SimulatorTCPServer(socketserver.ThreadingTCPServer):
             status_detail = f"{count} active connection(s)" if count else detail
             self.repository.mark_connection(peer, count > 0, status_detail)
             if count == 0:
-                self.repository.log("WARNING", event, f"{peer}: {detail}")
+                # A normal EOF is common when an operator disconnects or a client
+                # refreshes its socket.  Keep it visible in history without
+                # presenting it as a fault popup.  Timeouts and socket errors are
+                # still warnings and remain operator-visible.
+                level = "INFO" if event == "peer_connection_closed" else "WARNING"
+                self.repository.log(level, event, f"{peer}: {detail}")
 
 
 def serve(repository: Repository, bind: str, port: int, max_frame_bytes: int) -> None:

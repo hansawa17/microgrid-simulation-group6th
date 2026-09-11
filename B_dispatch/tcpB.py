@@ -17,9 +17,10 @@ from .operator_core import EMSDecision
 MAX_FRAME_BYTES = 4096
 PROTOCOL_VERSION = 1
 B_STATE_POLL_PERIOD_S = 1.0
-B_DISPATCH_ACK_TIMEOUT_S = 10.0
-B_CONNECT_TIMEOUT_S = 5.0
-B_STATE_RESPONSE_TIMEOUT_S = 6.0
+B_SOCKET_TIMEOUT_S = 3.0
+B_DISPATCH_ACK_TIMEOUT_S = 15.0
+B_CONNECT_TIMEOUT_S = 8.0
+B_STATE_RESPONSE_TIMEOUT_S = 12.0
 _SEQUENCE_LOCK = threading.Lock()
 _LAST_DEFAULT_SEQUENCE = -1
 
@@ -143,7 +144,7 @@ class Ack:
 
 
 class EMSTcpClient:
-    def __init__(self,host:str,port:int=5000,*,timeout_s:float=2.0,connect_timeout_s:float=B_CONNECT_TIMEOUT_S,state_response_timeout_s:float=B_STATE_RESPONSE_TIMEOUT_S,socket_factory:Callable[...,socket.socket]=socket.create_connection,initial_seq:int|None=None,state_poll_period_s:float=B_STATE_POLL_PERIOD_S):
+    def __init__(self,host:str,port:int=5000,*,timeout_s:float=B_SOCKET_TIMEOUT_S,connect_timeout_s:float=B_CONNECT_TIMEOUT_S,state_response_timeout_s:float=B_STATE_RESPONSE_TIMEOUT_S,socket_factory:Callable[...,socket.socket]=socket.create_connection,initial_seq:int|None=None,state_poll_period_s:float=B_STATE_POLL_PERIOD_S):
         host,port=parse_endpoint(host,port)
         if any(not math.isfinite(v) or v<=0 for v in (timeout_s,connect_timeout_s,state_response_timeout_s)): raise ValueError("invalid TCP endpoint or timeout")
         if initial_seq is not None and (not isinstance(initial_seq,int) or isinstance(initial_seq,bool) or initial_seq<0): raise ValueError("initial_seq must be a non-negative integer or None")

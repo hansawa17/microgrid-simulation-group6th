@@ -8,12 +8,15 @@ import math,sqlite3
 from typing import Iterator,Mapping,Optional
 from .models import DispatchConfig,DispatchResult,GridState
 
+SCHEMA_VERSION=7
+DEFAULT_MAX_STATE_AGE_S=8.0
+
 SCHEMA='''
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS schema_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS physical_parameters(id INTEGER PRIMARY KEY CHECK(id=1),wind_rated_kw REAL NOT NULL DEFAULT 100,wind_cut_in_mps REAL NOT NULL DEFAULT 3,wind_rated_speed_mps REAL NOT NULL DEFAULT 12,wind_cut_out_mps REAL NOT NULL DEFAULT 25,pitch_min_deg REAL NOT NULL DEFAULT 0,pitch_max_deg REAL NOT NULL DEFAULT 90,wind_ramp_up_kw_s REAL NOT NULL DEFAULT 40,wind_ramp_down_kw_s REAL NOT NULL DEFAULT 60,diesel_min_kw REAL NOT NULL DEFAULT 20,diesel_max_kw REAL NOT NULL DEFAULT 120,diesel_ramp_up_kw_s REAL NOT NULL DEFAULT 30,diesel_ramp_down_kw_s REAL NOT NULL DEFAULT 40,updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS dispatch_parameters(id INTEGER PRIMARY KEY CHECK(id=1),wind_min_kw REAL NOT NULL CHECK(wind_min_kw>=0),wind_max_kw REAL NOT NULL CHECK(wind_max_kw>=wind_min_kw),diesel_max_kw REAL NOT NULL CHECK(diesel_max_kw>=0),reserve_kw REAL NOT NULL CHECK(reserve_kw>0),updated_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS ems_runtime_config(id INTEGER PRIMARY KEY CHECK(id=1),poll_period_s REAL NOT NULL DEFAULT 1 CHECK(poll_period_s>0),dispatch_period_s REAL NOT NULL DEFAULT 5 CHECK(dispatch_period_s>0),closed_loop INTEGER NOT NULL DEFAULT 1 CHECK(closed_loop IN(0,1)),command_timeout_s REAL CHECK(command_timeout_s IS NULL OR command_timeout_s>0),max_state_age_s REAL NOT NULL DEFAULT 2 CHECK(max_state_age_s>0),updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ems_runtime_config(id INTEGER PRIMARY KEY CHECK(id=1),poll_period_s REAL NOT NULL DEFAULT 1 CHECK(poll_period_s>0),dispatch_period_s REAL NOT NULL DEFAULT 5 CHECK(dispatch_period_s>0),closed_loop INTEGER NOT NULL DEFAULT 1 CHECK(closed_loop IN(0,1)),command_timeout_s REAL CHECK(command_timeout_s IS NULL OR command_timeout_s>0),max_state_age_s REAL NOT NULL DEFAULT 8 CHECK(max_state_age_s>0),updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS current_state(id INTEGER PRIMARY KEY CHECK(id=1),session_id TEXT NOT NULL,step INTEGER NOT NULL,sim_time_s REAL NOT NULL,wind_speed_mps REAL NOT NULL,wind_available_kw REAL NOT NULL,wind_operating_limit_kw REAL NOT NULL,load_power_kw REAL NOT NULL,wind_actual_kw REAL NOT NULL,diesel_actual_kw REAL NOT NULL,wind_target_kw REAL NOT NULL,diesel_target_kw REAL NOT NULL DEFAULT 0,pitch_actual_deg REAL NOT NULL,wind_running INTEGER NOT NULL,fault INTEGER NOT NULL,diesel_running INTEGER NOT NULL DEFAULT 0,power_imbalance_kw REAL NOT NULL DEFAULT 0,sampled_at_utc TEXT NOT NULL,received_at_utc TEXT NOT NULL,received_age_s REAL NOT NULL,controller_wind_enable INTEGER,pitch_target_deg REAL,last_wind_action_seq INTEGER,last_wind_action_step INTEGER,wind_action_applied_at_utc TEXT,extension_status TEXT NOT NULL DEFAULT 'legacy_or_incomplete');
 CREATE TABLE IF NOT EXISTS state_history(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,step INTEGER NOT NULL,sim_time_s REAL NOT NULL,wind_speed_mps REAL NOT NULL,wind_available_kw REAL NOT NULL,wind_operating_limit_kw REAL NOT NULL,load_power_kw REAL NOT NULL,wind_actual_kw REAL NOT NULL,diesel_actual_kw REAL NOT NULL,wind_target_kw REAL NOT NULL,diesel_target_kw REAL NOT NULL DEFAULT 0,pitch_actual_deg REAL NOT NULL,wind_running INTEGER NOT NULL,fault INTEGER NOT NULL,diesel_running INTEGER NOT NULL DEFAULT 0,power_imbalance_kw REAL NOT NULL DEFAULT 0,sampled_at_utc TEXT NOT NULL,received_at_utc TEXT NOT NULL,received_age_s REAL NOT NULL,controller_wind_enable INTEGER,pitch_target_deg REAL,last_wind_action_seq INTEGER,last_wind_action_step INTEGER,wind_action_applied_at_utc TEXT,extension_status TEXT NOT NULL DEFAULT 'legacy_or_incomplete');
 CREATE TABLE IF NOT EXISTS dispatch_commands(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,step INTEGER NOT NULL,sim_time_s REAL NOT NULL,source TEXT NOT NULL,seq INTEGER NOT NULL,wind_target_kw REAL NOT NULL,diesel_target_kw REAL NOT NULL,wind_enable INTEGER NOT NULL,diesel_enable INTEGER NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,ack_accepted INTEGER,ack_reason TEXT,ack_received_at_utc TEXT,created_at_utc TEXT NOT NULL,UNIQUE(session_id,source,seq));
@@ -53,15 +56,21 @@ class EMSRepository:
  def _add(self,c,t,n,sql):
   if n not in self._columns(c,t):c.execute(f'ALTER TABLE {t} ADD COLUMN {sql}')
  def _migrate(self,c):
+  version_row=c.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
+  previous_version=int(version_row[0]) if version_row is not None else 0
   for t in ('current_state','state_history'):
    for n,sql in [('wind_available_kw','wind_available_kw REAL NOT NULL DEFAULT 0'),('wind_operating_limit_kw','wind_operating_limit_kw REAL NOT NULL DEFAULT 0'),('diesel_target_kw','diesel_target_kw REAL NOT NULL DEFAULT 0'),('diesel_running','diesel_running INTEGER NOT NULL DEFAULT 0'),('power_imbalance_kw','power_imbalance_kw REAL NOT NULL DEFAULT 0'),('received_age_s','received_age_s REAL NOT NULL DEFAULT 0'),('controller_wind_enable','controller_wind_enable INTEGER'),('pitch_target_deg','pitch_target_deg REAL'),('last_wind_action_seq','last_wind_action_seq INTEGER'),('last_wind_action_step','last_wind_action_step INTEGER'),('wind_action_applied_at_utc','wind_action_applied_at_utc TEXT'),('extension_status',"extension_status TEXT NOT NULL DEFAULT 'legacy_or_incomplete'")]:self._add(c,t,n,sql)
    c.execute(f"UPDATE {t} SET extension_status=CASE WHEN controller_wind_enable IS NOT NULL AND pitch_target_deg IS NOT NULL THEN 'complete' ELSE 'legacy_or_incomplete' END")
   for n,sql in [('ack_accepted','ack_accepted INTEGER'),('ack_reason','ack_reason TEXT'),('ack_received_at_utc','ack_received_at_utc TEXT')]:self._add(c,'dispatch_commands',n,sql)
+  if previous_version<SCHEMA_VERSION:
+   # Upgrade only the shipped 2 s default.  Any other operator-selected value
+   # is intentionally preserved.
+   c.execute('UPDATE ems_runtime_config SET max_state_age_s=?,updated_at=? WHERE id=1 AND max_state_age_s=2',(DEFAULT_MAX_STATE_AGE_S,utc_now()))
  def initialize(self):
   with self.connection() as c:
    c.executescript(SCHEMA);self._migrate(c);now=utc_now();keys=','.join(UNIFIED_PHYSICAL);qs=','.join('?'*1 for _ in UNIFIED_PHYSICAL)
    c.execute(f'INSERT INTO physical_parameters(id,{keys},updated_at) VALUES(1,{qs},?) ON CONFLICT(id) DO NOTHING',tuple(UNIFIED_PHYSICAL.values())+(now,))
-   c.execute('INSERT INTO dispatch_parameters(id,wind_min_kw,wind_max_kw,diesel_max_kw,reserve_kw,updated_at) VALUES(1,0,100,120,10,?) ON CONFLICT(id) DO NOTHING',(now,));c.execute('INSERT INTO ems_runtime_config(id,poll_period_s,dispatch_period_s,closed_loop,command_timeout_s,max_state_age_s,updated_at) VALUES(1,1,5,1,3,2,?) ON CONFLICT(id) DO NOTHING',(now,));c.execute("INSERT INTO communication_config(id,host,port,enabled,updated_at_utc) VALUES(1,'127.0.0.1',5000,1,?) ON CONFLICT(id) DO NOTHING",(now,));c.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value='6'")
+   c.execute('INSERT INTO dispatch_parameters(id,wind_min_kw,wind_max_kw,diesel_max_kw,reserve_kw,updated_at) VALUES(1,0,100,120,10,?) ON CONFLICT(id) DO NOTHING',(now,));c.execute('INSERT INTO ems_runtime_config(id,poll_period_s,dispatch_period_s,closed_loop,command_timeout_s,max_state_age_s,updated_at) VALUES(1,1,5,1,3,?,?) ON CONFLICT(id) DO NOTHING',(DEFAULT_MAX_STATE_AGE_S,now));c.execute("INSERT INTO communication_config(id,host,port,enabled,updated_at_utc) VALUES(1,'127.0.0.1',5000,1,?) ON CONFLICT(id) DO NOTHING",(now,));c.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(str(SCHEMA_VERSION),))
  def set_parameters(self,*,wind_min_kw,wind_max_kw,diesel_max_kw,reserve_kw=10.0):
   v=tuple(float(x) for x in (wind_min_kw,wind_max_kw,diesel_max_kw,reserve_kw))
   if any(not math.isfinite(x) or x<0 for x in v):raise ValueError('dispatch parameters must be finite non-negative numbers')
@@ -110,7 +119,7 @@ class EMSRepository:
  def build_dispatch_config(self):
   d=self.get_parameters();ph=self.get_physical_parameters();rt=self.get_runtime_config()
   return DispatchConfig(wind_min_kw=0.0,wind_max_kw=float(ph['wind_rated_kw']),diesel_max_kw=float(ph['diesel_max_kw']),reserve_kw=float(d['reserve_kw']),diesel_min_kw=float(ph['diesel_min_kw']),max_state_age_s=float(rt['max_state_age_s']),c_has_control_priority=True)
- def set_runtime_config(self,*,poll_period_s=1.0,dispatch_period_s=5.0,closed_loop=True,command_timeout_s=3.0,max_state_age_s=2.0):
+ def set_runtime_config(self,*,poll_period_s=1.0,dispatch_period_s=5.0,closed_loop=True,command_timeout_s=3.0,max_state_age_s=DEFAULT_MAX_STATE_AGE_S):
   p,d,a=float(poll_period_s),float(dispatch_period_s),float(max_state_age_s);t=None if command_timeout_s is None else float(command_timeout_s)
   if not all(math.isfinite(x) and x>0 for x in (p,d,a)):raise ValueError('runtime periods and max_state_age_s must be positive finite numbers')
   if t is not None and (not math.isfinite(t) or t<=0):raise ValueError('command_timeout_s must be > 0 or None')

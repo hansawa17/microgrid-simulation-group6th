@@ -192,6 +192,15 @@ class SimulatorWindowTests(unittest.TestCase):
         self.assertIn("peer_connection_error", popup.call_args.args[0])
         self.assertIn("C: TCP receive failed", popup.call_args.args[1])
 
+    def test_clean_peer_close_is_logged_without_fault_popup(self) -> None:
+        self.window._refresh_alerts()
+        self.repository.log(
+            "INFO", "peer_connection_closed", "C: peer closed the TCP connection"
+        )
+        with patch.object(self.window, "_show_fault_popup") as popup:
+            self.window._refresh_alerts()
+        popup.assert_not_called()
+
     def test_starting_simulation_also_ensures_tcp_service(self) -> None:
         with (
             patch.object(self.window, "_ensure_tcp_server", return_value=True) as ensure_tcp,

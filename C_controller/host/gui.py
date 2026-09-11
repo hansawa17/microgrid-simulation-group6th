@@ -578,7 +578,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("额定功率",  "wind_rated_power_kw",    "100.0",  "kW"),
             ("最大顺桨角", "pitch_feather_deg",      "90.0",   "°"),
             ("控制周期",  "c_control_s",            "1.0",    "s"),
-            ("通信超时",  "c_timeout_s",            "3.0",    "s"),
+            ("通信超时",  "c_timeout_s",            "8.0",    "s"),
         ]
         self.paramEdits = {}
         for row, (label, key, default, unit) in enumerate(fields):

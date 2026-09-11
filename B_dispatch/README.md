@@ -145,7 +145,7 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 
 ## ems.db 结构与初始化
 
-`EMSRepository.initialize()` 会创建/迁移 `ems.db`。当前 schema version 为 **6**，主要分为五类：
+`EMSRepository.initialize()` 会创建/迁移 `ems.db`。当前 schema version 为 **7**，主要分为五类：
 
 1. `physical_parameters`：A/B 保留的只读物理参数副本；记录风机 100 kW、3/12/25 m/s、0/90 deg、40/60 kW/s，以及柴油 20/120 kW、30/40 kW/s。
 2. `dispatch_parameters`：B 自己使用、可持久化配置的风电上下限、柴油上限和 reserve。
@@ -153,7 +153,7 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 4. `current_state / state_history / dispatch_commands / dispatch_evaluation / event_log`：完整 SCADA 状态、历史、已发送 dispatch、评价、通信/运行日志；A 的 `sampled_at_utc` 与 B 的 `received_at_utc` 分开保存。
 5. `dispatch_outbox / process_status`：兼容旧服务的本机队列，以及 GUI/兼容服务的状态记录；默认 GUI 直连路径不依赖 B_IO/B_COMPUTE 心跳。
 
-初始化只在配置行不存在时写入统一默认值；已有参数、状态、历史、dispatch 和日志不会被重置。状态年龄在读库时叠加本机经过时间，不能通过反复读旧行伪装成新数据。
+初始化只在配置行不存在时写入统一默认值；已有参数、状态、历史、dispatch 和日志不会被重置。v7 只将仍等于旧版默认值 2 s 的最大状态年龄迁移为 8 s，用户设置的其他值不覆盖。状态年龄在读库时叠加本机经过时间，不能通过反复读旧行伪装成新数据。
 
 **不要把真实 `data/runtime/ems.db` 提交到 GitHub。** 仓库只保存 schema 和初始化逻辑。
 
@@ -161,7 +161,7 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 
 - `gui_b.py` 是正式运行时唯一的 B→A TCP 所有者；直接请求 state、计算并发送 dispatch，收到的数据继续写入 `ems.db` 追溯。
 - `communication_service.py` 与 `compute_service.py` 仅保留兼容/诊断入口，`python -m B_dispatch` 和 `scripts/start_b.ps1` 不会启动它们。
-- 建连在线程中完成；已连接 socket 由 GUI 事件循环非阻塞轮询。dispatch 发送不等待 ACK，ACK 到达或 10 s 超时均由后续轮询处理。
+- 建连在线程中完成；已连接 socket 由 GUI 事件循环非阻塞轮询。dispatch 发送不等待 ACK，ACK 到达或 15 s 超时均由后续轮询处理。
 - 新建 B 客户端以 UTC epoch 毫秒为发送序号基线，并在进程内保持严格递增，避免 A 会话未变化时重连后从 0 开始而被拒绝为旧序号。
 - A 已实现接收 B 所有权参数 `reserve_kw/b_poll_s/b_dispatch_s` 的 `parameter_update`；B GUI 的参数发送入口尚未接入，当前不能宣称 B 已完成参数发布。
 - 本机软件测试覆盖两个独立 B 客户端连续连接与 dispatch ACK；公网三机、系统时钟异常及 STM32 仍需联调。
@@ -169,15 +169,15 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 ## Dispatch ACK 超时处理（2026-09-09）
 
 - B GUI 的 TCP polling timeout 可以保持较短，但 `dispatch` 不再在 GUI 线程同步等待 ACK。
-- GUI 每 50 ms 非阻塞检查 socket；底层兼容同步接口仍有独立 10 s ACK 等待窗口。
+- GUI 每 50 ms 非阻塞检查 socket；底层兼容同步接口仍有独立 15 s ACK 等待窗口。
 - 原先 GUI 使用 `timeout_s=0.25`，A 虽然已经收到并执行 dispatch，但 SQLite/仿真处理稍慢时可能超过 250 ms，B 会误判为 ACK unknown、主动关闭 socket；这正是“**A 已更新、B 弹 ACK 错误并断连，但主页仍显示已连接**”的主要原因。
 - 本次修复保留 delivery-unknown 的安全原则：真正超过 ACK 等待窗口仍不得自动换新 seq 重发。
 
 ## A/B 长连接稳定性处理（2026-09-09）
 
 - A 的 `wind_target_kw` 是 B 上次下发目标，`wind_operating_limit_kw` 是 C 当前限制。启动、C 故障或限制切换时前者可暂时高于后者；B 只校验各字段自身范围及 `operating limit <= available`，收到这种合法过渡状态时不再误断 TCP。
-- GUI 建连在后台线程执行，公网/域名建连使用独立 5 s 窗口；已连接 socket 由 Qt 定时器每 50 ms 做一次非阻塞检查。
-- 首个或后续 `state_request` 连续 6 s 无响应时判定半开连接；意外 EOF、socket 错误或响应超时后按 1/2/4/8/15 s 上限退避重连，重连后自动发送 `full=true`。
+- GUI 建连在后台线程执行，公网/域名建连使用独立 8 s 窗口；已连接 socket 由 Qt 定时器每 50 ms 做一次非阻塞检查，单次 socket I/O 窗口为 3 s。
+- 首个或后续 `state_request` 连续 12 s 无响应时判定半开连接；意外 EOF、socket 错误或响应超时后按 1/2/4/8/15 s 上限退避重连，重连后自动发送 `full=true`。默认最大状态年龄为 8 s，避免 1 s 采样链路上的短抖动触发陈旧状态告警。
 - 地址框既可填写局域网 IP/域名并在端口框填端口，也可直接填写 `host:port`；不要填写 `tcp://`、路径或 `0.0.0.0`。
 - `127.0.0.1/localhost` 只表示 B 自己，只有 A/B 同机时可用。公网端点若完成握手但在首个 state 前关闭，B 会明确提示检查 A TCP 服务和隧道后端端口，而不再只显示笼统 EOF。
 - A/B 两端启用 TCP keepalive；A 的应用层空闲断线窗口为 30 s。公网隧道仍必须是 raw TCP 长连接映射，且需另行检查端点有效性和防火墙放行。

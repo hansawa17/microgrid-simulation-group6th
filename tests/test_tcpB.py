@@ -101,7 +101,13 @@ class TcpBTests(unittest.TestCase):
         self.assertEqual(message["type"], "state_request")
         self.assertTrue(message["payload"]["full"])
 
-    def test_client_uses_separate_five_second_connect_timeout(self):
+    def test_client_defaults_tolerate_short_lan_jitter(self):
+        client = EMSTcpClient("192.168.1.20", socket_factory=lambda *args: FakeSocket())
+        self.assertEqual(client.timeout_s, 3.0)
+        self.assertEqual(client.connect_timeout_s, 8.0)
+        self.assertEqual(client.state_response_timeout_s, 12.0)
+
+    def test_client_uses_relaxed_connect_timeout(self):
         fake = FakeSocket()
         calls = []
         client = EMSTcpClient(
@@ -109,7 +115,7 @@ class TcpBTests(unittest.TestCase):
             socket_factory=lambda endpoint, timeout: calls.append((endpoint, timeout)) or fake,
         )
         client.connect()
-        self.assertEqual(calls, [(('frp.example.com', 38243), 5.0)])
+        self.assertEqual(calls, [(('frp.example.com', 38243), 8.0)])
         self.assertEqual(fake.timeout, 0.25)
 
     def test_receive_available_does_not_block_when_socket_has_no_data(self):
@@ -272,7 +278,7 @@ class TcpBTests(unittest.TestCase):
         decision = EMSCore(DispatchConfig(wind_max_kw=100.0, diesel_max_kw=100.0)).decide(ready_state())
         dispatch_seq = client.send_dispatch_nowait(decision)
         client._pending_ack_started_at = 10.0
-        with patch("B_dispatch.tcpB.time.monotonic", return_value=20.1):
+        with patch("B_dispatch.tcpB.time.monotonic", return_value=25.1):
             with self.assertRaises(DispatchDeliveryUnknown) as ctx:
                 client.receive_available()
         self.assertEqual(ctx.exception.seq, dispatch_seq)

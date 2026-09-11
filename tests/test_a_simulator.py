@@ -1004,10 +1004,10 @@ class ProtocolTests(unittest.TestCase):
                 events = [row["event"] for row in logs]
                 self.assertIn("peer_connected", events)
                 self.assertIn("peer_disconnected", events)
-                warning = next(
+                clean_close = next(
                     row for row in logs if row["event"] == "peer_connection_closed"
                 )
-                self.assertEqual(warning["level"], "WARNING")
+                self.assertEqual(clean_close["level"], "INFO")
             finally:
                 server.server_close()
             self.assertFalse(repo.connection_statuses()["B"]["connected"])

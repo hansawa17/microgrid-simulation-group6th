@@ -83,6 +83,14 @@ class CRuntimeConfigTests(unittest.TestCase):
         self.assertIn('",CLOSED"', esp_source)
         self.assertIn("void Esp8266_RecoverRx(void)", esp_source)
         self.assertIn("void HAL_UART_ErrorCallback", turbine_source)
+        self.assertIn("#define WF_PROMPT_TIMEOUT_MS      3000u", wifi_source)
+        self.assertIn("#define WF_SEND_OK_TIMEOUT_MS     6000u", wifi_source)
+        self.assertIn("#define WF_MAX_STATE_RETRIES         5u", wifi_source)
+
+        turbine_header = (firmware / "Inc" / "wind_turbine.h").read_text(encoding="utf-8")
+        host_config = (HOST_DIR / "config.py").read_text(encoding="utf-8")
+        self.assertIn("WT_DEFAULT_C_TIMEOUT_S         8.0f", turbine_header)
+        self.assertIn('"c_timeout_s": 8.0', host_config)
 
     def test_host_serial_worker_reopens_after_disconnect(self):
         source = (HOST_DIR / "serial_comm.py").read_text(encoding="utf-8")

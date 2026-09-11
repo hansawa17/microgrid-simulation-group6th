@@ -44,7 +44,7 @@ extern "C" {
 #define WT_DEFAULT_WIND_RATED_POWER_KW 100.0f  /* 额定功率   kW   */
 #define WT_DEFAULT_PITCH_FEATHER_DEG   90.0f   /* 最大顺桨角 °    */
 #define WT_DEFAULT_C_CONTROL_S         1.0f    /* 控制周期   s    */
-#define WT_DEFAULT_C_TIMEOUT_S         3.0f    /* 通信超时   s    */
+#define WT_DEFAULT_C_TIMEOUT_S         8.0f    /* 通信超时   s    */
 
 /* 控制模式 */
 #define WT_MODE_OPEN_LOOP     0u  /* 开环 */

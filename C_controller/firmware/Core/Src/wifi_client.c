@@ -23,11 +23,11 @@
 #define WF_JOIN_TIMEOUT_MS       15000u
 #define WF_CONNECT_TIMEOUT_MS    10000u
 #define WF_CLOSE_TIMEOUT_MS       2000u
-#define WF_PROMPT_TIMEOUT_MS      1000u
-#define WF_SEND_OK_TIMEOUT_MS     2000u
+#define WF_PROMPT_TIMEOUT_MS      3000u
+#define WF_SEND_OK_TIMEOUT_MS     6000u
 #define WF_BOOT_WAIT_MS           1500u
 #define WF_RESET_TIMEOUT_MS       8000u
-#define WF_MAX_STATE_RETRIES         3u
+#define WF_MAX_STATE_RETRIES         5u
 
 /* ------------------------------------------------------------------ */
 /*  A 服务端地址/端口（运行期可配，默认值来自 wifi_config.h）           */

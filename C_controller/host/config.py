@@ -46,7 +46,7 @@ DEFAULT_PARAMS = {
     "wind_rated_power_kw": 100.0, # 额定功率   kW（小组统一基准）
     "pitch_feather_deg": 90.0,    # 最大顺桨角 °
     "c_control_s": 1.0,           # 控制周期   s
-    "c_timeout_s": 3.0,           # 通信超时   s
+    "c_timeout_s": 8.0,           # 通信超时   s（容忍高延迟/短抖动）
     "control_mode": 1,            # 控制模式 0开环/1闭环
 }
 
