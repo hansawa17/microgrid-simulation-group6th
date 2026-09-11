@@ -1000,9 +1000,14 @@ class ProtocolTests(unittest.TestCase):
                 )
                 server.unregister_peer("B")
                 self.assertFalse(repo.connection_statuses()["B"]["connected"])
-                events = [row["event"] for row in repo.logs(20)]
+                logs = repo.logs(20)
+                events = [row["event"] for row in logs]
                 self.assertIn("peer_connected", events)
                 self.assertIn("peer_disconnected", events)
+                warning = next(
+                    row for row in logs if row["event"] == "peer_connection_closed"
+                )
+                self.assertEqual(warning["level"], "WARNING")
             finally:
                 server.server_close()
             self.assertFalse(repo.connection_statuses()["B"]["connected"])
@@ -1045,6 +1050,11 @@ class ProtocolTests(unittest.TestCase):
                         ):
                             time.sleep(0.02)
                         self.assertFalse(repo.connection_statuses()["B"]["connected"])
+                        timeout_log = next(
+                            row for row in repo.logs(20)
+                            if row["event"] == "peer_timeout"
+                        )
+                        self.assertEqual(timeout_log["level"], "WARNING")
             finally:
                 server.shutdown()
                 server.server_close()

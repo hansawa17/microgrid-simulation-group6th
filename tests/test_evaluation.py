@@ -2,11 +2,24 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from B_dispatch.evaluation import EVALUATION_WEIGHTS, evaluate_repository
+from B_dispatch.evaluation import EVALUATION_WEIGHTS, _score_balance, evaluate_repository
 from B_dispatch.repository import EMSRepository
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_balance_score_uses_the_v1_0_2_thresholds(self):
+        expected = (
+            (3.0, 100.0),
+            (3.001, 80.0),
+            (10.0, 80.0),
+            (10.001, 60.0),
+            (50.0, 60.0),
+            (50.001, 40.0),
+        )
+        for error_kw, score in expected:
+            with self.subTest(error_kw=error_kw):
+                self.assertEqual(_score_balance(error_kw), score)
+
     def test_empty_database_is_read_only_and_uses_five_item_weights(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = EMSRepository(Path(tmp) / "ems.db")

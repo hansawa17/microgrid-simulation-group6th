@@ -24,6 +24,7 @@ SERIAL_TIMEOUT = 0.2          # readline 超时（秒）
 SERIAL_BYTESIZE = 8
 SERIAL_PARITY = "N"
 SERIAL_STOPBITS = 1
+SERIAL_RECONNECT_DELAY_S = 1.0
 
 # --------------------------------------------------------------------------- #
 #  TCP（PC-C <-> PC-A 电网模拟器）—— 已移除：按拓扑 PC-C 不直连 A，由 STM32/Wi-Fi 承担

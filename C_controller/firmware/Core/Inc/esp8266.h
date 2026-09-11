@@ -26,8 +26,12 @@
 #define ESP_EVT_RX_OVERFLOW     (1u<<13)   /* USART/TCP 接收缓冲溢出 */
 
 /* USART1 中断接收（由 HAL_UART_RxCpltCallback 分发调用） */
+#define ESP_EVT_UART_ERROR      (1u<<14)
+#define ESP_EVT_STA_IP          (1u<<15)
+
 void     Esp8266_StartRx(void);
 void     Esp8266_OnRxCplt(void);
+void     Esp8266_RecoverRx(void);
 
 /* 发送 AT 命令（自动追加 \r\n） */
 void     Esp8266_SendCmd(const char *cmd);

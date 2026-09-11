@@ -7,6 +7,7 @@
 """
 
 import threading
+import time
 
 import serial
 import serial.tools.list_ports
@@ -45,24 +46,35 @@ class SerialWorker(QThread):
     #  线程生命周期
     # ------------------------------------------------------------------ #
     def run(self):
-        try:
-            self._serial = serial.Serial(
-                port=self.port,
-                baudrate=self.baudrate,
-                bytesize=config.SERIAL_BYTESIZE,
-                parity=config.SERIAL_PARITY,
-                stopbits=config.SERIAL_STOPBITS,
-                timeout=config.SERIAL_TIMEOUT,
-            )
-        except Exception as e:  # 打开失败
-            self.error.emit(f"串口打开失败：{e}")
-            self.connected.emit(False)
-            return
-
         self._running = True
-        self.connected.emit(True)
+        connected = False
+        last_open_error = None
 
         while self._running:
+            if self._serial is None:
+                try:
+                    self._serial = serial.Serial(
+                        port=self.port,
+                        baudrate=self.baudrate,
+                        bytesize=config.SERIAL_BYTESIZE,
+                        parity=config.SERIAL_PARITY,
+                        stopbits=config.SERIAL_STOPBITS,
+                        timeout=config.SERIAL_TIMEOUT,
+                    )
+                except Exception as e:
+                    message = f"串口 {self.port} 暂不可用，正在自动重连：{e}"
+                    if message != last_open_error:
+                        self.error.emit(message)
+                        last_open_error = message
+                    if connected:
+                        connected = False
+                        self.connected.emit(False)
+                    time.sleep(config.SERIAL_RECONNECT_DELAY_S)
+                    continue
+                connected = True
+                last_open_error = None
+                self.connected.emit(True)
+
             try:
                 line = self._serial.readline()
                 if not line:
@@ -72,15 +84,23 @@ class SerialWorker(QThread):
                     self.line_received.emit(text)
             except serial.SerialException as e:
                 if self._running:
-                    self.error.emit(f"串口读取异常：{e}")
-                break
+                    self.error.emit(f"串口连接中断，正在自动重连：{e}")
             except Exception as e:
                 if self._running:
-                    self.error.emit(f"串口异常：{e}")
-                break
+                    self.error.emit(f"串口异常，正在自动重连：{e}")
+            else:
+                continue
+
+            self._close_port()
+            if connected:
+                connected = False
+                self.connected.emit(False)
+            if self._running:
+                time.sleep(config.SERIAL_RECONNECT_DELAY_S)
 
         self._close_port()
-        self.connected.emit(False)
+        if connected:
+            self.connected.emit(False)
 
     # ------------------------------------------------------------------ #
     #  对外方法

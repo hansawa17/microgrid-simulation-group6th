@@ -30,6 +30,7 @@ static uint8_t esp_stream[ESP_STREAM_SIZE];
 static volatile uint16_t esp_stream_head = 0u;
 static volatile uint16_t esp_stream_tail = 0u;
 static volatile uint8_t esp_stream_overflow = 0u;
+static volatile uint8_t esp_uart_error = 0u;
 
 /* 当前 +IPD 载荷可跨多次 Poll/串口中断到达 */
 static uint16_t esp_ipd_remaining = 0u;
@@ -48,6 +49,19 @@ static volatile uint8_t esp_tcp_connected  = 0u;
 /* ------------------------------------------------------------------ */
 void Esp8266_StartRx(void)
 {
+    HAL_UART_Receive_IT(&huart1, &esp_rx_byte, 1);
+}
+
+void Esp8266_RecoverRx(void)
+{
+    /* UART errors can terminate HAL interrupt reception.  Drop any partial
+       AT/+IPD frame and re-arm reception so recovery can continue. */
+    esp_stream_tail = esp_stream_head;
+    esp_stream_overflow = 0u;
+    esp_data_len = 0u;
+    esp_ipd_remaining = 0u;
+    esp_ipd_drop = 0u;
+    esp_uart_error = 1u;
     HAL_UART_Receive_IT(&huart1, &esp_rx_byte, 1);
 }
 
@@ -134,6 +148,19 @@ static int esp_append_stream_data(uint16_t n)
 /* ------------------------------------------------------------------ */
 #define LINE_IS(lit) ((n) == (uint16_t)(sizeof(lit)-1u) && memcmp(s, (lit), (n)) == 0)
 
+static int esp_line_ends_with(const char *s, uint16_t n, const char *suffix, uint16_t suffix_len)
+{
+    return n >= suffix_len && memcmp(s + n - suffix_len, suffix, suffix_len) == 0;
+}
+
+static int esp_line_contains(const char *s, uint16_t n, const char *needle, uint16_t needle_len)
+{
+    if (needle_len == 0u || n < needle_len) return 0;
+    for (uint16_t i = 0u; i <= (uint16_t)(n - needle_len); i++)
+        if (memcmp(s + i, needle, needle_len) == 0) return 1;
+    return 0;
+}
+
 static uint32_t esp_handle_line(const char *s, uint16_t n)
 {
     while (n > 0u && (s[n-1u] == '\r' || s[n-1u] == '\n')) n--;   /* 去尾部 \r */
@@ -144,12 +171,17 @@ static uint32_t esp_handle_line(const char *s, uint16_t n)
     if (LINE_IS("FAIL"))                     return ESP_EVT_FAIL;
     if (LINE_IS("WIFI GOT IP"))              { esp_wifi_connected = 1u; return ESP_EVT_WIFI_GOT_IP; }
     if (LINE_IS("WIFI DISCONNECT"))          { esp_wifi_connected = 0u; esp_tcp_connected = 0u; return ESP_EVT_WIFI_DISCONN; }
-    if (LINE_IS("WIFI CONNECTED"))           return ESP_EVT_WIFI_CONNECTED;
+    if (LINE_IS("WIFI CONNECTED"))           { esp_wifi_connected = 1u; return ESP_EVT_WIFI_CONNECTED; }
     if (LINE_IS("ALREADY CONNECTED"))        { esp_tcp_connected = 1u; return ESP_EVT_ALREADY_CONN; }
-    if (LINE_IS("CONNECT"))                  { esp_tcp_connected = 1u; return ESP_EVT_CONNECT; }
-    if (LINE_IS("CLOSED"))                   { esp_tcp_connected = 0u; return ESP_EVT_CLOSED; }
+    if (LINE_IS("CONNECT") || esp_line_ends_with(s, n, ",CONNECT", 8u))
+                                                { esp_tcp_connected = 1u; return ESP_EVT_CONNECT; }
+    if (LINE_IS("CLOSED") || esp_line_ends_with(s, n, ",CLOSED", 7u))
+                                                { esp_tcp_connected = 0u; return ESP_EVT_CLOSED; }
+    if (n >= 14u && memcmp(s, "+CIFSR:STAIP,", 13u) == 0 &&
+        !esp_line_contains(s, n, "\"0.0.0.0\"", 9u))
+                                                { esp_wifi_connected = 1u; return ESP_EVT_STA_IP; }
     if (LINE_IS("SEND OK"))                  return ESP_EVT_SEND_OK;
-    if (LINE_IS("ready"))                    return ESP_EVT_READY;
+    if (LINE_IS("ready"))                    { esp_wifi_connected = 0u; esp_tcp_connected = 0u; return ESP_EVT_READY; }
     if (n >= 4u && memcmp(s, "busy", 4) == 0) return ESP_EVT_BUSY;
     return 0u;
 }
@@ -160,6 +192,12 @@ static uint32_t esp_handle_line(const char *s, uint16_t n)
 uint32_t Esp8266_Poll(void)
 {
     uint32_t ev = 0u;
+
+    if (esp_uart_error)
+    {
+        esp_uart_error = 0u;
+        ev |= ESP_EVT_UART_ERROR;
+    }
 
     if (esp_stream_overflow)
     {

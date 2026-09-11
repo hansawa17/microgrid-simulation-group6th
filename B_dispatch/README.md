@@ -145,7 +145,7 @@ B 负责 EMS/operator 侧的调度决策、本地 `ems.db` 数据层和 PyQt6 �
 
 ## ems.db 结构与初始化
 
-`EMSRepository.initialize()` 会创建/迁移 `ems.db`。当前 schema version 为 **5**，主要分为五类：
+`EMSRepository.initialize()` 会创建/迁移 `ems.db`。当前 schema version 为 **6**，主要分为五类：
 
 1. `physical_parameters`：A/B 保留的只读物理参数副本；记录风机 100 kW、3/12/25 m/s、0/90 deg、40/60 kW/s，以及柴油 20/120 kW、30/40 kW/s。
 2. `dispatch_parameters`：B 自己使用、可持久化配置的风电上下限、柴油上限和 reserve。
@@ -210,6 +210,8 @@ python -m unittest discover -s tests -v
 `data/runtime/ems.db` 为本地运行数据，不提交 GitHub。
 
 ## 当前边界
+
+- v1.0.2 的供需平衡评分阈值为：平均绝对不平衡 `<=3 kW` 记 100 分，`<=10 kW` 记 80 分，`<=50 kW` 记 60 分，其他记 40 分。
 
 - GUI 的本地场景输入只用于 B 算法演示，不能替代 A 的 CSV 场景。
 - 评价模块是只读分析，不参与 B dispatch 计算，不修改 A 状态，不发送 C 控制指令。

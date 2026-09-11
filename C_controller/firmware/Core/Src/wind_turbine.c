@@ -551,3 +551,22 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         Esp8266_OnRxCplt();
     }
 }
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    /* Overrun and framing errors may stop HAL interrupt reception. */
+    __HAL_UART_CLEAR_OREFLAG(huart);
+    __HAL_UART_CLEAR_NEFLAG(huart);
+    __HAL_UART_CLEAR_FEFLAG(huart);
+    __HAL_UART_CLEAR_PEFLAG(huart);
+
+    if (huart->Instance == USART1)
+    {
+        Esp8266_RecoverRx();
+    }
+    else if (huart->Instance == USART2)
+    {
+        rx_len = 0u;
+        HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+    }
+}

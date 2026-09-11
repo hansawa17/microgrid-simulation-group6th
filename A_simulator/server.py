@@ -171,19 +171,23 @@ class _RequestHandler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         peer: str | None = None
+        disconnect_event = "peer_connection_closed"
+        disconnect_detail = "TCP connection closed"
         try:
             while True:
                 try:
                     frame = self.rfile.readline(self.server.max_frame_bytes + 1)
                 except TimeoutError:
-                    if peer is not None:
-                        self.server.repository.log(
-                            "WARNING", "peer_timeout", f"{peer} idle TCP timeout"
-                        )
+                    disconnect_event = "peer_timeout"
+                    disconnect_detail = "idle TCP timeout"
                     break
-                except (ConnectionError, OSError):
+                except (ConnectionError, OSError) as exc:
+                    disconnect_event = "peer_connection_error"
+                    disconnect_detail = f"TCP receive failed: {type(exc).__name__}"
                     break
                 if not frame:
+                    disconnect_event = "peer_connection_closed"
+                    disconnect_detail = "peer closed the TCP connection"
                     break
                 if len(frame) > self.server.max_frame_bytes:
                     if not frame.endswith(b"\n"):
@@ -212,11 +216,15 @@ class _RequestHandler(socketserver.StreamRequestHandler):
                 try:
                     self.wfile.write(encode_frame(response, self.server.max_frame_bytes))
                     self.wfile.flush()
-                except (ConnectionError, OSError):
+                except (ConnectionError, OSError) as exc:
+                    disconnect_event = "peer_connection_error"
+                    disconnect_detail = f"TCP send failed: {type(exc).__name__}"
                     break
         finally:
             if peer is not None:
-                self.server.unregister_peer(peer)
+                self.server.unregister_peer(
+                    peer, event=disconnect_event, detail=disconnect_detail
+                )
 
 
 class SimulatorTCPServer(socketserver.ThreadingTCPServer):
@@ -263,12 +271,20 @@ class SimulatorTCPServer(socketserver.ThreadingTCPServer):
             count = self._peer_counts[peer]
             self.repository.mark_connection(peer, count > 0, f"{count} active connection(s)")
 
-    def unregister_peer(self, peer: str) -> None:
+    def unregister_peer(
+        self,
+        peer: str,
+        *,
+        event: str = "peer_connection_closed",
+        detail: str = "connection closed",
+    ) -> None:
         with self._peer_lock:
             self._peer_counts[peer] = max(0, self._peer_counts[peer] - 1)
             count = self._peer_counts[peer]
-            detail = f"{count} active connection(s)" if count else "connection closed"
-            self.repository.mark_connection(peer, count > 0, detail)
+            status_detail = f"{count} active connection(s)" if count else detail
+            self.repository.mark_connection(peer, count > 0, status_detail)
+            if count == 0:
+                self.repository.log("WARNING", event, f"{peer}: {detail}")
 
 
 def serve(repository: Repository, bind: str, port: int, max_frame_bytes: int) -> None:
@@ -276,4 +292,3 @@ def serve(repository: Repository, bind: str, port: int, max_frame_bytes: int) ->
         actual_host, actual_port = server.server_address
         print(f"A simulator TCP server listening on {actual_host}:{actual_port}", flush=True)
         server.serve_forever(poll_interval=0.2)
-

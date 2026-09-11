@@ -5,7 +5,19 @@ from __future__ import annotations
 import argparse
 import json
 import socket
+import struct
 import time
+
+
+def close_abruptly(connection: socket.socket) -> None:
+    """Close with TCP RST so the server exercises its connection-error path."""
+
+    try:
+        connection.setsockopt(
+            socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("hh", 1, 0)
+        )
+    finally:
+        connection.close()
 
 
 def main() -> int:
@@ -42,8 +54,10 @@ def main() -> int:
     if args.mode == "idle":
         print(f"holding connection idle for {args.idle_seconds:.1f}s")
         time.sleep(args.idle_seconds)
-    connection.close()
-    print("connection closed; A GUI must turn red instead of retaining normal")
+        connection.close()
+    else:
+        close_abruptly(connection)
+    print("connection closed; A GUI must turn red and show a non-blocking warning")
     return 0
 
 

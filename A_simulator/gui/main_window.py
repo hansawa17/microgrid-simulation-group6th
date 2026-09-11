@@ -681,21 +681,45 @@ class SimulatorWindow(QMainWindow):
         scenario_layout.setSpacing(8)
         duration_card = self._frame()
         duration_card.setProperty("role", "card")
-        duration_layout = QHBoxLayout(duration_card)
+        duration_layout = QGridLayout(duration_card)
         duration_layout.setContentsMargins(14, 8, 14, 8)
-        duration_layout.addWidget(QLabel("仿真总时长"))
+        duration_layout.setHorizontalSpacing(8)
+        duration_layout.addWidget(QLabel("开始时刻"), 0, 0)
+        self.simulationStartSpin = QDoubleSpinBox()
+        self.simulationStartSpin.setRange(0.0, 7 * 24 * 3600.0)
+        self.simulationStartSpin.setDecimals(3)
+        self.simulationStartSpin.setSuffix(" s")
+        self.simulationStartSpin.setValue(self.config.start_s)
+        duration_layout.addWidget(self.simulationStartSpin, 0, 1)
+        duration_layout.addWidget(QLabel("结束时刻"), 0, 2)
+        self.simulationEndSpin = QDoubleSpinBox()
+        self.simulationEndSpin.setRange(0.001, 7 * 24 * 3600.0)
+        self.simulationEndSpin.setDecimals(3)
+        self.simulationEndSpin.setSuffix(" s")
+        self.simulationEndSpin.setValue(self.config.end_s)
+        duration_layout.addWidget(self.simulationEndSpin, 0, 3)
+        duration_layout.addWidget(QLabel("计算步长"), 0, 4)
+        self.simulationStepSpin = QDoubleSpinBox()
+        self.simulationStepSpin.setRange(0.001, 3600.0)
+        self.simulationStepSpin.setDecimals(3)
+        self.simulationStepSpin.setSuffix(" s")
+        self.simulationStepSpin.setValue(self.config.step_s)
+        duration_layout.addWidget(self.simulationStepSpin, 0, 5)
+        self.applyTimingButton = self._button("应用起止时刻与步长", "primary")
+        duration_layout.addWidget(self.applyTimingButton, 0, 6)
+        duration_layout.addWidget(QLabel("仿真总时长"), 1, 0)
         self.simulationDurationSpin = QDoubleSpinBox()
         self.simulationDurationSpin.setRange(self.config.step_s, 7 * 24 * 3600.0)
         self.simulationDurationSpin.setDecimals(3)
         self.simulationDurationSpin.setSuffix(" s")
         self.simulationDurationSpin.setValue(self.config.end_s - self.config.start_s)
-        duration_layout.addWidget(self.simulationDurationSpin)
+        duration_layout.addWidget(self.simulationDurationSpin, 1, 1)
         self.applyDurationButton = self._button("应用到场景时间轴", "primary")
-        duration_layout.addWidget(self.applyDurationButton)
+        duration_layout.addWidget(self.applyDurationButton, 1, 2, 1, 2)
         duration_note = QLabel("修改后需保存 CSV，并重新初始化 grid.db 才会用于仿真")
         duration_note.setProperty("role", "source")
-        duration_layout.addWidget(duration_note)
-        duration_layout.addStretch(1)
+        duration_layout.addWidget(duration_note, 1, 4, 1, 3)
+        duration_layout.setColumnStretch(7, 1)
         scenario_layout.addWidget(duration_card)
         times = [point.sim_time_s for point in self.scenario.points]
         wind_values = [point.wind_speed_mps for point in self.scenario.points]
@@ -1225,6 +1249,7 @@ class SimulatorWindow(QMainWindow):
         self.wind_editor.editingFinished.connect(self._scenario_editing_finished)
         self.load_editor.editingFinished.connect(self._scenario_editing_finished)
         self.applyDurationButton.clicked.connect(self.apply_simulation_duration)
+        self.applyTimingButton.clicked.connect(self.apply_simulation_timing)
         self.start_button.clicked.connect(lambda: self.control_simulation("start"))
         self.pause_button.clicked.connect(lambda: self.control_simulation("pause"))
         self.resume_button.clicked.connect(lambda: self.control_simulation("resume"))
@@ -1377,6 +1402,9 @@ class SimulatorWindow(QMainWindow):
             wind_values = self.wind_editor.values()
             load_values = self.load_editor.values()
             self.config = replace(self.config, end_s=new_start + duration)
+            self.simulationStartSpin.setValue(new_start)
+            self.simulationEndSpin.setValue(new_start + duration)
+            self.simulationStepSpin.setValue(self.config.step_s)
             self.wind_editor.set_data(
                 new_times,
                 wind_values,
@@ -1413,6 +1441,86 @@ class SimulatorWindow(QMainWindow):
             )
         except (TypeError, ValueError) as error:
             QMessageBox.warning(self, "仿真总时长修改失败", str(error))
+
+    def apply_simulation_timing(self) -> None:
+        """Resample the editable curves onto an explicit start/end/step grid."""
+
+        try:
+            start_s = float(self.simulationStartSpin.value())
+            end_s = float(self.simulationEndSpin.value())
+            step_s = float(self.simulationStepSpin.value())
+            if end_s <= start_s:
+                raise ValueError("结束时刻必须大于开始时刻")
+            if step_s <= 0:
+                raise ValueError("计算步长必须大于 0")
+            interval_count = int(math.floor((end_s - start_s) / step_s + 1e-9))
+            if interval_count < 1:
+                raise ValueError("起止时刻之间至少要包含一个计算步长")
+            if interval_count > 100_000:
+                raise ValueError("时间点超过 100000 个，请增大计算步长")
+
+            old_curve = self._scenario_from_editors()
+            old_start = old_curve.points[0].sim_time_s
+            old_end = old_curve.points[-1].sim_time_s
+            old_span = old_end - old_start
+            if old_span <= 0:
+                raise ValueError("场景时间轴必须包含至少两个不同时间点")
+
+            new_times = [start_s + index * step_s for index in range(interval_count + 1)]
+            if new_times[-1] < end_s - 1e-9:
+                new_times.append(end_s)
+            else:
+                new_times[-1] = end_s
+
+            samples = []
+            for new_time in new_times:
+                fraction = (new_time - start_s) / (end_s - start_s)
+                samples.append(old_curve.at(old_start + fraction * old_span))
+            wind_values = [point.wind_speed_mps for point in samples]
+            load_values = [point.load_power_kw for point in samples]
+
+            self.config = replace(
+                self.config,
+                start_s=start_s,
+                end_s=end_s,
+                step_s=step_s,
+            )
+            self.simulationDurationSpin.setMinimum(step_s)
+            self.simulationDurationSpin.setValue(end_s - start_s)
+            self.wind_editor.set_data(
+                new_times,
+                wind_values,
+                maximum=max(self.config.wind.cut_out_speed_mps, max(wind_values) * 1.05, 1.0),
+            )
+            self.load_editor.set_data(
+                new_times,
+                load_values,
+                maximum=max(max(load_values) * 1.1, 1.0),
+            )
+            labels = self._scenario_labels(new_times)
+            self.wind_editor.set_time_labels(labels)
+            self.load_editor.set_time_labels(labels)
+            self.time_slider.setRange(0, len(new_times) - 1)
+            self.time_slider.setValue(0)
+            self.scenario = self._scenario_from_editors()
+            self._scenario_dirty = True
+            self._scenario_runtime_dirty = True
+            self._scenario_edit_revision += 1
+            self._update_scenario_source_label()
+            self.update_preview()
+            if self.db_path.is_file():
+                self._record_repository_event(
+                    "INFO",
+                    "scenario_timing_changed",
+                    f"start_s={start_s:.3f}; end_s={end_s:.3f}; step_s={step_s:.3f}; "
+                    "requires database reinitialization",
+                )
+            self.statusBar().showMessage(
+                "起止时刻和计算步长已应用；请保存 CSV 并重新初始化 grid.db",
+                7000,
+            )
+        except (TypeError, ValueError) as error:
+            QMessageBox.warning(self, "仿真时间参数修改失败", str(error))
 
     def _write_scenario_csv(self, path: Path, *, message: str) -> None:
         scenario = self._scenario_from_editors()

@@ -6,6 +6,15 @@
 
 ## 版本说明
 
+### v1.0.2（2026-09-11）
+
+- A：断线、空闲超时和连接异常上调为告警事件，综合界面以非阻塞弹窗提示；故障注入的 abrupt 模式使用 TCP RST 验证错误路径。
+- A：场景页新增开始时刻、结束时刻和计算步长独立配置，并对风速/负荷曲线重采样；运行期曲线热更新仍从下一执行时刻生效。
+- B：合入远端最新供需平衡评分阈值：`<=3 kW` 100 分、`<=10 kW` 80 分、`<=50 kW` 60 分、其他 40 分，并增加边界回归。
+- C：固件在上电同步和连续失败时自动执行 ESP8266 `AT+RST`，重建 Wi-Fi/TCP，查询有效 STA IP，并从 UART 错误恢复接收；C 上位机也会在 USB 串口短暂拔插后自动重开原 COM 口。
+- 交付：新增 `docs/v1.0.2/` 的 50 项验收核对表、现场演示脚本、测试记录、完整运行/版本/接口/硬件说明和发布说明。
+- 验证边界：CPython 3.11.14 / PyQt6 6.11.0 下 PC 自动化回归 **160 项全部通过**；STM32 实物编译、烧录、三机联调必须下午用现场设备签字确认。
+
 ### v1.0.1（2026-09-11）
 
 - B：合入远端 `302151d`、`3425cae`，GUI 直连路径现在会把 accepted/rejected/delivery-unknown 调度结果写入 `dispatch_commands`，并在收到后续完整 A 状态时持久化风机执行评价。
@@ -364,7 +373,14 @@ python -m unittest discover -s tests -v
 - `docs/decisions.md`
 - `docs/acceptance.md`
 
-## v1.0.0 验收交付文档
+## v1.0.2 验收交付文档
+
+- [v1.0.2 验收入口](docs/v1.0.2/README.md)
+- [50 项逐项核对表](docs/v1.0.2/05-acceptance-checklist.md)
+- [下午现场演示脚本](docs/v1.0.2/06-onsite-demo-runbook.md)
+- [v1.0.2 发布说明](docs/v1.0.2/RELEASE_NOTES.md)
+
+## v1.0.0 历史验收交付文档
 
 - [完整源码与运行说明](docs/v1.0.0/01-source-and-run.md)
 - [Git 仓库与版本管理](docs/v1.0.0/02-version-management.md)

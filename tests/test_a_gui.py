@@ -129,6 +129,24 @@ class SimulatorWindowTests(unittest.TestCase):
         self.assertAlmostEqual(self.window.config.end_s, 300.0)
         self.assertTrue(self.window._scenario_dirty)
 
+    def test_start_end_and_step_resample_scenario_axis(self) -> None:
+        original_wind = self.window.wind_editor.values()
+        original_load = self.window.load_editor.values()
+        self.window.simulationStartSpin.setValue(10.0)
+        self.window.simulationEndSpin.setValue(20.0)
+        self.window.simulationStepSpin.setValue(2.0)
+        self.window.apply_simulation_timing()
+
+        self.assertEqual(self.window.wind_editor.times_s(), [10.0, 12.0, 14.0, 16.0, 18.0, 20.0])
+        self.assertAlmostEqual(self.window.wind_editor.values()[0], original_wind[0])
+        self.assertAlmostEqual(self.window.wind_editor.values()[-1], original_wind[-1])
+        self.assertAlmostEqual(self.window.load_editor.values()[0], original_load[0])
+        self.assertAlmostEqual(self.window.load_editor.values()[-1], original_load[-1])
+        self.assertAlmostEqual(self.window.config.start_s, 10.0)
+        self.assertAlmostEqual(self.window.config.end_s, 20.0)
+        self.assertAlmostEqual(self.window.config.step_s, 2.0)
+        self.assertTrue(self.window._scenario_dirty)
+
     def test_stale_connection_never_remains_visually_normal(self) -> None:
         old = "2000-01-01T00:00:00.000Z"
         with patch.object(
@@ -162,6 +180,17 @@ class SimulatorWindowTests(unittest.TestCase):
             self.window._refresh_alerts()
         popup.assert_called_once()
         self.assertIn("manufactured_fault", popup.call_args.args[0])
+
+    def test_peer_disconnect_warning_opens_nonblocking_popup(self) -> None:
+        self.window._refresh_alerts()
+        self.repository.log(
+            "WARNING", "peer_connection_error", "C: TCP receive failed"
+        )
+        with patch.object(self.window, "_show_fault_popup") as popup:
+            self.window._refresh_alerts()
+        popup.assert_called_once()
+        self.assertIn("peer_connection_error", popup.call_args.args[0])
+        self.assertIn("C: TCP receive failed", popup.call_args.args[1])
 
     def test_starting_simulation_also_ensures_tcp_service(self) -> None:
         with (

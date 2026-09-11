@@ -67,6 +67,30 @@ class CRuntimeConfigTests(unittest.TestCase):
         self.assertIn("uint32_t WindTurbine_GetTimeoutMs(void);", turbine_header)
         self.assertNotIn("WF_RESPONSE_TIMEOUT_MS", wifi_source)
 
+    def test_firmware_recovers_uart_and_resets_stalled_esp8266(self):
+        firmware = HOST_DIR.parent / "firmware" / "Core"
+        wifi_source = (firmware / "Src" / "wifi_client.c").read_text(encoding="utf-8")
+        esp_source = (firmware / "Src" / "esp8266.c").read_text(encoding="utf-8")
+        turbine_source = (firmware / "Src" / "wind_turbine.c").read_text(encoding="utf-8")
+
+        self.assertIn('Esp8266_SendCmd("AT+RST")', wifi_source)
+        self.assertIn('Esp8266_SendCmd("AT+CIPMUX=0")', wifi_source)
+        self.assertIn('Esp8266_SendCmd("AT+CIFSR")', wifi_source)
+        self.assertIn("WF_MAX_STATE_RETRIES", wifi_source)
+        self.assertIn("ESP_EVT_UART_ERROR", wifi_source)
+        self.assertIn("ESP_EVT_STA_IP", wifi_source)
+        self.assertIn('",CONNECT"', esp_source)
+        self.assertIn('",CLOSED"', esp_source)
+        self.assertIn("void Esp8266_RecoverRx(void)", esp_source)
+        self.assertIn("void HAL_UART_ErrorCallback", turbine_source)
+
+    def test_host_serial_worker_reopens_after_disconnect(self):
+        source = (HOST_DIR / "serial_comm.py").read_text(encoding="utf-8")
+        self.assertIn("SERIAL_RECONNECT_DELAY_S", source)
+        self.assertIn("正在自动重连", source)
+        self.assertIn("while self._running", source)
+        self.assertNotIn("串口读取异常：{e}\")\n                break", source)
+
 
 if __name__ == "__main__":
     unittest.main()

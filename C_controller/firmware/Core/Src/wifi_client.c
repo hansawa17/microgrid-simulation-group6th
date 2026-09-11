@@ -25,6 +25,9 @@
 #define WF_CLOSE_TIMEOUT_MS       2000u
 #define WF_PROMPT_TIMEOUT_MS      1000u
 #define WF_SEND_OK_TIMEOUT_MS     2000u
+#define WF_BOOT_WAIT_MS           1500u
+#define WF_RESET_TIMEOUT_MS       8000u
+#define WF_MAX_STATE_RETRIES         3u
 
 /* ------------------------------------------------------------------ */
 /*  A 服务端地址/端口（运行期可配，默认值来自 wifi_config.h）           */
@@ -35,10 +38,14 @@ static uint16_t g_server_port            = WIFI_SERVER_PORT;
 static volatile uint8_t g_reconnect_requested = 0u;
 
 typedef enum {
+    WF_BOOT_WAIT,
     WF_AT_SYNC,
+    WF_RESET_MODULE,
     WF_ECHO_OFF,
     WF_SET_MODE,
+    WF_SET_MUX,
     WF_JOIN_AP,
+    WF_QUERY_IP,
     WF_CONNECT_TCP,
     WF_CLOSE_TCP,
     WF_ONLINE
@@ -82,6 +89,8 @@ typedef struct {
 static WfState_t wf;
 static wf_state_t wf_state = WF_AT_SYNC;
 static uint32_t wf_state_tick = 0u;
+static uint8_t wf_state_retries = 0u;
+static uint8_t wf_startup_reset_pending = 1u;
 
 static wf_tx_state_t wf_tx_state = WF_TX_IDLE;
 static wf_message_kind_t wf_tx_kind = WF_MSG_NONE;
@@ -211,8 +220,13 @@ static void wf_enter(wf_state_t state)
     wf_state_tick = HAL_GetTick();
     switch (state)
     {
+    case WF_BOOT_WAIT:
+        break;
     case WF_AT_SYNC:
         Esp8266_SendCmd("AT");
+        break;
+    case WF_RESET_MODULE:
+        Esp8266_SendCmd("AT+RST");
         break;
     case WF_ECHO_OFF:
         Esp8266_SendCmd("ATE0");
@@ -220,9 +234,15 @@ static void wf_enter(wf_state_t state)
     case WF_SET_MODE:
         Esp8266_SendCmd("AT+CWMODE=1");
         break;
+    case WF_SET_MUX:
+        Esp8266_SendCmd("AT+CIPMUX=0");
+        break;
     case WF_JOIN_AP:
         snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"", WIFI_SSID, WIFI_PASSWORD);
         Esp8266_SendCmd(cmd);
+        break;
+    case WF_QUERY_IP:
+        Esp8266_SendCmd("AT+CIFSR");
         break;
     case WF_CONNECT_TCP:
         snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"TCP\",\"%s\",%u",
@@ -240,11 +260,31 @@ static void wf_enter(wf_state_t state)
     }
 }
 
+static void wf_advance(wf_state_t state)
+{
+    wf_enter(state);
+}
+
+static void wf_retry_or_reset(wf_state_t retry_state)
+{
+    wf_state_retries++;
+    wf_reset_transport();
+    if (wf_state_retries >= WF_MAX_STATE_RETRIES)
+    {
+        wf_state_retries = 0u;
+        wf_enter(WF_RESET_MODULE);
+    }
+    else
+    {
+        wf_enter(retry_state);
+    }
+}
+
 static void wf_reconnect(void)
 {
-    wf_reset_transport();
-    if (Esp8266_IsWifiConnected()) wf_enter(WF_CLOSE_TCP);
-    else wf_enter(WF_JOIN_AP);
+    wf_retry_or_reset(
+        Esp8266_IsWifiConnected() ? WF_CLOSE_TCP : WF_JOIN_AP
+    );
 }
 
 static int wf_start_frame(const char *frame, uint16_t len,
@@ -351,6 +391,7 @@ static int wf_handle_state(const char *line)
     wf.fault = fault;
     wf_app_state = WF_APP_IDLE;
     wf_response_tick = 0u;
+    wf_state_retries = 0u;
 
     if (wf_pending_valid && strcmp(wf_pending_session, wf.session_id) == 0)
     {
@@ -415,6 +456,7 @@ static int wf_handle_ack(const char *line)
     wf_app_state = WF_APP_IDLE;
     wf_response_tick = 0u;
     wf.got_state = 0u;
+    wf_state_retries = 0u;
     return 0;
 }
 
@@ -521,8 +563,10 @@ void WifiClient_Init(void)
     wf_psync_seq = 0u;
     wf_psync_reason[0] = '\0';
     wf_ack_kind = WF_MSG_NONE;
+    wf_state_retries = 0u;
+    wf_startup_reset_pending = 1u;
     wf_reset_transport();
-    wf_enter(WF_AT_SYNC);
+    wf_enter(WF_BOOT_WAIT);
 }
 
 void WifiClient_Task(void)
@@ -538,46 +582,87 @@ void WifiClient_Task(void)
         return;
     }
 
+    if (events & ESP_EVT_UART_ERROR)
+    {
+        wf_state_retries = 0u;
+        wf_reset_transport();
+        wf_enter(WF_RESET_MODULE);
+        return;
+    }
+
     if (events & ESP_EVT_WIFI_DISCONN)
     {
-        wf_reset_transport();
-        wf_enter(WF_JOIN_AP);
+        wf_retry_or_reset(WF_JOIN_AP);
         return;
     }
     if ((events & ESP_EVT_CLOSED) && wf_state != WF_CLOSE_TCP)
     {
-        wf_reset_transport();
-        wf_enter(WF_CONNECT_TCP);
+        wf_retry_or_reset(WF_CONNECT_TCP);
         return;
     }
 
     switch (wf_state)
     {
+    case WF_BOOT_WAIT:
+        if (now - wf_state_tick > WF_BOOT_WAIT_MS) wf_enter(WF_AT_SYNC);
+        break;
     case WF_AT_SYNC:
-        if (events & (ESP_EVT_OK | ESP_EVT_READY)) wf_enter(WF_ECHO_OFF);
-        else if (now - wf_state_tick > WF_AT_TIMEOUT_MS) wf_enter(WF_AT_SYNC);
+        if (events & (ESP_EVT_OK | ESP_EVT_READY))
+        {
+            if (wf_startup_reset_pending)
+            {
+                wf_startup_reset_pending = 0u;
+                wf_advance(WF_RESET_MODULE);
+            }
+            else
+            {
+                wf_advance(WF_ECHO_OFF);
+            }
+        }
+        else if (now - wf_state_tick > WF_AT_TIMEOUT_MS)
+            wf_retry_or_reset(WF_AT_SYNC);
+        break;
+    case WF_RESET_MODULE:
+        if (events & ESP_EVT_READY) wf_advance(WF_BOOT_WAIT);
+        else if (now - wf_state_tick > WF_RESET_TIMEOUT_MS)
+            wf_enter(WF_BOOT_WAIT);
         break;
     case WF_ECHO_OFF:
-        if (events & ESP_EVT_OK) wf_enter(WF_SET_MODE);
-        else if ((events & ESP_EVT_ERROR) || now - wf_state_tick > WF_AT_TIMEOUT_MS)
-            wf_enter(WF_ECHO_OFF);
+        if (events & ESP_EVT_OK) wf_advance(WF_SET_MODE);
+        else if ((events & (ESP_EVT_ERROR | ESP_EVT_FAIL | ESP_EVT_BUSY)) ||
+                 now - wf_state_tick > WF_AT_TIMEOUT_MS)
+            wf_retry_or_reset(WF_ECHO_OFF);
         break;
     case WF_SET_MODE:
-        if (events & ESP_EVT_OK) wf_enter(WF_JOIN_AP);
-        else if ((events & ESP_EVT_ERROR) || now - wf_state_tick > WF_AT_TIMEOUT_MS)
-            wf_enter(WF_SET_MODE);
+        if (events & ESP_EVT_OK) wf_advance(WF_SET_MUX);
+        else if ((events & (ESP_EVT_ERROR | ESP_EVT_FAIL | ESP_EVT_BUSY)) ||
+                 now - wf_state_tick > WF_AT_TIMEOUT_MS)
+            wf_retry_or_reset(WF_SET_MODE);
+        break;
+    case WF_SET_MUX:
+        if (events & ESP_EVT_OK) wf_advance(WF_JOIN_AP);
+        else if ((events & (ESP_EVT_ERROR | ESP_EVT_FAIL | ESP_EVT_BUSY)) ||
+                 now - wf_state_tick > WF_AT_TIMEOUT_MS)
+            wf_retry_or_reset(WF_SET_MUX);
         break;
     case WF_JOIN_AP:
-        if (events & ESP_EVT_WIFI_GOT_IP) wf_enter(WF_CONNECT_TCP);
-        else if ((events & (ESP_EVT_FAIL | ESP_EVT_ERROR)) ||
-                 now - wf_state_tick > WF_JOIN_TIMEOUT_MS)
-            wf_enter(WF_JOIN_AP);
+        if (events & (ESP_EVT_WIFI_GOT_IP | ESP_EVT_WIFI_CONNECTED | ESP_EVT_OK))
+            wf_advance(WF_QUERY_IP);
+        else if ((events & (ESP_EVT_FAIL | ESP_EVT_ERROR | ESP_EVT_BUSY)) ||
+                  now - wf_state_tick > WF_JOIN_TIMEOUT_MS)
+            wf_retry_or_reset(WF_JOIN_AP);
+        break;
+    case WF_QUERY_IP:
+        if (events & ESP_EVT_STA_IP) wf_advance(WF_CONNECT_TCP);
+        else if ((events & (ESP_EVT_FAIL | ESP_EVT_ERROR | ESP_EVT_BUSY)) ||
+                 now - wf_state_tick > WF_AT_TIMEOUT_MS)
+            wf_retry_or_reset(WF_JOIN_AP);
         break;
     case WF_CONNECT_TCP:
-        if (events & (ESP_EVT_CONNECT | ESP_EVT_ALREADY_CONN)) wf_enter(WF_ONLINE);
-        else if ((events & (ESP_EVT_ERROR | ESP_EVT_FAIL)) ||
-                 now - wf_state_tick > WF_CONNECT_TIMEOUT_MS)
-            wf_enter(WF_CLOSE_TCP);
+        if (events & (ESP_EVT_CONNECT | ESP_EVT_ALREADY_CONN)) wf_advance(WF_ONLINE);
+        else if ((events & (ESP_EVT_ERROR | ESP_EVT_FAIL | ESP_EVT_BUSY)) ||
+                  now - wf_state_tick > WF_CONNECT_TIMEOUT_MS)
+            wf_retry_or_reset(WF_CLOSE_TCP);
         break;
     case WF_CLOSE_TCP:
         if ((events & (ESP_EVT_CLOSED | ESP_EVT_OK | ESP_EVT_ERROR)) ||
