@@ -14,7 +14,8 @@ def _build_parser():
         description="B / EMS 主站启动入口",
     )
     s = p.add_subparsers(dest="command")
-    s.add_parser("gui")
+    g = s.add_parser("gui")
+    g.add_argument("--monitor", action="store_true", help="三进程监视模式：不建立 TCP，仅监视与配置")
     s.add_parser(
         "wind-evaluation",
         help="兼容入口：单独打开风机执行评价（正式运行推荐从主 GUI 进入）",
@@ -83,14 +84,14 @@ def _embed_wind_evaluation(main_window, repository, QtCore, QtGui, QtWidgets):
     return evaluation
 
 
-def _launch_gui():
+def _launch_gui(monitor=False):
     from PyQt6 import QtCore, QtGui, QtWidgets
     from . import gui_b
     from .repository import EMSRepository
 
     class NetworkAwareMainWindow(gui_b.MainWindow):
         def __init__(self):
-            super().__init__()
+            super().__init__(monitor=monitor)
             ip = _get_local_ip()
             if hasattr(self, "appSubtitle"):
                 self.appSubtitle.setText(
@@ -116,14 +117,28 @@ def _launch_gui():
 
 
 def _launch_full_runtime():
+    import subprocess
+    import sys
+
     from .repository import EMSRepository
 
     EMSRepository(DEFAULT_DB).initialize()
-    # The operator GUI now owns the B→A TCP client and runs the closed-loop
-    # dispatch timer directly, mirroring how A/C own their links. Launching the
-    # legacy compute/io subprocesses here would create a second TCP owner and
-    # race the GUI for A's connection.
-    return _launch_gui()
+    # 三进程模式：B_IO 负责 TCP 通信，compute 负责调度计算，GUI 仅监视与配置。
+    # 关闭 GUI 后，B_IO 与 compute 作为独立进程继续运行。
+    project_root = Path(__file__).resolve().parents[1]
+    kwargs = {"cwd": str(project_root)}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    db_arg = str(DEFAULT_DB)
+    subprocess.Popen(
+        [sys.executable, "-m", "B_dispatch", "compute", "--db", db_arg], **kwargs
+    )
+    subprocess.Popen(
+        [sys.executable, "-m", "B_dispatch", "io", "--db", db_arg], **kwargs
+    )
+    return _launch_gui(monitor=True)
 
 
 def _launch_wind_evaluation():
@@ -145,7 +160,7 @@ def main(argv=None):
     if args.command in (None, "run"):
         return _launch_full_runtime()
     if args.command == "gui":
-        return _launch_gui()
+        return _launch_gui(monitor=args.monitor)
     if args.command == "wind-evaluation":
         return _launch_wind_evaluation()
     from .repository import EMSRepository

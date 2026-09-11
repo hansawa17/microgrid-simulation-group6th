@@ -26,16 +26,12 @@ try:
     from B_dispatch.models import DispatchConfig, GridState
     from B_dispatch.operator_core import EMSCore
     from B_dispatch.repository import EMSRepository
-    from B_dispatch.tcpB import (Ack, B_CONNECT_TIMEOUT_S, B_SOCKET_TIMEOUT_S,
-                                 B_STATE_RESPONSE_TIMEOUT_S, DispatchDeliveryUnknown,
-                                 EMSTcpClient, ProtocolError, parse_endpoint)
+    from B_dispatch.tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError, parse_endpoint
 except ImportError:
     from .models import DispatchConfig, GridState
     from .operator_core import EMSCore
     from .repository import EMSRepository
-    from .tcpB import (Ack, B_CONNECT_TIMEOUT_S, B_SOCKET_TIMEOUT_S,
-                       B_STATE_RESPONSE_TIMEOUT_S, DispatchDeliveryUnknown,
-                       EMSTcpClient, ProtocolError, parse_endpoint)
+    from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError, parse_endpoint
 
 BLUE = '#2f6fd6'
 BG = '#e9eff6'
@@ -175,7 +171,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.demo_mode = True
         self.db_path = Path(__file__).resolve().parents[1] / 'data' / 'runtime' / 'ems.db'
         self.repo = EMSRepository(self.db_path)
-        self.params = {'wind_min_kw':0.0,'wind_max_kw':100.0,'diesel_max_kw':120.0,'reserve_kw':10.0,'max_age_s':8.0,
+        self.params = {'wind_min_kw':0.0,'wind_max_kw':100.0,'diesel_max_kw':120.0,'reserve_kw':10.0,'max_age_s':2.0,
                        'poll_period_s':1.0,'dispatch_period_s':5.0,'closed_loop':True}
         self.core = EMSCore(self.config())
         self.auto_dispatch = False
@@ -217,7 +213,8 @@ class MainWindow(QtWidgets.QMainWindow):
         body.addWidget(self.nav())
         self.stack = QtWidgets.QStackedWidget()
         factories = [self.monitor_page, self.curve_page, self.demo_page, self.params_page,
-                     self.dispatch_page, self.history_page, self.comm_page, self.alarm_page]
+                     self.dispatch_page, self.history_page, self.comm_page, self.alarm_page,
+                     self.wind_exec_page]
         for factory in factories: self.stack.addWidget(factory())
         body.addWidget(self.stack, 1); outer.addLayout(body, 1)
         self.group = QtWidgets.QButtonGroup(self); self.group.setExclusive(True)
@@ -246,7 +243,7 @@ class MainWindow(QtWidgets.QMainWindow):
         l = QtWidgets.QVBoxLayout(panel); l.setContentsMargins(0,16,0,16)
         cap = QtWidgets.QLabel('功能导航'); cap.setProperty('hint', True); l.addWidget(cap)
         self.nav_buttons = []
-        labels = ['运行监控','实时曲线','本地场景 / 手动调度','参数设置','EMS 调度','历史数据','通信诊断','报警与评价']
+        labels = ['运行监控','实时曲线','本地场景 / 手动调度','参数设置','EMS 调度','历史数据','通信诊断','报警与评价','风机执行评价']
         for text in labels:
             b = QtWidgets.QPushButton(text); b.setProperty('nav', True); b.setCheckable(True); self.nav_buttons.append(b); l.addWidget(b)
         l.addStretch()
@@ -342,6 +339,10 @@ class MainWindow(QtWidgets.QMainWindow):
         w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('报警与评价'))
         top = QtWidgets.QHBoxLayout(); self.kpi_total=Card('评价样本','项'); self.kpi_unserved=Card('目标缺供','kWh-equivalent'); self.kpi_surplus=Card('目标过剩','kWh-equivalent'); self.kpi_ack=Card('ACK 接受率','%'); top.addWidget(self.kpi_total); top.addWidget(self.kpi_unserved); top.addWidget(self.kpi_surplus); top.addWidget(self.kpi_ack); l.addLayout(top)
         self.alarm_table=QtWidgets.QTableWidget(0,5); self.alarm_table.setHorizontalHeaderLabels(['等级','事件','说明','Session','Step']); self.alarm_table.horizontalHeader().setStretchLastSection(True); l.addWidget(self.alarm_table,1)
+
+    def wind_exec_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('风机执行评价'))
+        note = QtWidgets.QLabel('风机执行评价仅在正式 GUI（B_dispatch.gui_b.MainWindow）中提供。'); note.setProperty('hint',True); l.addWidget(note); l.addStretch(); return w
         return w
 
     def build_timers(self) -> None:
@@ -394,13 +395,13 @@ class MainWindow(QtWidgets.QMainWindow):
         candidate = EMSTcpClient(
             host,
             port,
-            timeout_s=B_SOCKET_TIMEOUT_S,
-            connect_timeout_s=B_CONNECT_TIMEOUT_S,
-            state_response_timeout_s=B_STATE_RESPONSE_TIMEOUT_S,
+            timeout_s=0.5,
+            connect_timeout_s=5.0,
+            state_response_timeout_s=6.0,
             state_poll_period_s=self.params['poll_period_s'],
         )
         self._set_connecting_state(f'正在连接 A（第 {self._reconnect_attempt + 1} 次）')
-        self.log(f'尝试连接 A：{host}:{port}（建连超时 {B_CONNECT_TIMEOUT_S:g} s）')
+        self.log(f'尝试连接 A：{host}:{port}（建连超时 5 s）')
         if host in {'127.0.0.1', 'localhost', '::1'}:
             self.log('提示：回环地址只适用于 A 与 B 在同一台电脑；跨电脑请填写 A 的局域网 IP 或公网隧道地址')
 

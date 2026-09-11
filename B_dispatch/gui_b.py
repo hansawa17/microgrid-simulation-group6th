@@ -22,10 +22,53 @@ from .tcpB import Ack, DispatchDeliveryUnknown, EMSTcpClient, ProtocolError, par
 from .wind_execution import evaluate_pair, find_feedback
 
 
+WIND_EXEC_RULES = {
+    "start_stop": {
+        "title": "启停一致性",
+        "weight": 30,
+        "metric": "B 使能 == C 使能 == A 实际运行",
+        "rules": [
+            "故障/无可用功率/无运行上限：停机且 C 未使能 → 100，否则 80",
+            "正常：三者一致 → 100，否则 50",
+        ],
+    },
+    "power_tracking": {
+        "title": "功率跟踪",
+        "weight": 35,
+        "metric": "实际出力 对比 有效目标",
+        "rules": [
+            "故障/无可用：实际≈0 → 100，否则 70",
+            "正常：得分 = 100 × (1 − |实际 − 有效目标| / 尺度)",
+            "尺度 = clamp(可用功率, 1, 100)",
+        ],
+    },
+    "pitch_response": {
+        "title": "桨距响应",
+        "weight": 20,
+        "metric": "实际桨距 对比 目标桨距",
+        "rules": [
+            "得分 = 100 × (1 − |实际桨距 − 目标桨距| / 90)",
+        ],
+    },
+    "capability_safety": {
+        "title": "能力与安全",
+        "weight": 15,
+        "metric": "可用/上限/实际 越界次数",
+        "rules": [
+            "可用<0 或 上限<0 或 上限>可用：越界 +1",
+            "实际<0 或 实际>min(可用,上限)：越界 +1",
+            "得分 = max(0, 100 − 50 × 越界次数)",
+        ],
+    },
+}
+
+
 class MainWindow(_LegacyMainWindow):
     """Operator window that owns the B->A TCP client and the dispatch timer."""
 
-    def __init__(self) -> None:
+    def __init__(self, monitor: bool = False) -> None:
+        self._monitor = monitor
+        self._last_db_poll = 0.0
         self._communication_enabled = False
         self._initialized_repo_identity: int | None = None
         self._last_db_state_key: tuple[str, int, str] | None = None
@@ -44,10 +87,20 @@ class MainWindow(_LegacyMainWindow):
         except Exception:
             self.auto_dispatch = True
         self.auto_box.blockSignals(True); self.auto_box.setChecked(self.auto_dispatch); self.auto_box.blockSignals(False)
-        self.safe_label.setText("正式模式：GUI 直连 A；闭环下每 1 s 检查 YK/YT 变化，仅变化时下发。")
-        self.repo.heartbeat("B_GUI", pid=os.getpid(), state="RUNNING", detail="direct-socket operator GUI")
+        if self._monitor:
+            self.safe_label.setText("三进程模式：通信由 B_IO、计算由 compute 进程负责，本窗口仅监视与配置。")
+            self.connect_btn.setText("保存通信配置")
+            self.request_btn.setEnabled(False)
+            if hasattr(self, "send_btn"): self.send_btn.setEnabled(False)
+            self.repo.heartbeat("B_GUI", pid=os.getpid(), state="RUNNING", detail="monitor-only operator GUI")
+        else:
+            self.safe_label.setText("正式模式：GUI 直连 A；闭环下每 1 s 检查 YK/YT 变化，仅变化时下发。")
+            self.repo.heartbeat("B_GUI", pid=os.getpid(), state="RUNNING", detail="direct-socket operator GUI")
         self.poll_socket()
-        self.log("GUI 启动：本窗口直连 A（TCP client），点“连接”后建立会话")
+        if self._monitor:
+            self.log("GUI 启动（三进程监视模式）：本窗口不建立 TCP，通信/计算由独立进程负责。")
+        else:
+            self.log("GUI 启动：本窗口直连 A（TCP client），点“连接”后建立会话")
 
     def monitor_page(self) -> QtWidgets.QWidget:
         page = super().monitor_page(); layout = page.layout(); card = self.make_card(); box = QtWidgets.QVBoxLayout(card)
@@ -112,6 +165,21 @@ class MainWindow(_LegacyMainWindow):
     def _refresh_scada_table(self) -> None:
         if self.state is None or not hasattr(self, "scada_table"): return
         state = self.state; sampled = state.sampled_at_utc or "--"
+        yt_wind = state.wind_target_kw; yt_diesel = state.diesel_target_kw; yt_time = sampled
+        yk_wind = "--"; yk_diesel = "--"; yk_time = "--"; yk_desc = "尚无本地命令"
+        try:
+            with self.repo.connection() as conn:
+                command = conn.execute(
+                    "SELECT wind_target_kw,diesel_target_kw,wind_enable,diesel_enable,status,created_at_utc "
+                    "FROM dispatch_commands ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                if command is not None:
+                    yt_wind = float(command["wind_target_kw"]); yt_diesel = float(command["diesel_target_kw"])
+                    yt_time = str(command["created_at_utc"])
+                    yk_wind = "合" if command["wind_enable"] else "分"; yk_diesel = "合" if command["diesel_enable"] else "分"
+                    yk_time = str(command["created_at_utc"]); yk_desc = f"本地命令状态={command['status']}"
+        except Exception:
+            pass
         rows = [
             ("YC 遥测", "wind_speed_mps", f"{state.wind_speed_mps:.3f}", "m/s", sampled, "A 环境测量"),
             ("YC 遥测", "load_power_kw", f"{state.load_power_kw:.3f}", "kW", sampled, "A 负荷测量"),
@@ -123,18 +191,11 @@ class MainWindow(_LegacyMainWindow):
             ("YX 遥信", "wind_running", "合" if state.wind_running else "分", "bool", sampled, "风机运行状态"),
             ("YX 遥信", "diesel_running", "合" if state.diesel_running else "分", "bool", sampled, "柴发运行状态"),
             ("YX 遥信", "fault", "告警" if state.fault else "正常", "bool", sampled, "C 保护/故障状态"),
-            ("YT 遥调", "wind_target_kw", f"{state.wind_target_kw:.3f}", "kW", sampled, "A 当前保存的 B 功率目标"),
-            ("YT 遥调", "diesel_target_kw", f"{state.diesel_target_kw:.3f}", "kW", sampled, "A 当前保存的 B 功率目标"),
+            ("YT 遥调", "wind_target_kw", f"{yt_wind:.3f}", "kW", yt_time, "B 最近下发功率目标"),
+            ("YT 遥调", "diesel_target_kw", f"{yt_diesel:.3f}", "kW", yt_time, "B 最近下发功率目标"),
+            ("YK 遥控", "wind_enable", yk_wind, "bool", yk_time, yk_desc),
+            ("YK 遥控", "diesel_enable", yk_diesel, "bool", yk_time, yk_desc),
         ]
-        try:
-            with self.repo.connection() as conn: command = conn.execute("SELECT wind_enable,diesel_enable,status,created_at_utc FROM dispatch_outbox ORDER BY id DESC LIMIT 1").fetchone()
-            if command is not None:
-                command_time = str(command["created_at_utc"]); status = str(command["status"])
-                rows.extend([("YK 遥控", "wind_enable", "合" if command["wind_enable"] else "分", "bool", command_time, f"本地命令状态={status}"), ("YK 遥控", "diesel_enable", "合" if command["diesel_enable"] else "分", "bool", command_time, f"本地命令状态={status}")])
-            else:
-                rows.extend([("YK 遥控", "wind_enable", "--", "bool", "--", "尚无本地命令"), ("YK 遥控", "diesel_enable", "--", "bool", "--", "尚无本地命令")])
-        except Exception:
-            rows.extend([("YK 遥控", "wind_enable", "--", "bool", "--", "命令队列暂不可读"), ("YK 遥控", "diesel_enable", "--", "bool", "--", "命令队列暂不可读")])
         self.scada_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
             for column_index, value in enumerate(row): self.scada_table.setItem(row_index, column_index, QtWidgets.QTableWidgetItem(str(value)))
@@ -265,6 +326,15 @@ class MainWindow(_LegacyMainWindow):
 
     def set_connection_state(self, connected: bool) -> None:
         """Reflect the GUI-owned TCP socket state on the connection button."""
+        if self._monitor:
+            self.demo_mode = False
+            self.a_status.setText("B_IO 通信进程")
+            self.mode_status.setText("三进程")
+            self.connect_btn.setText("保存通信配置")
+            self.connect_btn.setProperty("kind", "primary")
+            self.connect_btn.style().unpolish(self.connect_btn); self.connect_btn.style().polish(self.connect_btn)
+            self.request_btn.setEnabled(False)
+            return
         self.demo_mode = not connected
         self.a_status.setText("A 在线（GUI 直连）" if connected else "A 未在线")
         self.mode_status.setText("TCP 闭环" if connected else ("本地演示" if not self._connection_desired else "TCP 重连中"))
@@ -376,6 +446,19 @@ class MainWindow(_LegacyMainWindow):
 
     def toggle_connection(self) -> None:
         """Connect/disconnect the GUI-owned TCP socket (based on actual state)."""
+        if self._monitor:
+            try:
+                host, port = parse_endpoint(self.host.text(), int(self.port.value()))
+            except Exception as exc:
+                self.log(f"地址无效：{exc}"); QtWidgets.QMessageBox.warning(self, "TCP 地址错误", str(exc)); return
+            self.host.setText(host); self.port.setValue(port)
+            try:
+                self.repo.set_communication_config(host=host, port=port, enabled=True)
+            except Exception as exc:
+                self.log(f"保存通信配置失败：{exc}"); QtWidgets.QMessageBox.warning(self, "保存失败", str(exc)); return
+            self.log(f"已保存 A 通信配置：{host}:{port}，B_IO 进程将自动连接")
+            self.statusBar().showMessage(f"已保存 A 通信配置：{host}:{port}")
+            return
         if self._connection_desired or (self.client and self.client.connected):
             self._connection_desired = False
             self._connection_generation += 1
@@ -407,6 +490,8 @@ class MainWindow(_LegacyMainWindow):
 
     def request_state(self) -> None:
         """Immediately ask A for a fresh state over the GUI-owned socket."""
+        if self._monitor:
+            return
         if not self.client or not self.client.connected:
             self.log("未连接 A：无法请求状态"); return
         try:
@@ -417,6 +502,9 @@ class MainWindow(_LegacyMainWindow):
 
     def poll_socket(self) -> None:
         """Drive the GUI-owned TCP socket without blocking the Qt event loop."""
+        if self._monitor:
+            self._poll_db_state()
+            return
         self._progress_connection()
         c = self.client
         if not c or not c.connected:
@@ -453,8 +541,28 @@ class MainWindow(_LegacyMainWindow):
         except Exception as exc:
             self._handle_connection_loss(f"TCP 接收异常：{exc}")
 
+    def _poll_db_state(self) -> None:
+        """In monitor mode, refresh the latest state written by the B_IO process."""
+        now = time.monotonic()
+        if self._last_db_poll and now - self._last_db_poll < 0.5:
+            return
+        self._last_db_poll = now
+        try:
+            state = self.repo.get_current_grid_state()
+        except Exception:
+            return
+        if state is None:
+            return
+        if self.state is None or state.session_id != self.state.session_id or state.step != self.state.step:
+            self.state = state
+            self.demo_mode = False
+            self.refresh_state_views()
+
     def send_current(self) -> None:
         """Send one dispatch now and, in closed-loop, enable periodic auto-dispatch."""
+        if self._monitor:
+            self.log("三进程模式：调度由 compute/B_IO 进程自动完成，本窗口不下发。")
+            return
         if not self.client or not self.client.connected:
             self.log("未连接 A：拒绝发送 TCP dispatch"); QtWidgets.QMessageBox.information(self, "当前为本地模式", "先连接 A server 才会真正下发 dispatch。"); return
         if self.client._uncertain_dispatch_seq is not None:
@@ -558,6 +666,8 @@ class MainWindow(_LegacyMainWindow):
         is transmitted only when it changed since the last successful send,
         so unchanged targets are never re-generated or re-sent.
         """
+        if self._monitor:
+            return
         if not self.auto_dispatch or not self.params.get("closed_loop"):
             return
         if self._manual_dispatch_pending:
@@ -643,14 +753,15 @@ class MainWindow(_LegacyMainWindow):
         for i,row in enumerate(rows[:300]):
             for j,v in enumerate(row): self.alarm_table.setItem(i,j,QtWidgets.QTableWidgetItem(str(v)))
         self.refresh_evaluation()
+        self.refresh_wind_execution()
 
     def alarm_page(self) -> QtWidgets.QWidget:
         w=QtWidgets.QWidget(); l=QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('报警与评价')); top=QtWidgets.QHBoxLayout(); self.eval_overall=self._eval_card('综合评价','/100'); self.eval_ems=self._eval_card('EMS 调度结果','/100'); self.eval_system=self._eval_card('风机执行效果','/100'); self.eval_grade=self._eval_card('评价等级',''); [top.addWidget(card) for card in (self.eval_overall,self.eval_ems,self.eval_system,self.eval_grade)]; l.addLayout(top)
-        control=self.make_card(); g=QtWidgets.QGridLayout(control); g.addWidget(QtWidgets.QLabel('评价范围'),0,0); self.eval_period=QtWidgets.QComboBox(); [self.eval_period.addItem(text,data) for text,data in [('最近 1 分钟','1m'),('最近 5 分钟','5m'),('本次 Session','session'),('全部历史','all')]]; self.eval_period.setCurrentIndex(1); self.eval_period.currentIndexChanged.connect(self.refresh_evaluation); g.addWidget(self.eval_period,0,1); refresh=QtWidgets.QPushButton('刷新评价'); refresh.setProperty('kind','primary'); refresh.clicked.connect(self.refresh_evaluation); g.addWidget(refresh,0,2); self.eval_hint=QtWidgets.QLabel('综合评价仅由五项指标组成：供需平衡 30% · 风能利用 25% · 柴油经济性 15% · 运行约束 15% · 调度跟踪 15%'); self.eval_hint.setProperty('hint',True); self.eval_hint.setWordWrap(True); g.addWidget(self.eval_hint,0,3,1,3); l.addWidget(control)
-        scores=self.make_card(); sg=QtWidgets.QGridLayout(scores); labels=[('balance','供需平衡'),('wind','风能利用'),('diesel','柴油经济性'),('constraint','运行约束'),('tracking','调度跟踪')]; self.eval_score_labels={}; self.eval_rule_combos={}
+        control=self.make_card(); g=QtWidgets.QGridLayout(control); g.addWidget(QtWidgets.QLabel('评价范围'),0,0); self.eval_period=QtWidgets.QComboBox(); [self.eval_period.addItem(text,data) for text,data in [('最近 1 分钟','1m'),('最近 5 分钟','5m'),('本次 Session','session'),('全部历史','all')]]; self.eval_period.setCurrentIndex(1); self.eval_period.currentIndexChanged.connect(self.refresh_evaluation); g.addWidget(self.eval_period,0,1); refresh=QtWidgets.QPushButton('刷新评价'); refresh.setProperty('kind','primary'); refresh.clicked.connect(self.refresh_evaluation); g.addWidget(refresh,0,2); self.eval_hint=QtWidgets.QLabel('综合评价仅由两项指标组成：柴发出力上下限 50% · 绿电比例 50%'); self.eval_hint.setProperty('hint',True); self.eval_hint.setWordWrap(True); g.addWidget(self.eval_hint,0,3,1,3); l.addWidget(control)
+        scores=self.make_card(); sg=QtWidgets.QGridLayout(scores); labels=[('diesel_bounds','柴发出力上下限'),('green_ratio','绿电比例')]; self.eval_score_labels={}; self.eval_rule_combos={}
         for i,(key,title) in enumerate(labels):
             row=(i//3)*2; col=i%3; title_box=QtWidgets.QHBoxLayout(); title_box.setContentsMargins(0,0,0,0); title_label=QtWidgets.QLabel(f'{title} · {int(EVALUATION_WEIGHTS[key]*100)}%'); combo=QtWidgets.QComboBox(); combo.setMinimumWidth(190); combo.addItem('查看评分标准'); [combo.addItem(rule) for rule in SCORING_RULES[key]['rules']]; title_box.addWidget(title_label,1); title_box.addWidget(combo); title_widget=QtWidgets.QWidget(); title_widget.setLayout(title_box); sg.addWidget(title_widget,row,col); value=QtWidgets.QLabel('-- / 100'); value.setProperty('value',True); self.eval_score_labels[key]=value; sg.addWidget(value,row+1,col); self.eval_rule_combos[key]=combo
-        l.addWidget(scores); detail=self.make_card(); dg=QtWidgets.QGridLayout(detail); detail_items=[('samples','评价样本'),('balance_error','平均功率不平衡'),('wind_util','风能利用率'),('diesel_share','柴油供电占比'),('unserved','平均未供电功率'),('surplus','平均过剩功率'),('violations','运行约束违反'),('tracking_error','平均目标跟踪误差'),('dispatches','调度次数')]; self.eval_detail_labels={}
+        l.addWidget(scores); detail=self.make_card(); dg=QtWidgets.QGridLayout(detail); detail_items=[('samples','评价样本'),('diesel_violations','柴发越限次数'),('green_ratio','绿电比例'),('wind_avg','平均风电出力'),('diesel_avg','平均柴发出力'),('dispatches','调度次数')]; self.eval_detail_labels={}
         for i,(key,title) in enumerate(detail_items): dg.addWidget(QtWidgets.QLabel(title),i//5*2,i%5); value=QtWidgets.QLabel('--'); value.setProperty('cardtitle',True); self.eval_detail_labels[key]=value; dg.addWidget(value,i//5*2+1,i%5)
         l.addWidget(detail); self.eval_table=QtWidgets.QTableWidget(0,5); self.eval_table.setHorizontalHeaderLabels(['评价项','权重','评分','当前指标','说明']); self.eval_table.horizontalHeader().setStretchLastSection(True); self.eval_table.setAlternatingRowColors(True); l.addWidget(self.eval_table,1); return w
 
@@ -664,14 +775,102 @@ class MainWindow(_LegacyMainWindow):
 
     def _show_evaluation(self,r:EvaluationResult) -> None:
         self.eval_overall.value.setText(f'{r.overall_score:.1f}'); self.eval_ems.value.setText(f'{r.ems_score:.1f}'); self.eval_system.value.setText('无数据' if r.wind_execution_count == 0 or r.wind_execution_score is None else f'{r.system_score:.1f}'); self.eval_grade.value.setText(r.grade)
-        for key,score in [('balance',r.balance_score),('wind',r.wind_score),('diesel',r.diesel_score),('constraint',r.constraint_score),('tracking',r.tracking_score)]: self.eval_score_labels[key].setText(f'{score:.1f} / 100')
-        details={'samples':str(r.sample_count),'balance_error':f'{r.avg_balance_error_kw:.2f} kW','wind_util':f'{r.wind_utilization_pct:.1f} %','diesel_share':f'{r.diesel_share_pct:.1f} %','unserved':f'{r.unserved_kw:.2f} kW','surplus':f'{r.surplus_kw:.2f} kW','violations':str(r.constraint_violations),'tracking_error':f'{r.tracking_error_kw:.2f} kW','dispatches':str(r.dispatch_count)}
+        for key,score in [('diesel_bounds',r.diesel_bounds_score),('green_ratio',r.green_ratio_score)]: self.eval_score_labels[key].setText(f'{score:.1f} / 100')
+        details={'samples':str(r.sample_count),'diesel_violations':str(r.diesel_violations),'green_ratio':f'{r.green_ratio_pct:.1f} %','wind_avg':f'{r.wind_actual_kw:.2f} kW','diesel_avg':f'{r.diesel_actual_kw:.2f} kW','dispatches':str(r.dispatch_count)}
         for key,text in details.items(): self.eval_detail_labels[key].setText(text)
-        rows=[('供需平衡',EVALUATION_WEIGHTS['balance'],r.balance_score,f'{r.avg_balance_error_kw:.2f} kW','平均功率不平衡越小越好'),('风能利用',EVALUATION_WEIGHTS['wind'],r.wind_score,f'{r.wind_utilization_pct:.1f}%','实际风电 / 可利用风电'),('柴油经济性',EVALUATION_WEIGHTS['diesel'],r.diesel_score,f'{r.diesel_share_pct:.1f}%','柴油供电占负荷比例'),('运行约束',EVALUATION_WEIGHTS['constraint'],r.constraint_score,f'{r.constraint_violations} 次','检查风电运行边界'),('调度跟踪',EVALUATION_WEIGHTS['tracking'],r.tracking_score,f'{r.tracking_error_kw:.2f} kW','目标与实际平均偏差')]
+        rows=[('柴发出力上下限',EVALUATION_WEIGHTS['diesel_bounds'],r.diesel_bounds_score,f'{r.diesel_violations} 次越限','停机或在下限~上限内满分，越限 40 分'),('绿电比例',EVALUATION_WEIGHTS['green_ratio'],r.green_ratio_score,f'{r.green_ratio_pct:.1f}%','风电实际 / (风电+柴发) 线性映射')]
         self.eval_table.setRowCount(len(rows))
         for i,row in enumerate(rows):
             for j,value in enumerate([row[0],f'{row[1]*100:.0f}%',f'{row[2]:.1f}',row[3],row[4]]): self.eval_table.setItem(i,j,QtWidgets.QTableWidgetItem(str(value)))
-        self.eval_hint.setText(f'{r.period_label}：综合评价按五项权重计算；评分标准可在每项标题右侧下拉查看。评价模块只读历史数据，不修改 dispatch，不参与 TCP。')
+        self.eval_hint.setText(f'{r.period_label}：综合评价按两个维度各 50% 计算；评分标准可在每项标题右侧下拉查看。评价模块只读历史数据，不修改 dispatch，不参与 TCP。')
+
+
+    def wind_exec_page(self) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget(); l = QtWidgets.QVBoxLayout(w); l.setContentsMargins(22,18,22,18); l.addWidget(self.section('风机执行评价'))
+        top = QtWidgets.QHBoxLayout()
+        self.we_total = self._eval_card('风机评价总分', '/100')
+        self.we_verdict = self._eval_card('评价结论', '')
+        self.we_count = self._eval_card('评价样本', '条')
+        self.we_pass = self._eval_card('通过 / 需改进', '')
+        for card in (self.we_total, self.we_verdict, self.we_count, self.we_pass): top.addWidget(card)
+        l.addLayout(top)
+        control = self.make_card(); g = QtWidgets.QGridLayout(control)
+        g.addWidget(QtWidgets.QLabel('评价范围'), 0, 0)
+        self.we_period = QtWidgets.QComboBox()
+        [self.we_period.addItem(text, data) for text, data in [('最近 1 分钟','1m'),('最近 5 分钟','5m'),('本次 Session','session'),('全部历史','all')]]
+        self.we_period.setCurrentIndex(1); self.we_period.currentIndexChanged.connect(self.refresh_wind_execution)
+        g.addWidget(self.we_period, 0, 1)
+        refresh = QtWidgets.QPushButton('刷新评价'); refresh.setProperty('kind','primary'); refresh.clicked.connect(self.refresh_wind_execution); g.addWidget(refresh, 0, 2)
+        self.we_hint = QtWidgets.QLabel('风机执行评价：启停一致性 30% · 功率跟踪 35% · 桨距响应 20% · 能力与安全 15%')
+        self.we_hint.setProperty('hint', True); self.we_hint.setWordWrap(True); g.addWidget(self.we_hint, 0, 3, 1, 3)
+        l.addWidget(control)
+        scores = self.make_card(); sg = QtWidgets.QGridLayout(scores)
+        self.we_score_labels = {}; self.we_rule_combos = {}
+        items = [('start_stop','启停一致性'),('power_tracking','功率跟踪'),('pitch_response','桨距响应'),('capability_safety','能力与安全')]
+        for i, (key, title) in enumerate(items):
+            row = (i // 2) * 2; col = i % 2
+            title_box = QtWidgets.QHBoxLayout(); title_box.setContentsMargins(0, 0, 0, 0)
+            title_label = QtWidgets.QLabel(f'{title} · {WIND_EXEC_RULES[key]["weight"]}%')
+            combo = QtWidgets.QComboBox(); combo.setMinimumWidth(220); combo.addItem('查看评分标准')
+            [combo.addItem(rule) for rule in WIND_EXEC_RULES[key]['rules']]
+            title_box.addWidget(title_label, 1); title_box.addWidget(combo)
+            title_widget = QtWidgets.QWidget(); title_widget.setLayout(title_box); sg.addWidget(title_widget, row, col)
+            value = QtWidgets.QLabel('-- / 100'); value.setProperty('value', True); self.we_score_labels[key] = value; sg.addWidget(value, row + 1, col); self.we_rule_combos[key] = combo
+        l.addWidget(scores); l.addStretch(); return w
+
+    def refresh_wind_execution(self) -> None:
+        if not hasattr(self, 'we_total'): return
+        try:
+            period = self.we_period.currentData() or '5m'
+            self._show_wind_execution(self._wind_exec_summary(period))
+        except Exception as exc:
+            self.log(f'风机评价计算失败：{exc}')
+            self.we_hint.setText(f'风机评价暂不可用：{exc}')
+
+    def _wind_exec_summary(self, period: str) -> dict:
+        with self.repo.connection() as conn:
+            if period == 'session':
+                where = ' WHERE session_id=(SELECT session_id FROM current_state WHERE id=1)'
+            elif period in ('1m', '5m'):
+                minutes = {'1m': 1, '5m': 5}[period]
+                where = f" WHERE julianday(evaluated_at_utc)>=julianday('now','-{minutes} minutes')"
+            else:
+                where = ''
+            rows = conn.execute(
+                'SELECT start_stop_score,power_tracking_score,pitch_response_score,'
+                'capability_safety_score,total_score,verdict '
+                f'FROM wind_execution_evaluation{where} ORDER BY id DESC'
+            ).fetchall()
+        def _avg(key):
+            vals = [float(r[key]) for r in rows if r[key] is not None]
+            return (sum(vals) / len(vals)) if vals else None
+        total = _avg('total_score')
+        return {
+            'count': len(rows),
+            'total_score': total,
+            'start_stop_score': _avg('start_stop_score'),
+            'power_tracking_score': _avg('power_tracking_score'),
+            'pitch_response_score': _avg('pitch_response_score'),
+            'capability_safety_score': _avg('capability_safety_score'),
+            'pass_count': sum(1 for r in rows if r['verdict'] == 'pass'),
+            'needs_improvement_count': sum(1 for r in rows if r['verdict'] == 'needs_improvement'),
+        }
+
+    def _show_wind_execution(self, s: dict) -> None:
+        def _fmt(v):
+            return '无数据' if v is None else f'{v:.1f}'
+        self.we_total.value.setText(_fmt(s['total_score']))
+        if s['total_score'] is None:
+            self.we_verdict.value.setText('数据不足')
+        elif s['total_score'] >= 70:
+            self.we_verdict.value.setText('通过')
+        else:
+            self.we_verdict.value.setText('需改进')
+        self.we_count.value.setText(str(s['count']))
+        self.we_pass.value.setText(f'{s["pass_count"]} / {s["needs_improvement_count"]}')
+        for key in ('start_stop', 'power_tracking', 'pitch_response', 'capability_safety'):
+            self.we_score_labels[key].setText(_fmt(s[key + '_score']) + ' / 100')
+        self.we_hint.setText(f'风机执行评价：共 {s["count"]} 条已配对反馈链；总分为各子项加权平均。')
 
 
 def main() -> int:

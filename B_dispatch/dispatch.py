@@ -61,33 +61,37 @@ def _validate(state: GridState, config: DispatchConfig) -> None:
 
 
 def calculate_dispatch(state: GridState, config: DispatchConfig) -> DispatchResult:
-    """Calculate wind-first, diesel-compensating targets.
+    """Calculate diesel-baseload, wind-priority, diesel-compensating targets.
 
-    ``wind_operating_limit_kw`` is the protocol-defined capability boundary for
-    B. ``wind_available_kw`` remains an informational resource-capability field,
-    while ``wind_actual_kw`` is deliberately never used to decide the target.
+    Dispatch order: (1) satisfy the diesel minimum output, (2) use wind for the
+    remaining load up to its operating limit, (3) raise diesel output to cover
+    any remaining shortfall. ``wind_operating_limit_kw`` is the protocol-defined
+    capability boundary for B; ``wind_actual_kw`` is never used to decide the
+    target.
     """
     _validate(state, config)
 
     if state.fault and config.c_has_control_priority:
         wind_target = 0.0
-        diesel_target = min(state.load_power_kw, config.diesel_dispatch_max_kw)
-        reason = "C-priority fault: wind request suppressed"
+        diesel_target = min(
+            max(state.load_power_kw, config.diesel_min_kw),
+            config.diesel_dispatch_max_kw,
+        )
+        reason = "C-priority fault: wind suppressed; diesel baseload then load"
     else:
         operating_limit = min(state.wind_operating_limit_kw, config.wind_max_kw)
-        wind_target = min(state.load_power_kw, operating_limit)
-        remaining_load = max(state.load_power_kw - wind_target, 0.0)
-        diesel_target = min(remaining_load, config.diesel_dispatch_max_kw)
-        reason = "wind-first dispatch within operating limit"
-
-    if 0.0 < diesel_target < config.diesel_min_kw:
-        diesel_target = min(config.diesel_min_kw, config.diesel_dispatch_max_kw)
-        # A running diesel generator cannot be commanded below its physical
-        # minimum.  Curtail the wind target when possible so the target pair
-        # remains balanced; very small loads may still have unavoidable
-        # surplus, which is reported below instead of being hidden.
-        wind_target = min(wind_target, max(state.load_power_kw - diesel_target, 0.0))
-        reason += "; diesel minimum output enforced"
+        # Step 1: diesel minimum output first.
+        diesel_target = config.diesel_min_kw
+        # Step 2: wind covers the remaining load up to its operating limit.
+        wind_target = min(
+            max(state.load_power_kw - diesel_target, 0.0), operating_limit
+        )
+        # Step 3: extra diesel for any remaining shortfall.
+        remaining = max(state.load_power_kw - diesel_target - wind_target, 0.0)
+        diesel_target = min(
+            diesel_target + remaining, config.diesel_dispatch_max_kw
+        )
+        reason = "diesel-min baseload, then wind, then diesel compensation"
 
     target_generation = wind_target + diesel_target
     target_unserved = max(state.load_power_kw - target_generation, 0.0)
