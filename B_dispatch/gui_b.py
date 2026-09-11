@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import os
 import socket
+import time
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -27,15 +28,20 @@ class MainWindow(_LegacyMainWindow):
         self._communication_enabled = False
         self._last_db_state_key: tuple[str, int, str] | None = None
         self._last_diag_text = ""
+        self._last_sent_command: tuple[float, float, bool, bool] | None = None
+        self._last_decision_monotonic = 0.0
         super().__init__()
         self.client = None
         self._ensure_db()
         comm = self.repo.get_communication_config()
         self._communication_enabled = bool(comm["enabled"])
         self.host.setText(str(comm["host"])); self.port.setValue(int(comm["port"]))
-        self.auto_dispatch = False
+        try:
+            self.auto_dispatch = bool(self.repo.get_runtime_config()["closed_loop"])
+        except Exception:
+            self.auto_dispatch = True
         self.auto_box.blockSignals(True); self.auto_box.setChecked(self.auto_dispatch); self.auto_box.blockSignals(False)
-        self.safe_label.setText("正式模式：GUI 直连 A；闭环下点一次“下发当前调度”后按周期自动下发。")
+        self.safe_label.setText("正式模式：GUI 直连 A；闭环下每 1 s 检查 YK/YT 变化，仅变化时下发。")
         self.repo.heartbeat("B_GUI", pid=os.getpid(), state="RUNNING", detail="direct-socket operator GUI")
         self.poll_socket()
         self.log("GUI 启动：本窗口直连 A（TCP client），点“连接”后建立会话")
@@ -244,9 +250,36 @@ class MainWindow(_LegacyMainWindow):
         self.request_btn.setEnabled(connected)
         if not connected:
             self._manual_dispatch_pending = False
+            self._last_sent_command = None
+            self._last_decision_monotonic = 0.0
             if hasattr(self, "send_btn"):
                 self.send_btn.setEnabled(True)
                 self.send_btn.setText("下发当前调度")
+
+    @staticmethod
+    def _decision_command(decision) -> tuple[float, float, bool, bool]:
+        """Extract the YK/YT (enable flags + power targets) that B transmits."""
+        r = decision.result
+        return (float(r.wind_target_kw), float(r.diesel_target_kw), bool(r.wind_enable), bool(r.diesel_enable))
+
+    def _command_changed(self, command: tuple[float, float, bool, bool]) -> bool:
+        """True when the candidate command differs from the last successfully sent one."""
+        if self._last_sent_command is None:
+            return True
+        last = self._last_sent_command
+        return (
+            abs(command[0] - last[0]) > 1e-6
+            or abs(command[1] - last[1]) > 1e-6
+            or command[2] != last[2]
+            or command[3] != last[3]
+        )
+
+    def set_runtime_timer(self) -> None:
+        """Run the YK/YT check every poll period (1 s); decisions are gated inside ``runtime_tick``."""
+        if not hasattr(self, "runtime_timer"):
+            return
+        self.runtime_timer.stop()
+        self.runtime_timer.start(max(100, int(float(self.params["poll_period_s"]) * 1000)))
 
     def toggle_connection(self) -> None:
         """Connect/disconnect the GUI-owned TCP socket (based on actual state)."""
@@ -376,6 +409,8 @@ class MainWindow(_LegacyMainWindow):
                 self._cancel_queued_dispatch("最新 state 无法生成有效 EMS decision", show_message=False)
                 return
             seq = c.send_dispatch_nowait(self.last_decision)
+            self._last_sent_command = self._decision_command(self.last_decision)
+            self._last_decision_monotonic = time.monotonic()
             ack = c.get_ack(seq)
             if ack is not None:
                 self.last_ack = ack
@@ -407,13 +442,22 @@ class MainWindow(_LegacyMainWindow):
             self.repo.set_runtime_config(poll_period_s=float(runtime["poll_period_s"]), dispatch_period_s=float(runtime["dispatch_period_s"]), command_timeout_s=runtime["command_timeout_s"], closed_loop=bool(checked), max_state_age_s=float(runtime["max_state_age_s"]))
             self.params["closed_loop"] = bool(checked)
             self.auto_dispatch = bool(checked)
+            if checked:
+                self._last_sent_command = None
+                self._last_decision_monotonic = 0.0
             self.set_connection_state(self.client is not None and self.client.connected)
             self.log(f"运行模式已切换为{'闭环' if checked else '开环'}")
         except Exception as exc:
             self.log(f"运行模式保存失败：{exc}")
 
     def runtime_tick(self) -> None:
-        """Periodic closed-loop dispatch from the GUI-owned socket."""
+        """Periodic closed-loop dispatch from the GUI-owned socket.
+
+        Fired every poll period (default 1 s). A new decision is recomputed
+        only every dispatch period (default 5 s); the candidate YK/YT command
+        is transmitted only when it changed since the last successful send,
+        so unchanged targets are never re-generated or re-sent.
+        """
         if not self.auto_dispatch or not self.params.get("closed_loop"):
             return
         if self._manual_dispatch_pending:
@@ -424,15 +468,23 @@ class MainWindow(_LegacyMainWindow):
             return
         if self.client._pending_state_request_seq is not None or self.client._pending_ack_seq is not None:
             return
-        try:
+        now = time.monotonic()
+        dispatch_period = float(self.params.get("dispatch_period_s", 5.0))
+        if self._last_decision_monotonic == 0.0 or (now - self._last_decision_monotonic) >= dispatch_period:
             self.calculate_current()
-            if self.last_decision is None:
-                return
+            self._last_decision_monotonic = now
+        if self.last_decision is None:
+            return
+        command = self._decision_command(self.last_decision)
+        if not self._command_changed(command):
+            return
+        try:
             seq = self.client.send_dispatch_nowait(self.last_decision)
             ack = self.client.get_ack(seq)
             if ack is not None:
                 self.last_ack = ack
                 self.handle_ack(ack)
+            self._last_sent_command = command
             self.log(f"自动下发 dispatch seq={seq}" + (f" / ACK={ack.accepted}" if ack else ""))
         except DispatchDeliveryUnknown as exc:
             self.log(f"自动调度 ACK 未知 seq={exc.seq}，禁止盲目重发")
