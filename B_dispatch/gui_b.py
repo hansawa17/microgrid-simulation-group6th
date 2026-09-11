@@ -66,7 +66,7 @@ class MainWindow(_LegacyMainWindow):
             physical = self.repo.get_physical_parameters()
         except Exception:
             return
-        self._physical = {k: float(v) for k, v in physical.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        self._physical = {k: float(v) for k, v in dict(physical).items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
         self._sync_physical_to_params()
         self.core = self.core.__class__(self.config())
         for group in ("a_physical_widgets", "c_physical_widgets"):
@@ -150,7 +150,7 @@ class MainWindow(_LegacyMainWindow):
             try: p=self.repo.get_parameters(); r=self.repo.get_runtime_config(); physical=self.repo.get_physical_parameters()
             except Exception: self.repo.initialize(); p=self.repo.get_parameters(); r=self.repo.get_runtime_config(); physical=self.repo.get_physical_parameters()
             self.params.update(reserve_kw=float(p['reserve_kw']),max_age_s=float(r['max_state_age_s']),poll_period_s=float(r['poll_period_s']),dispatch_period_s=float(r['dispatch_period_s']),closed_loop=bool(r['closed_loop']))
-            self._physical={k:float(v) for k,v in physical.items() if isinstance(v,(int,float)) and not isinstance(v,bool)}
+            self._physical={k:float(v) for k,v in dict(physical).items() if isinstance(v,(int,float)) and not isinstance(v,bool)}
             self._sync_physical_to_params()
         except Exception as exc: self.log(f'ems.db 尚未有完整参数，使用 GUI 默认值：{exc}')
         for group in ('a_physical_widgets','c_physical_widgets'):
